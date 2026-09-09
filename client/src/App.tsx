@@ -66,18 +66,7 @@ export default function App() {
     return quoteByCur.reduce((s, [c, v]) => s + v / (fx[c] || 1), 0)
   }, [quoteByCur, meta])
 
-  if (page !== 'entry') return (
-    <div className="app-shell">
-      <div className="topbar">
-        <h1>销售数据分析</h1>
-        <TopNav page={page} onNav={setPage} />
-        <span style={{ flex: 1 }} />
-        <span className="badge new">v3-61058b3</span>
-      </div>
-      {page === 'manage' && <InquiryManager meta={meta} />}
-      {page === 'settings' && <SettingsView />}
-    </div>
-  )
+
   const salesTeams = useMemo(() => {
     const map = new Map<string, { name: string; team: string }[]>()
     ;(meta?.sales ?? []).forEach((s) => { const k = s.team || '未分组'; if (!map.has(k)) map.set(k, []); map.get(k)!.push(s) })
@@ -109,6 +98,18 @@ export default function App() {
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) } finally { setBusy(false) }
   }
 
+  if (page !== 'entry') return (
+    <div className="app-shell">
+      <div className="topbar">
+        <h1>销售数据分析</h1>
+        <TopNav page={page} onNav={setPage} />
+        <span style={{ flex: 1 }} />
+        <span className="badge new">v3-61058b3</span>
+      </div>
+      {page === 'manage' && <InquiryManager meta={meta} />}
+      {page === 'settings' && <SettingsView />}
+    </div>
+  )
   return (
     <div className="app-shell">
       <div className="topbar">
