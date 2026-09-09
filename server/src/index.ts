@@ -42,6 +42,18 @@ app.get('/api/inquiries/exists', (req, res) => {
   ok(res, { exists: Boolean(r) })
 })
 
+// —— 统一字段/选项元数据（可配字典 + 系统固定字典） ——
+app.get('/api/options', (_req, res) => {
+  ok(res, {
+    editable: [
+      { code: 'source', name: '询价来源', values: getSources() },
+      { code: 'country_custom', name: '自定义国别补充（可选维护）', values: (() => { try { const a = JSON.parse(getSetting('countries', '')); return Array.isArray(a) ? a : [] } catch { return [] } })() },
+    ],
+    fixed: [
+      { code: 'currency', name: '币种（系统固定）', values: ['USD', 'CNY', 'EUR'] },
+    ],
+  })
+})
 // —— 询价来源字典管理（设置页/来源设置弹窗） ——
 app.get('/api/sources', (_req, res) => ok(res, getSources()))
 app.post('/api/sources', (req, res) => {
@@ -51,6 +63,16 @@ app.post('/api/sources', (req, res) => {
   if (b.action === 'remove' && str(b.value)) { saveSources(list.filter((x) => x !== str(b.value))); return ok(res, getSources()) }
   if (b.action === 'rename' && str(b.value) && str(b.newValue)) { saveSources(list.map((x) => (x === str(b.value) ? str(b.newValue) : x))); return ok(res, getSources()) }
   fail(res, '未知操作')
+})
+// 自定义国别补充维护（设置页统一管理；主列表仍为内置完整清单）
+app.post('/api/countries-custom', (req, res) => {
+  const b = (req.body ?? {}) as { action?: string; value?: string; newValue?: string }
+  let arr: string[] = []; try { const a = JSON.parse(getSetting('countries', '')); arr = Array.isArray(a) ? a : [] } catch { arr = [] }
+  if (b.action === 'add' && str(b.value)) { if (!arr.includes(str(b.value))) arr.push(str(b.value)) }
+  if (b.action === 'remove' && str(b.value)) arr = arr.filter((x) => x !== str(b.value))
+  if (b.action === 'rename' && str(b.value) && str(b.newValue)) arr = arr.map((x) => (x === str(b.value) ? str(b.newValue) : x))
+  setSetting('countries', JSON.stringify(arr))
+  ok(res, arr)
 })
 
 // —— 录入询报价（新客户名自动建档） ——

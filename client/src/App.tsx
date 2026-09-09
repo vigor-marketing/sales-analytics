@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get, post } from './api'
 import { COUNTRIES } from './countries'
 import InquiryManager from './InquiryManager'
+import SettingsView from './SettingsView'
 
 interface ItemD { productName: string; qty: string; amount: string; currency: string }
 const emptyRow = (): ItemD => ({ productName: '', qty: '', amount: '', currency: 'USD' })
@@ -38,8 +39,7 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [cusList, setCusList] = useState<{ id: string; name: string; country: string | null }[]>([])
   const [cusFocus, setCusFocus] = useState(false)
-  const [srcOpen, setSrcOpen] = useState(false)
-  const [page, setPage] = useState<'entry' | 'manage'>('entry')
+  const [page, setPage] = useState<'entry' | 'manage' | 'settings'>('entry')
   const noT = useRef<HTMLInputElement>(null)
 
   useEffect(() => { get<Bootstrap>('/meta/bootstrap').then(setMeta).catch(() => { /* 使用内置默认，保存时会再报后端错误 */ }) }, [])
@@ -66,18 +66,16 @@ export default function App() {
     return quoteByCur.reduce((s, [c, v]) => s + v / (fx[c] || 1), 0)
   }, [quoteByCur, meta])
 
-  if (page === 'manage') return (
+  if (page !== 'entry') return (
     <div className="app-shell">
       <div className="topbar">
         <h1>销售数据分析</h1>
-        <div className="actions" style={{ margin: 0 }}>
-          <button className="btn sm" onClick={() => setPage('entry')}>询报价录入</button>
-          <button className="btn sm pri" onClick={() => setPage('manage')}>询报价管理</button>
-        </div>
+        <TopNav page={page} onNav={setPage} />
         <span style={{ flex: 1 }} />
         <span className="badge new">v3-61058b3</span>
       </div>
-      <InquiryManager meta={meta} />
+      {page === 'manage' && <InquiryManager meta={meta} />}
+      {page === 'settings' && <SettingsView />}
     </div>
   )
   const salesTeams = useMemo(() => {
@@ -117,12 +115,8 @@ export default function App() {
         <h1>询报价录入</h1>
         <span className="sub">询价号/日期/客户/国别手填 · 产品多行 · 来源在设置中维护 · 新客户名自动建档</span>
         <span style={{ flex: 1 }} />
-        <div className="actions" style={{ margin: 0 }}>
-          <button className="btn sm pri" onClick={() => setPage('entry')}>询报价录入</button>
-          <button className="btn sm" onClick={() => setPage('manage')}>询报价管理</button>
-        </div>
+        <TopNav page={page} onNav={setPage} />
         <span className="badge new" title="页面构建版本">v3-61058b3</span>
-        <button className="btn sm" onClick={() => setSrcOpen(true)}>询价来源设置</button>
       </div>
 
       {msg && <div className={`msg ${msg.t}`} role="status">{msg.t === 'ok' ? '✔' : '✖'} {msg.text}</div>}
@@ -221,11 +215,22 @@ export default function App() {
         </div>
       </div>
 
-      {srcOpen && <SourcesModal onClose={() => setSrcOpen(false)} onSaved={() => get<Bootstrap>('/meta/bootstrap').then(setMeta).catch(() => { /* */ })} />}
     </div>
   )
 }
 
+function TopNav({ page, onNav }: { page: 'entry' | 'manage' | 'settings'; onNav: (p: 'entry' | 'manage' | 'settings') => void }) {
+  const items: { key: 'entry' | 'manage' | 'settings'; label: string }[] = [
+    { key: 'entry', label: '询报价录入' },
+    { key: 'manage', label: '询报价管理' },
+    { key: 'settings', label: '字段与选项设置' },
+  ]
+  return (
+    <div className="actions" style={{ margin: 0 }}>
+      {items.map((it) => <button key={it.key} className={`btn sm ${page === it.key ? 'pri' : ''}`} onClick={() => onNav(it.key)}>{it.label}</button>)}
+    </div>
+  )
+}
 function CountryPicker({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
@@ -269,38 +274,6 @@ function CountryPicker({ value, onChange, placeholder }: { value: string; onChan
           <div className="hint" style={{ background: '#fff', padding: '3px 8px', border: '1px solid var(--line)', borderTop: 'none' }}>清单共 {COUNTRIES.length} 个国别 · 支持键盘 ↑↓ 回车选择</div>
         </div>
       )}
-    </div>
-  )
-}
-function SourcesModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [list, setList] = useState<string[]>([])
-  const [newV, setNewV] = useState('')
-  const [msg, setMsg] = useState('')
-  const load = useCallback(() => get<string[]>('/sources').then(setList).catch((e) => setMsg((e as Error).message)), [])
-  useEffect(() => { void load() }, [load])
-  const act = async (fn: () => Promise<string[]>, okText: string) => { try { const l = await fn(); setList(l); onSaved(); setMsg(okText) } catch (e) { setMsg((e as Error).message) } }
-  return (
-    <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label="询价来源设置">
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <h3 style={{ margin: 0 }}>询价来源设置</h3>
-          <button className="btn sm" onClick={onClose}>关闭</button>
-        </div>
-        {msg && <div className="msg ok">{msg}</div>}
-        <div style={{ margin: '10px 0' }}>
-          {list.map((s, i) => (
-            <div key={s} className="row" style={{ marginBottom: 6 }}>
-              <span className="grow1" style={{ lineHeight: '34px' }}>{i + 1}. {s}</span>
-              <button className="btn sm danger" onClick={() => void act(() => post<string[]>('/sources', { action: 'remove', value: s }), '已删除：' + s)}>删除</button>
-            </div>
-          ))}
-          {list.length === 0 && <div className="hint">暂无来源，请添加</div>}
-        </div>
-        <div className="row" style={{ marginBottom: 0 }}>
-          <input className="sa grow1" value={newV} onChange={(e) => setNewV(e.target.value)} placeholder="新增来源，如：客户转介绍" />
-          <button className="btn pri sm" onClick={() => { const v = newV.trim(); if (!v) return; void act(() => post<string[]>('/sources', { action: 'add', value: v }), '已添加：' + v); setNewV('') }}>添加</button>
-        </div>
-      </div>
     </div>
   )
 }
