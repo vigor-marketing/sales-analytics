@@ -8,9 +8,17 @@ const money = (n: number) => n.toLocaleString('zh-CN', { maximumFractionDigits: 
 
 interface Bootstrap { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; countries: string[]; fx: Record<string, number>; month: string }
 interface Saved { id: string; inquiryNo: string }
+const DEFAULTS: Bootstrap = {
+  sales: [['Joey', '销售一组'], ['Vera', '销售一组'], ['Yolanda', '销售二组'], ['Jerric', '销售二组'], ['Loria', '销售三组']].map(([name, team]) => ({ name, team })),
+  purchasers: ['Rita', 'Sunny'],
+  sources: ['展会', '官网', '转介绍', '老客户复购', '平台询盘', '邮件直询', '其他'],
+  countries: ['中国', '美国', '加拿大', '阿联酋', '沙特', '印尼', '马来西亚', '俄罗斯', '英国', '德国', '其他'],
+  fx: { USD: 1, CNY: 7.12, EUR: 0.92 },
+  month: new Date().toISOString().slice(0, 7),
+}
 
 export default function App() {
-  const [meta, setMeta] = useState<Bootstrap | null>(null)
+  const [meta, setMeta] = useState<Bootstrap>(DEFAULTS)
   const [no, setNo] = useState('')
   const [noTaken, setNoTaken] = useState(false)
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
@@ -29,7 +37,7 @@ export default function App() {
   const [srcOpen, setSrcOpen] = useState(false)
   const noT = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { get<Bootstrap>('/meta/bootstrap').then(setMeta).catch((e) => setMsg({ t: 'err', text: (e as Error).message })) }, [])
+  useEffect(() => { get<Bootstrap>('/meta/bootstrap').then(setMeta).catch(() => { /* 使用内置默认，保存时会再报后端错误 */ }) }, [])
   const checkNo = useCallback((v: string) => {
     if (!v.trim()) { setNoTaken(false); return }
     get<{ exists: boolean }>(`/inquiries/exists?no=${encodeURIComponent(v.trim())}`).then((r) => setNoTaken(r.exists)).catch(() => { /* */ })
@@ -83,19 +91,6 @@ export default function App() {
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) } finally { setBusy(false) }
   }
 
-  if (!meta) return (
-    <div className="app-shell">
-      <h1>询报价录入</h1>
-      {msg ? (
-        <>
-          <div className="msg err" role="alert">✖ {msg.text}</div>
-          <button className="btn" onClick={() => { setMsg(null); location.reload() }}>重试加载</button>
-        </>
-      ) : (
-        <div className="msg err">正在加载基础数据（组织/来源/国别）… 若超过 6 秒会自动提示错误</div>
-      )}
-    </div>
-  )
   return (
     <div className="app-shell">
       <div className="topbar">
