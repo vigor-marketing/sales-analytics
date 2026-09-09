@@ -159,9 +159,11 @@ export default function App() {
             {quoteByCur.some(([c]) => c !== 'USD') && <span className="badge">折 USD 约 {money(Math.round(usdApprox))}</span>}
             {quoteByCur.length === 0 && <span className="hint">填一行金额后自动合计</span>}
           </div>
-          <div className="row" style={{ marginBottom: 0 }}>
-            <div className="col w2"><label>总金额（手填，选填）</label><input className="sa" type="number" min="0" value={handTotal} onChange={(e) => setHandTotal(e.target.value)} placeholder="议价/最终金额，可与总报价不同" /></div>
-            <span className="hint" style={{ alignSelf: 'center' }}>总报价金额=各行金额合计；此处为最终/成交金额（可不填）</span>
+          <div>
+            <div className="row" style={{ marginBottom: 0 }}>
+              <div className="col"><label>总金额（手填 · 选填）</label><input className="sa" style={{ width: 260 }} type="number" min="0" value={handTotal} onChange={(e) => setHandTotal(e.target.value)} placeholder="例如：12000" /></div>
+            </div>
+            <div className="hint" style={{ display: 'block', marginTop: 4 }}>总报价金额=各行金额自动合计（只读）；总金额可另行手填议价后的最终金额，如与报价一致可留空不填。</div>
           </div>
         </div>
       </div>
