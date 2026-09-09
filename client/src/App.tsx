@@ -25,7 +25,6 @@ export default function App() {
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [customer, setCustomer] = useState('')
   const [country, setCountry] = useState('')
-  const [countryMode, setCountryMode] = useState<'list' | 'manual'>('list')
   const [useLoc, setUseLoc] = useState('')
   const [locTouched, setLocTouched] = useState(false)
   const [items, setItems] = useState<ItemD[]>([emptyRow()])
@@ -92,7 +91,7 @@ export default function App() {
       setMsg({ t: 'ok', text: `已保存询价 ${res.inquiryNo}` })
       if (again) {
         setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); noT.current?.focus()
-      } else { setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setCustomer(''); setCountry(''); setCountryMode('list'); setUseLoc(''); setLocTouched(false); setSource('') }
+      } else { setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setCustomer(''); setCountry(''); setUseLoc(''); setLocTouched(false); setSource('') }
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) } finally { setBusy(false) }
   }
 
@@ -127,17 +126,8 @@ export default function App() {
             )}
           </div>
           <div className="col" style={{ flex: 1 }}>
-            <label>国别</label>
-            <div className="row" style={{ marginBottom: 0 }}>
-              <select className="sa" style={{ minWidth: 220 }} value={countryMode === 'manual' ? '__manual__' : (COUNTRIES.includes(country) ? country : '')}
-                onChange={(e) => { const v = e.target.value; if (v === '__manual__') { setCountryMode('manual'); setCountry(''); if (!locTouched) setUseLoc('') } else { setCountryMode('list'); setCountry(v); if (!locTouched) setUseLoc(v) } }}>
-                <option value="">— 选择国别 —</option>
-                {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                <option value="__manual__">＋ 手动输入其他国别…</option>
-              </select>
-              {countryMode === 'manual' && <input className="sa" style={{ minWidth: 200 }} value={country} onChange={(e) => { const v = e.target.value; setCountry(v); if (!locTouched) setUseLoc(v) }} placeholder="输入国别名称" autoFocus />}
-            </div>
-            {countryMode === 'list' && country && <span className="hint">已选：{country}</span>}
+            <label>国别 <span className="hint">（可输入过滤或手动输入）</span></label>
+            <CountryPicker value={country} onChange={(v) => { setCountry(v); if (!locTouched) setUseLoc(v) }} placeholder="输入/选择国别" />
           </div>
           <div className="col" style={{ flex: 1 }}>
             <label>使用地 <span className="hint">（默认同国别，可修改）</span></label>
@@ -214,6 +204,52 @@ export default function App() {
   )
 }
 
+function CountryPicker({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const [q, setQ] = useState('')
+  const [open, setOpen] = useState(false)
+  const [focusI, setFocusI] = useState(-1)
+  const box = useRef<HTMLDivElement>(null)
+  const shown = q.trim()
+    ? COUNTRIES.filter((c) => c.toLowerCase().includes(q.trim().toLowerCase()))
+    : COUNTRIES
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [])
+  const pick = (v: string) => { onChange(v); setOpen(false); setQ(''); setFocusI(-1) }
+  return (
+    <div ref={box} style={{ position: 'relative' }}>
+      <input
+        className="sa" style={{ width: '100%', minWidth: 0 }}
+        value={open ? q : value}
+        placeholder={placeholder || '选择/输入'}
+        onFocus={() => { setOpen(true); setQ(value) }}
+        onBlur={() => setTimeout(() => { const v = q.trim(); if (open && v && v !== value) onChange(v); setOpen(false) }, 150)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setFocusI((i) => Math.min(i + 1, shown.length - 1)) }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setFocusI((i) => Math.max(i - 1, -1)) }
+          else if (e.key === 'Enter') { e.preventDefault(); if (focusI >= 0 && shown[focusI]) pick(shown[focusI]); else if (q.trim()) { pick(q.trim()) } setOpen(false) }
+          else if (e.key === 'Escape') { setOpen(false); setQ('') }
+        }}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); if (!e.target.value) { onChange('') } setFocusI(-1) }}
+      />
+      {open && (
+        <div style={{ position: 'absolute', top: 38, left: 0, right: 0, zIndex: 6 }}>
+          <ul className="sugs" style={{ maxHeight: 252, overflowY: 'auto', background: '#fff' }}>
+            {shown.slice(0, 100).map((c, i) => (
+              <li key={c} className={focusI === i ? 'on' : ''} onMouseDown={() => pick(c)}>{c}</li>
+            ))}
+            {shown.length === 0 && (
+              <li onMouseDown={() => q.trim() && pick(q.trim())} title="按回车使用该手动输入值">“{q}”不在清单 → 手动使用（回车确认）</li>
+            )}
+          </ul>
+          <div className="hint" style={{ background: '#fff', padding: '3px 8px', border: '1px solid var(--line)', borderTop: 'none' }}>清单共 {COUNTRIES.length} 个国别 · 支持键盘 ↑↓ 回车选择</div>
+        </div>
+      )}
+    </div>
+  )
+}
 function SourcesModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [list, setList] = useState<string[]>([])
   const [newV, setNewV] = useState('')
