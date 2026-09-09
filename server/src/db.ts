@@ -26,7 +26,7 @@ export function schema(): void {
       UNIQUE(name COLLATE NOCASE));
     CREATE TABLE IF NOT EXISTS inquiries (
       id TEXT PRIMARY KEY, inquiry_no TEXT UNIQUE NOT NULL, date TEXT NOT NULL,
-      customer_id TEXT NOT NULL REFERENCES customers(id), country TEXT,
+      customer_id TEXT NOT NULL REFERENCES customers(id), country TEXT, use_location TEXT,
       sales TEXT, purchaser TEXT, source TEXT, hand_total REAL, note TEXT,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS inquiry_items (
@@ -38,6 +38,8 @@ export function schema(): void {
       role TEXT NOT NULL DEFAULT 'sales', created_at TEXT NOT NULL DEFAULT (datetime('now')));
     CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT NOT NULL);
   `)
+  // 老库补列（幂等）
+  try { db.exec('ALTER TABLE inquiries ADD COLUMN use_location TEXT') } catch { /* 已存在 */ }
 }
 export const getDb = () => db
 

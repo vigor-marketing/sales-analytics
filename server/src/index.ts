@@ -60,6 +60,7 @@ app.post('/api/inquiries', (req, res) => {
   const date = str(req.body?.date) || todayStr()
   const customerName = str(req.body?.customerName)
   const country = str(req.body?.country) || null
+  const useLocation = str(req.body?.useLocation) || country
   const sales = str(req.body?.sales)
   const purchaser = str(req.body?.purchaser)
   const source = str(req.body?.source)
@@ -89,8 +90,8 @@ app.post('/api/inquiries', (req, res) => {
       d.prepare('UPDATE customers SET country = COALESCE(?, country), source = COALESCE(?, source), updated_at = ? WHERE id = ?').run(country || null, source || null, t, cus.id)
     }
     const iid = newId()
-    d.prepare('INSERT INTO inquiries (id, inquiry_no, date, customer_id, country, sales, purchaser, source, hand_total, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(iid, no, date, cus.id, country || cus.country, sales, purchaser, source, handTotal, note, t, t)
+    d.prepare('INSERT INTO inquiries (id, inquiry_no, date, customer_id, country, use_location, sales, purchaser, source, hand_total, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(iid, no, date, cus.id, country || cus.country, useLocation, sales, purchaser, source, handTotal, note, t, t)
     const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
     cleanItems.forEach((it) => ins.run(newId(), iid, it.productName, it.qty, it.amount, it.currency, it.sort))
   })()

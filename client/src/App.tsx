@@ -26,6 +26,8 @@ export default function App() {
   const [customer, setCustomer] = useState('')
   const [country, setCountry] = useState('')
   const [countryMode, setCountryMode] = useState<'list' | 'manual'>('list')
+  const [useLoc, setUseLoc] = useState('')
+  const [locTouched, setLocTouched] = useState(false)
   const [items, setItems] = useState<ItemD[]>([emptyRow()])
   const [handTotal, setHandTotal] = useState('')
   const [sales, setSales] = useState('')
@@ -85,11 +87,12 @@ export default function App() {
         inquiryNo: no.trim(), date, customerName: customer.trim(), country: country.trim() || undefined,
         items: items.filter((it) => it.productName.trim() && Number(it.amount) > 0).map((it) => ({ productName: it.productName.trim(), qty: it.qty ? Number(it.qty) : undefined, amount: Number(it.amount), currency: it.currency })),
         sales, purchaser, source, totalAmount: handTotal ? Number(handTotal) : undefined, note: note.trim() || undefined,
+        useLocation: useLoc.trim() || undefined,
       })
       setMsg({ t: 'ok', text: `已保存询价 ${res.inquiryNo}` })
       if (again) {
         setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); noT.current?.focus()
-      } else { setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setCustomer(''); setCountry(''); setSource('') }
+      } else { setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setCustomer(''); setCountry(''); setCountryMode('list'); setUseLoc(''); setLocTouched(false); setSource('') }
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) } finally { setBusy(false) }
   }
 
@@ -127,14 +130,18 @@ export default function App() {
             <label>国别</label>
             <div className="row" style={{ marginBottom: 0 }}>
               <select className="sa" style={{ minWidth: 220 }} value={countryMode === 'manual' ? '__manual__' : (COUNTRIES.includes(country) ? country : '')}
-                onChange={(e) => { const v = e.target.value; if (v === '__manual__') { setCountryMode('manual'); setCountry('') } else { setCountryMode('list'); setCountry(v) } }}>
+                onChange={(e) => { const v = e.target.value; if (v === '__manual__') { setCountryMode('manual'); setCountry(''); if (!locTouched) setUseLoc('') } else { setCountryMode('list'); setCountry(v); if (!locTouched) setUseLoc(v) } }}>
                 <option value="">— 选择国别 —</option>
                 {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 <option value="__manual__">＋ 手动输入其他国别…</option>
               </select>
-              {countryMode === 'manual' && <input className="sa" style={{ minWidth: 200 }} value={country} onChange={(e) => setCountry(e.target.value)} placeholder="输入国别名称" autoFocus />}
+              {countryMode === 'manual' && <input className="sa" style={{ minWidth: 200 }} value={country} onChange={(e) => { const v = e.target.value; setCountry(v); if (!locTouched) setUseLoc(v) }} placeholder="输入国别名称" autoFocus />}
             </div>
             {countryMode === 'list' && country && <span className="hint">已选：{country}</span>}
+          </div>
+          <div className="col" style={{ flex: 1 }}>
+            <label>使用地 <span className="hint">（默认同国别，可修改）</span></label>
+            <input className="sa" style={{ width: '100%' }} value={useLoc} onChange={(e) => { setUseLoc(e.target.value); setLocTouched(true) }} placeholder={country || '输入使用地，默认同国别'} />
           </div>
         </div>
       </div>
