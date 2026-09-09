@@ -124,7 +124,7 @@ export default function App() {
           <div className="col w2" style={{ flex: 1 }}>
             <label>国别</label>
             <input className="sa" list="country-list" value={country} onChange={(e) => setCountry(e.target.value)} placeholder="下拉选择或直接输入" />
-            <datalist id="country-list">{meta.countries.map((c) => <option key={c} value={c} />)}</datalist>
+            <datalist id="country-list">{(meta?.countries ?? DEFAULTS.countries).map((c) => <option key={c} value={c} />)}</datalist>
           </div>
         </div>
       </div>
@@ -174,13 +174,13 @@ export default function App() {
           <div className="col w2"><label>采购人员 *</label>
             <select className="sa" style={{ width: 220 }} value={purchaser} onChange={(e) => setPurchaser(e.target.value)}>
               <option value="">— 请选择 —</option>
-              {meta.purchasers.map((p) => <option key={p} value={p}>{p}</option>)}
+              {(meta?.purchasers ?? DEFAULTS.purchasers).map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
           <div className="col w2"><label>询价来源 *</label>
             <select className="sa" style={{ width: 220 }} value={source} onChange={(e) => setSource(e.target.value)}>
               <option value="">— 请选择 —</option>
-              {meta.sources.map((s) => <option key={s} value={s}>{s}</option>)}
+              {(meta?.sources ?? DEFAULTS.sources).map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
         </div>
