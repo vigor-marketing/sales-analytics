@@ -10,7 +10,7 @@ interface MetaLite { sales: { name: string; team: string }[]; purchasers: string
 const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
 const CURS = ['USD', 'CNY', 'EUR']
 
-export default function InquiryManager({ meta }: { meta: MetaLite }) {
+export default function InquiryManager({ meta = { sales: [], purchasers: [], sources: [] } }: { meta?: MetaLite }) {
   const [q, setQ] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState('')
   const [sales, setSales] = useState(''); const [pur, setPur] = useState(''); const [src, setSrc] = useState('')
   const [rows, setRows] = useState<Row[]>([]); const [total, setTotal] = useState(0)
@@ -23,9 +23,11 @@ export default function InquiryManager({ meta }: { meta: MetaLite }) {
       const p = new URLSearchParams()
       if (q) p.set('q', q); if (from) p.set('from', from); if (to) p.set('to', to)
       if (sales) p.set('sales', sales); if (pur) p.set('purchaser', pur); if (src) p.set('source', src)
-      const d = await get<{ rows: Row[]; meta: { total: number } }>(`/inquiries?${p.toString()}`)
+      const url = `/inquiries?${p.toString()}`
+      const d = await get<{ rows: Row[]; meta: { total: number } }>(url)
+      if (!d || !d.rows) throw new Error(`接口 ${url} 返回异常：${JSON.stringify(d)}`)
       setRows(d.rows); setTotal(d.meta.total)
-    } catch (e) { setMsg((e as Error).message) }
+    } catch (e) { setMsg('加载失败：' + (e as Error).message) }
   }, [q, from, to, sales, pur, src])
   useEffect(() => { void load() }, [load])
   const doDelete = async (id: string) => {
@@ -126,7 +128,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   )
 }
 
-function EditModal({ id, meta, onClose, onSaved }: { id: string; meta: MetaLite; onClose: () => void; onSaved: () => void }) {
+function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onClose, onSaved }: { id: string; meta?: MetaLite; onClose: () => void; onSaved: () => void }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
   const [form, setForm] = useState<{ inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; note: string; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
   const set = (patch: Partial<typeof form>) => setForm((f) => (f ? { ...f, ...patch } : f))

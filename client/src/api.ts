@@ -2,8 +2,9 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), 6000)
   let r: Response
+  const path = url.startsWith('/api') || /^https?:\/\//.test(url) ? url : `/api${url.startsWith('/') ? url : '/' + url}`
   try {
-    r = await fetch(url, { method, signal: ctrl.signal, headers: body === undefined ? undefined : { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
+    r = await fetch(path, { method, signal: ctrl.signal, headers: body === undefined ? undefined : { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
   } catch (e) {
     throw new Error(`无法连接后端（${(e as Error).name === 'AbortError' ? '超时' : '请确认服务已启动'}），当前地址 ${location.origin}`)
   } finally { clearTimeout(timer) }

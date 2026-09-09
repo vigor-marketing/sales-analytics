@@ -11,7 +11,7 @@ export default function SettingsView() {
   const [adds, setAdds] = useState<Record<string, string>>({})
   const [renaming, setRenaming] = useState<{ code: string; value: string; next: string } | null>(null)
 
-  const load = useCallback(() => { get<Options>('/options').then((d) => { setEditable(d.editable); setFixed(d.fixed) }).catch((e) => setMsg((e as Error).message)) }, [])
+  const load = useCallback(() => { get<Options>('/options').then((d) => { if (!d || !d.editable) throw new Error('options 返回异常'); setEditable(d.editable); setFixed(d.fixed) }).catch((e) => setMsg('加载失败：' + (e as Error).message)) }, [])
   useEffect(() => { void load() }, [load])
 
   const save = async (code: string, action: string, value: string, newValue?: string) => {
