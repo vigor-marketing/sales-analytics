@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get, post } from './api'
+import { COUNTRIES } from './countries'
 
 interface ItemD { productName: string; qty: string; amount: string; currency: string }
 const emptyRow = (): ItemD => ({ productName: '', qty: '', amount: '', currency: 'USD' })
@@ -24,6 +25,7 @@ export default function App() {
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [customer, setCustomer] = useState('')
   const [country, setCountry] = useState('')
+  const [countryMode, setCountryMode] = useState<'list' | 'manual'>('list')
   const [items, setItems] = useState<ItemD[]>([emptyRow()])
   const [handTotal, setHandTotal] = useState('')
   const [sales, setSales] = useState('')
@@ -121,10 +123,18 @@ export default function App() {
               </ul>
             )}
           </div>
-          <div className="col w2" style={{ flex: 1 }}>
+          <div className="col" style={{ flex: 1 }}>
             <label>国别</label>
-            <input className="sa" list="country-list" value={country} onChange={(e) => setCountry(e.target.value)} placeholder="下拉选择或直接输入" />
-            <datalist id="country-list">{(meta?.countries ?? DEFAULTS.countries).map((c) => <option key={c} value={c} />)}</datalist>
+            <div className="row" style={{ marginBottom: 0 }}>
+              <select className="sa" style={{ minWidth: 220 }} value={countryMode === 'manual' ? '__manual__' : (COUNTRIES.includes(country) ? country : '')}
+                onChange={(e) => { const v = e.target.value; if (v === '__manual__') { setCountryMode('manual'); setCountry('') } else { setCountryMode('list'); setCountry(v) } }}>
+                <option value="">— 选择国别 —</option>
+                {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                <option value="__manual__">＋ 手动输入其他国别…</option>
+              </select>
+              {countryMode === 'manual' && <input className="sa" style={{ minWidth: 200 }} value={country} onChange={(e) => setCountry(e.target.value)} placeholder="输入国别名称" autoFocus />}
+            </div>
+            {countryMode === 'list' && country && <span className="hint">已选：{country}</span>}
           </div>
         </div>
       </div>
