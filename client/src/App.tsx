@@ -83,7 +83,19 @@ export default function App() {
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) } finally { setBusy(false) }
   }
 
-  if (!meta) return <div className="app-shell"><div className="msg err">正在加载…（请确认后端已启动 3218）</div></div>
+  if (!meta) return (
+    <div className="app-shell">
+      <h1>询报价录入</h1>
+      {msg ? (
+        <>
+          <div className="msg err" role="alert">✖ {msg.text}</div>
+          <button className="btn" onClick={() => { setMsg(null); location.reload() }}>重试加载</button>
+        </>
+      ) : (
+        <div className="msg err">正在加载基础数据（组织/来源/国别）… 若超过 6 秒会自动提示错误</div>
+      )}
+    </div>
+  )
   return (
     <div className="app-shell">
       <div className="topbar">
