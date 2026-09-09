@@ -97,6 +97,7 @@ export default function App() {
         <h1>询报价录入</h1>
         <span className="sub">询价号/日期/客户/国别手填 · 产品多行 · 来源在设置中维护 · 新客户名自动建档</span>
         <span style={{ flex: 1 }} />
+        <span className="badge new" title="页面构建版本">v3-e9f2903</span>
         <button className="btn sm" onClick={() => setSrcOpen(true)}>询价来源设置</button>
       </div>
 
