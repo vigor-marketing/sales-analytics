@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get, post } from './api'
 import { COUNTRIES } from './countries'
+import { ArticleIcon, EditIcon, SettingIcon } from 'tdesign-icons-react'
 import InquiryManager from './InquiryManager'
 import SettingsView from './SettingsView'
 
@@ -20,6 +21,44 @@ const DEFAULTS: Bootstrap = {
   month: new Date().toISOString().slice(0, 7),
 }
 
+type PageKey = 'entry' | 'manage' | 'settings'
+const NAV: { key: PageKey; label: string; icon: JSX.Element }[] = [
+  { key: 'entry', label: '询报价录入', icon: <EditIcon /> },
+  { key: 'manage', label: '询报价管理', icon: <ArticleIcon /> },
+  { key: 'settings', label: '字段与选项设置', icon: <SettingIcon /> },
+]
+const TITLES: Record<PageKey, string> = { entry: '询报价录入', manage: '询报价管理', settings: '字段与选项设置' }
+function Shell({ page, onNav, children }: { page: PageKey; onNav: (p: PageKey) => void; children: React.ReactNode }) {
+  return (
+    <div className="sa-layout">
+      <aside className="sa-sider">
+        <div className="sa-brand">
+          <div className="sa-logo">销</div>
+          <div className="sa-brand-text">
+            <b>销售数据分析</b>
+            <i>Sales Analytics</i>
+          </div>
+        </div>
+        <nav className="sa-menu">
+          {NAV.map((n) => (
+            <button key={n.key} className={`sa-item${page === n.key ? ' on' : ''}`} onClick={() => onNav(n.key)}>
+              <span className="sa-ic">{n.icon}</span>
+              <span>{n.label}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="sa-foot">v3-61058b3</div>
+      </aside>
+      <main className="sa-main">
+        <div className="sa-page-head">
+          <h1>{TITLES[page]}</h1>
+          <span className="badge new" title="页面构建版本">v3-61058b3</span>
+        </div>
+        {children}
+      </main>
+    </div>
+  )
+}
 export default function App() {
   const [meta, setMeta] = useState<Bootstrap>(DEFAULTS)
   const [no, setNo] = useState('')
@@ -99,27 +138,12 @@ export default function App() {
   }
 
   if (page !== 'entry') return (
-    <div className="app-shell">
-      <div className="topbar">
-        <h1>销售数据分析</h1>
-        <TopNav page={page} onNav={setPage} />
-        <span style={{ flex: 1 }} />
-        <span className="badge new">v3-61058b3</span>
-      </div>
-      {page === 'manage' && <InquiryManager meta={meta} />}
-      {page === 'settings' && <SettingsView />}
-    </div>
+    <Shell page={page} onNav={setPage}>
+      {page === 'manage' ? <InquiryManager meta={meta} /> : <SettingsView />}
+    </Shell>
   )
   return (
-    <div className="app-shell">
-      <div className="topbar">
-        <h1>询报价录入</h1>
-        <span className="sub">询价号/日期/客户/国别手填 · 产品多行 · 来源在设置中维护 · 新客户名自动建档</span>
-        <span style={{ flex: 1 }} />
-        <TopNav page={page} onNav={setPage} />
-        <span className="badge new" title="页面构建版本">v3-61058b3</span>
-      </div>
-
+    <Shell page={page} onNav={setPage}>
       {msg && <div className={`msg ${msg.t}`} role="status">{msg.t === 'ok' ? '✔' : '✖'} {msg.text}</div>}
 
       {/* ① 基本信息 */}
@@ -215,23 +239,10 @@ export default function App() {
           {!valid && <span className="hint">请补齐必填项（询价号唯一、客户/销售/采购/来源、≥1行产品金额大于0）</span>}
         </div>
       </div>
-
-    </div>
+    </Shell>
   )
 }
 
-function TopNav({ page, onNav }: { page: 'entry' | 'manage' | 'settings'; onNav: (p: 'entry' | 'manage' | 'settings') => void }) {
-  const items: { key: 'entry' | 'manage' | 'settings'; label: string }[] = [
-    { key: 'entry', label: '询报价录入' },
-    { key: 'manage', label: '询报价管理' },
-    { key: 'settings', label: '字段与选项设置' },
-  ]
-  return (
-    <div className="actions" style={{ margin: 0 }}>
-      {items.map((it) => <button key={it.key} className={`btn sm ${page === it.key ? 'pri' : ''}`} onClick={() => onNav(it.key)}>{it.label}</button>)}
-    </div>
-  )
-}
 function CountryPicker({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
