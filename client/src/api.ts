@@ -13,3 +13,5 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
 }
 export const get = <T>(url: string) => req<T>('GET', url)
 export const post = <T>(url: string, body?: unknown) => req<T>('POST', url, body)
+export const put = <T>(url: string, body?: unknown) => req<T>('PUT', url, body)
+export const del = <T>(url: string) => req<T>('DELETE', url)

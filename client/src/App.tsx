@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get, post } from './api'
 import { COUNTRIES } from './countries'
+import InquiryManager from './InquiryManager'
 
 interface ItemD { productName: string; qty: string; amount: string; currency: string }
 const emptyRow = (): ItemD => ({ productName: '', qty: '', amount: '', currency: 'USD' })
@@ -38,6 +39,7 @@ export default function App() {
   const [cusList, setCusList] = useState<{ id: string; name: string; country: string | null }[]>([])
   const [cusFocus, setCusFocus] = useState(false)
   const [srcOpen, setSrcOpen] = useState(false)
+  const [page, setPage] = useState<'entry' | 'manage'>('entry')
   const noT = useRef<HTMLInputElement>(null)
 
   useEffect(() => { get<Bootstrap>('/meta/bootstrap').then(setMeta).catch(() => { /* 使用内置默认，保存时会再报后端错误 */ }) }, [])
@@ -64,6 +66,20 @@ export default function App() {
     return quoteByCur.reduce((s, [c, v]) => s + v / (fx[c] || 1), 0)
   }, [quoteByCur, meta])
 
+  if (page === 'manage') return (
+    <div className="app-shell">
+      <div className="topbar">
+        <h1>销售数据分析</h1>
+        <div className="actions" style={{ margin: 0 }}>
+          <button className="btn sm" onClick={() => setPage('entry')}>询报价录入</button>
+          <button className="btn sm pri" onClick={() => setPage('manage')}>询报价管理</button>
+        </div>
+        <span style={{ flex: 1 }} />
+        <span className="badge new">v3-61058b3</span>
+      </div>
+      <InquiryManager meta={meta} />
+    </div>
+  )
   const salesTeams = useMemo(() => {
     const map = new Map<string, { name: string; team: string }[]>()
     ;(meta?.sales ?? []).forEach((s) => { const k = s.team || '未分组'; if (!map.has(k)) map.set(k, []); map.get(k)!.push(s) })
@@ -101,6 +117,10 @@ export default function App() {
         <h1>询报价录入</h1>
         <span className="sub">询价号/日期/客户/国别手填 · 产品多行 · 来源在设置中维护 · 新客户名自动建档</span>
         <span style={{ flex: 1 }} />
+        <div className="actions" style={{ margin: 0 }}>
+          <button className="btn sm pri" onClick={() => setPage('entry')}>询报价录入</button>
+          <button className="btn sm" onClick={() => setPage('manage')}>询报价管理</button>
+        </div>
         <span className="badge new" title="页面构建版本">v3-61058b3</span>
         <button className="btn sm" onClick={() => setSrcOpen(true)}>询价来源设置</button>
       </div>

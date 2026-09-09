@@ -99,10 +99,81 @@ app.post('/api/inquiries', (req, res) => {
   ok(res, { id: saved.id, inquiryNo: no }, 201)
 })
 
-// —— 已录列表（调试/后续页面用） ——
-app.get('/api/inquiries', (_req, res) => {
-  const rows = getDb().prepare('SELECT i.*, c.name AS customer_name, (SELECT COALESCE(SUM(it.amount),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw_amount_sum FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id ORDER BY i.created_at DESC LIMIT 200').all()
-  ok(res, rows)
+// —— 询报价管理：列表（筛选/统计/详情/编辑/删除） ——
+const FX2: Record<string, number> = { USD: 1, CNY: 7.12, EUR: 0.92 }
+function fmtTotals(items: { currency: string; amount: number }[]): { currency: string; total: number }[] {
+  const m = new Map<string, number>()
+  items.forEach((it) => m.set(it.currency, (m.get(it.currency) ?? 0) + (num(it.amount) ?? 0)))
+  return Array.from(m.entries()).map(([currency, total]) => ({ currency, total })).sort((a, b) => ['USD', 'CNY', 'EUR'].indexOf(a.currency) - ['USD', 'CNY', 'EUR'].indexOf(b.currency))
+}
+app.get('/api/inquiries', (req, res) => {
+  const d = getDb()
+  const parts: string[] = []; const args: unknown[] = []
+  const q = str(req.query.q), from = str(req.query.from), to = str(req.query.to)
+  const sales = str(req.query.sales), purchaser = str(req.query.purchaser), source = str(req.query.source), country = str(req.query.country)
+  if (q) { parts.push('(i.inquiry_no LIKE ? OR c.name LIKE ? OR i.note LIKE ?)'); const l = `%${q}%`; args.push(l, l, l) }
+  if (from) { parts.push('i.date >= ?'); args.push(from) }
+  if (to) { parts.push('i.date <= ?'); args.push(to) }
+  if (sales) { parts.push('i.sales = ?'); args.push(sales) }
+  if (purchaser) { parts.push('i.purchaser = ?'); args.push(purchaser) }
+  if (source) { parts.push('i.source = ?'); args.push(source) }
+  if (country) { parts.push('(i.country = ? OR i.use_location = ?)'); args.push(country, country) }
+  const where = parts.length ? `WHERE ${parts.join(' AND ')}` : ''
+  const join = 'FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id'
+  const rows = d.prepare(`SELECT i.id, i.inquiry_no, i.date, i.country, i.use_location, i.sales, i.purchaser, i.source, i.hand_total, i.note, i.created_at, c.name AS customer_name ${join} ${where} ORDER BY i.date DESC, i.created_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
+  const ids = rows.map((r) => str(r.id))
+  const totalsOf = new Map<string, { currency: string; amount: number }[]>()
+  if (ids.length) {
+    const marks = ids.map(() => '?').join(',')
+    const items = d.prepare(`SELECT inquiry_id, currency, amount FROM inquiry_items WHERE inquiry_id IN (${marks})`).all(...ids) as { inquiry_id: string; currency: string; amount: number }[]
+    items.forEach((it) => { const a = totalsOf.get(it.inquiry_id) ?? []; a.push(it); totalsOf.set(it.inquiry_id, a) })
+  }
+  const out = rows.map((r) => {
+    const t = fmtTotals(totalsOf.get(str(r.id)) ?? [])
+    const usd = t.reduce((s, x) => s + x.total / (FX2[x.currency] || 1), 0)
+    return { ...r, itemCount: (totalsOf.get(str(r.id)) ?? []).length, totals: t, usdApprox: Math.round(usd) }
+  })
+  const totalN = (d.prepare(`SELECT COUNT(*) AS n FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id ${where}`).get(...args) as { n: number }).n
+  ok(res, { rows: out, meta: { total: totalN, shown: out.length } })
+})
+app.get('/api/inquiries/:id', (req, res) => {
+  const d = getDb()
+  const r = d.prepare('SELECT i.*, c.name AS customer_name FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id WHERE i.id = ?').get(req.params.id) as Record<string, unknown> | undefined
+  if (!r) return fail(res, '询价不存在', 404)
+  const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(req.params.id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
+  ok(res, { ...r, items, totals: fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount }))) })
+})
+app.put('/api/inquiries/:id', (req, res) => {
+  const d = getDb()
+  const old = d.prepare('SELECT * FROM inquiries WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
+  if (!old) return fail(res, '询价不存在', 404)
+  const date = str(req.body?.date) || str(old.date)
+  const country = req.body?.country !== undefined ? str(req.body?.country) || null : str(old.country) || null
+  const useLocation = req.body?.useLocation !== undefined ? str(req.body?.useLocation) || country : str(old.use_location) || country
+  const sales = str(req.body?.sales) || str(old.sales)
+  const purchaser = str(req.body?.purchaser) || str(old.purchaser)
+  const source = str(req.body?.source) || str(old.source)
+  const handTotal = req.body?.totalAmount !== undefined ? num(req.body?.totalAmount) : num(old.hand_total)
+  const note = req.body?.note !== undefined ? (text(req.body?.note) || null) : str(old.note) || null
+  const items = Array.isArray(req.body?.items) ? (req.body.items as unknown[]) : []
+  const clean = items
+    .map((it, i) => ({ productName: str((it as { productName?: unknown }).productName), qty: num((it as { qty?: unknown }).qty), amount: num((it as { amount?: unknown }).amount) ?? 0, currency: ['USD', 'CNY', 'EUR'].includes(str((it as { currency?: unknown }).currency)) ? str((it as { currency?: unknown }).currency) : 'USD', sort: i + 1 }))
+    .filter((x) => x.productName && x.amount > 0)
+  if (!clean.length) return fail(res, '至少一行产品（产品名称与金额>0）')
+  const t = nowIso()
+  d.transaction(() => {
+    d.prepare('UPDATE inquiries SET date = ?, country = ?, use_location = ?, sales = ?, purchaser = ?, source = ?, hand_total = ?, note = ?, updated_at = ? WHERE id = ?').run(date, country, useLocation, sales, purchaser, source, handTotal, note, t, req.params.id)
+    d.prepare('DELETE FROM inquiry_items WHERE inquiry_id = ?').run(req.params.id)
+    const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    clean.forEach((it) => ins.run(newId(), req.params.id, it.productName, it.qty, it.amount, it.currency, it.sort))
+  })()
+  ok(res, { id: req.params.id })
+})
+app.delete('/api/inquiries/:id', (req, res) => {
+  const d = getDb()
+  const r = d.prepare('DELETE FROM inquiries WHERE id = ?').run(req.params.id)
+  if (!r.changes) return fail(res, '询价不存在', 404)
+  ok(res, { deleted: 1 })
 })
 
 schema(); ensurePeople()
