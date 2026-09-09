@@ -94,7 +94,8 @@ app.post('/api/inquiries', (req, res) => {
     const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
     cleanItems.forEach((it) => ins.run(newId(), iid, it.productName, it.qty, it.amount, it.currency, it.sort))
   })()
-  ok(res, { id: iid, inquiryNo: no }, 201)
+  const saved = d.prepare('SELECT id FROM inquiries WHERE inquiry_no = ?').get(no) as { id: string }
+  ok(res, { id: saved.id, inquiryNo: no }, 201)
 })
 
 // —— 已录列表（调试/后续页面用） ——
