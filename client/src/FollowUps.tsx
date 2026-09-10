@@ -320,18 +320,18 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
             : `跟进记录（按项目合并：${groups.length} 个项目 / ${list.length} 条记录${sales ? ` · ${sales} 名下` : ''}）`}
         </div>
         <div className="tablewrap">
-          <table className="grid data-table fixed-table follow-table" style={{ fontSize: 12.5 }}>
+          <table className="grid data-table fixed-table follow-table" style={{ fontSize: 12.5, minWidth: 1180 }}>
             <colgroup>
               {hit
-                ? <><col style={{ width: '8%' }} /><col style={{ width: '11%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '22%' }} />
-                  <col style={{ width: '21%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /></>
-                : <><col style={{ width: '8%' }} /><col style={{ width: '12%' }} /><col style={{ width: '8%' }} /><col style={{ width: '7%' }} /><col style={{ width: '7%' }} />
-                  <col style={{ width: '21%' }} /><col style={{ width: '19%' }} /><col style={{ width: '8%' }} /><col style={{ width: '10%' }} /></>}
+                ? <><col style={{ width: '8%' }} /><col style={{ width: '11%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '21%' }} />
+                  <col style={{ width: '15%' }} /><col style={{ width: '9%' }} /><col style={{ width: '13%' }} /><col style={{ width: '9%' }} /></>
+                : <><col style={{ width: '8%' }} /><col style={{ width: '12%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '7%' }} />
+                  <col style={{ width: '19%' }} /><col style={{ width: '17%' }} /><col style={{ width: '10%' }} /><col style={{ width: '13%' }} /></>}
             </colgroup>
             <thead><tr>{(hit
               ? ['跟进日期', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间']
               : ['最近跟进', '询价号 / 客户', '销售 / 跟进人', '方式', '跟进次数', '最近简述与内容', '跟进指导（全部）', '图片 / 附件', '下次跟进']
-            ).map((h) => <th key={h} style={{ textAlign: h === '方式' || h === '跟进次数' ? 'center' : 'left' }} title={h === '跟进次数' ? '同一个项目的多条跟进记录已在前端合并，点击整行可查看该项目全部记录' : undefined}>{h}</th>)}</tr></thead>
+            ).map((h) => <th key={h} className={h === '下次跟进' || h === '最近跟进' || h === '录入时间' ? 'cell-datetime' : undefined} title={h === '跟进次数' ? '同一个项目的多条跟进记录已在前端合并，点击整行可查看该项目全部记录' : undefined}>{h}</th>)}</tr></thead>
             <tbody>
               {(hit ? list.map((r) => ({
                 key: r.id, rep: r, count: 1, firstDate: r.date, dates: [r.date], nextAt: r.next_followup_at,
@@ -353,7 +353,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                       setSales(r.sales); setNo(r.inquiry_no)
                       window.scrollTo({ top: 0, behavior: 'smooth' })
                     }}>
-                    <td className="mono" title={merged ? `最近跟进 ${r.date}（首次 ${g.firstDate}）` : r.date}>{r.date}</td>
+                    <td className="mono cell-datetime" title={merged ? `最近跟进 ${r.date}（首次 ${g.firstDate}）` : r.date}>{r.date}</td>
                     <td title={`${r.inquiry_no} · ${r.customer_name || '—'}${Number(r.is_key_customer) === 1 ? ' · 重点客户' : ''}${Number(r.is_key_project) === 1 ? ' · 重点项目' : ''}`}>
                       <span className="mono" style={{ fontWeight: 600 }}>{r.inquiry_no}</span>
                       <span className="cell-note">{r.customer_name}</span>
@@ -399,8 +399,8 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                         </span>
                       )}
                     </td>
-                    <td className="mono" title={g.nextAt ? String(g.nextAt).replace('T', ' ') : '未设置下次跟进'}>{g.nextAt ? String(g.nextAt).replace('T', ' ') : '—'}</td>
-                    {hit && <td className="mono hint" title={String(r.created_at || '').slice(0, 19).replace('T', ' ')}>{String(r.created_at || '').slice(0, 16).replace('T', ' ')}</td>}
+                    <td className="mono cell-datetime" title={g.nextAt ? String(g.nextAt).replace('T', ' ') : '未设置下次跟进'}>{g.nextAt ? String(g.nextAt).replace('T', ' ') : '—'}</td>
+                    {hit && <td className="mono hint cell-datetime" title={String(r.created_at || '').slice(0, 19).replace('T', ' ')}>{String(r.created_at || '').slice(0, 16).replace('T', ' ')}</td>}
                   </tr>
                 )
               })}

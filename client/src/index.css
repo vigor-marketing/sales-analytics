@@ -188,6 +188,10 @@ tr.row-click:hover>td{background:#eef5ff !important}
 /* ===== 全部表格内容居中（表头 + 单元格，含徽标/按钮/金额，覆盖行内左右对齐设置） ===== */
 table.grid > thead > tr > th, table.grid > tbody > tr > td { text-align: center !important }
 table.grid > tbody > tr > td > .badge, table.grid > tbody > tr > td > .tag, table.grid > tbody > tr > td > .btn { margin-left: 3px; margin-right: 3px }
+/* 日期时间类列（最近跟进/下次跟进/录入时间）：整列左边缘对齐，逐行数字对齐，且完整显示不截断 */
+table.grid > thead > tr > th.cell-datetime, table.grid > tbody > tr > td.cell-datetime { text-align: left !important }
+table.grid > tbody > tr > td.cell-datetime { white-space: nowrap; overflow: visible; text-overflow: clip }
+
 /* 例外：询报价管理的「状态」列（未成单的丢单原因）保持原来的左对齐位置，不参与居中 */
 table.grid > tbody > tr > td.cell-status { text-align: left !important }
 table.grid > tbody > tr > td.cell-status .lost-line { margin-left: 0 }
