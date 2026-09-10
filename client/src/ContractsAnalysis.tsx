@@ -8,25 +8,74 @@ interface OrderRow {
   usdApprox: number; totals: { currency: string; total: number }[]; items: Item[]; cycleDays: number | null; productNames: string
 }
 interface Stats { contractCount: number; cycleCount: number; avgCycle: number | null; medianCycle: number | null; minCycle: number | null; maxCycle: number | null; usdTotal: number; byProduct: { name: string; count: number; avgCycle: number }[]; bySales: { name: string; count: number; avgCycle: number }[] }
-interface MetaLite { sales: { name: string; team: string }[]; winReasons?: string[]; lostReasons?: string[] }
+interface MetaLite { sales: { name: string; team: string }[]; winReasons?: string[]; lostReasons?: string[]; fx?: Record<string, number> }
 interface ReasonItem { reason: string; count: number; usd: number; share: number; usdShare: number; avgCycle: number | null }
 interface ReasonStat { total: number; usdTotal: number; items: ReasonItem[]; missing: number }
 interface ReasonData { win: ReasonStat; lost: ReasonStat; reasons: { win: string[]; lost: string[] } }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Math.round(Number(n)).toLocaleString('zh-CN'))
-/** 坐标轴刻度取整：把最大值向上取到 1/2/5×10^n，让刻度好看 */
+const cycleTone = (d: number | null) => (d == null ? 'var(--sub)' : d <= 30 ? '#059669' : d <= 90 ? '#a35c00' : 'var(--danger)')
 const niceMax = (v: number) => {
   if (v <= 0) return 1
-  const exp = Math.floor(Math.log10(v))
-  const base = Math.pow(10, exp)
-  const f = v / base
-  const nice = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10
-  return nice * base
+  const exp = Math.floor(Math.log10(v)); const base = Math.pow(10, exp); const f = v / base
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * base
 }
 const compact = (v: number) => (v >= 10000 ? `${Math.round(v / 1000)}k` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)))
 
-/** 金额趋势看板：曲线 + 数据点 + 刻度网格 + 悬浮提示（替代大色块柱子） */
-function TrendChart({ data, unitLabel }: { data: { key: string; label: string; usd: number; n: number }[]; unitLabel: string }) {
+/** 每个分析板块统一外壳：标题 + 说明 + 图示 + 明细 */
+function Panel({ title, hint, children, extra }: { title: string; hint?: string; children: React.ReactNode; extra?: React.ReactNode }) {
+  return (
+    <section className="card" style={{ marginTop: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <h4 style={{ margin: 0 }}>{title}</h4>
+        {hint && <span className="hint">{hint}</span>}
+        <span style={{ flex: 1 }} />
+        {extra}
+      </div>
+      <div style={{ marginTop: 10 }}>{children}</div>
+    </section>
+  )
+}
+
+/** 图文结合：左边名称、中间条形、右边数值与备注 */
+function BarList({
+  items, tone = 'blue', empty = '暂无数据',
+}: {
+  items: { key: string; label: string; value: number; text: string; note?: string; tone?: 'blue' | 'green' | 'red' }[]
+  tone?: 'blue' | 'green' | 'red'
+  empty?: string
+}) {
+  const max = Math.max(1, ...items.map((x) => x.value))
+  const color = (t: string) => (t === 'green' ? 'linear-gradient(90deg,#059669,#34d399)' : t === 'red' ? 'linear-gradient(90deg,#dc2626,#f87171)' : 'linear-gradient(90deg,#0052d9,#5b92f5)')
+  if (!items.length) return <div className="hint">{empty}</div>
+  return (
+    <div>
+      {items.map((x) => (
+        <div key={x.key} style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '6px 0' }}>
+          <span style={{ width: 190, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }} title={x.label}>{x.label}</span>
+          <div style={{ flex: 1, background: '#eef1f6', borderRadius: 5, height: 14, overflow: 'hidden', minWidth: 80 }}>
+            <div style={{ width: `${Math.max(2, Math.round((x.value / max) * 100))}%`, height: '100%', background: color(x.tone ?? tone), borderRadius: 5 }} />
+          </div>
+          <span className="mono" style={{ width: 120, textAlign: 'right', fontWeight: 700 }}>{x.text}</span>
+          <span className="hint" style={{ width: 150 }}>{x.note ?? ''}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function Kpi({ label, value, tone, note }: { label: string; value: string; tone?: string; note?: string }) {
+  return (
+    <div style={{ flex: '1 1 170px', minWidth: 170, background: '#fff', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px' }}>
+      <div className="hint">{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: tone ?? 'var(--text)' }}>{value}</div>
+      {note && <div className="hint">{note}</div>}
+    </div>
+  )
+}
+
+/** 金额趋势：平滑折线 + 刻度网格 + 数据点标注 + 悬浮提示 */
+function TrendChart({ data }: { data: { key: string; label: string; usd: number; n: number }[] }) {
   const wrap = useRef<HTMLDivElement>(null)
   const [w, setW] = useState(760)
   const [hover, setHover] = useState<number | null>(null)
@@ -40,17 +89,14 @@ function TrendChart({ data, unitLabel }: { data: { key: string; label: string; u
   const H = 230, padL = 58, padR = 18, padT = 26, padB = 36
   const innerW = Math.max(60, w - padL - padR)
   const innerH = H - padT - padB
-  const maxRaw = Math.max(...data.map((d) => d.usd), 0)
-  const top = niceMax(maxRaw)
+  const top = niceMax(Math.max(...data.map((d) => d.usd), 0))
   const step = data.length > 1 ? innerW / (data.length - 1) : 0
   const px = (i: number) => padL + (data.length > 1 ? i * step : innerW / 2)
   const py = (v: number) => padT + innerH - (v / top) * innerH
   const pts = data.map((d, i) => [px(i), py(d.usd)] as const)
-  const line = pts.map((pt, i) => (i === 0 ? `M${pt[0]},${pt[1]}` : `L${pt[0]},${pt[1]}`)).join(' ')
   const smooth = pts.reduce((acc, pt, i) => {
     if (i === 0) return `M${pt[0].toFixed(1)},${pt[1].toFixed(1)}`
-    const prev = pts[i - 1]
-    const cx = (prev[0] + pt[0]) / 2
+    const prev = pts[i - 1]; const cx = (prev[0] + pt[0]) / 2
     return `${acc} C${cx.toFixed(1)},${prev[1].toFixed(1)} ${cx.toFixed(1)},${pt[1].toFixed(1)} ${pt[0].toFixed(1)},${pt[1].toFixed(1)}`
   }, '')
   const area = `${smooth} L${pts[pts.length - 1][0].toFixed(1)},${padT + innerH} L${pts[0][0].toFixed(1)},${padT + innerH} Z`
@@ -61,7 +107,7 @@ function TrendChart({ data, unitLabel }: { data: { key: string; label: string; u
   const hv = hover != null ? data[hover] : null
   return (
     <div ref={wrap} className="trend-wrap">
-      <svg width={w} height={H} style={{ display: 'block' }} role="img" aria-label={`订单金额趋势（${unitLabel}）`}>
+      <svg width={w} height={H} style={{ display: 'block' }} role="img" aria-label="订单金额趋势">
         <defs>
           <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#0052d9" stopOpacity="0.16" />
@@ -79,8 +125,7 @@ function TrendChart({ data, unitLabel }: { data: { key: string; label: string; u
         {pts.map((pt, i) => (
           <g key={data[i].key}>
             <circle cx={pt[0]} cy={pt[1]} r={hover === i ? 6 : i === peak && data[i].usd > 0 ? 5 : 4}
-              fill={data[i].usd > 0 ? '#fff' : '#f2f4f8'}
-              stroke={i === peak && data[i].usd > 0 ? '#ef4f0b' : '#0052d9'} strokeWidth={hover === i ? 3 : 2.2} />
+              fill={data[i].usd > 0 ? '#fff' : '#f2f4f8'} stroke={i === peak && data[i].usd > 0 ? '#ef4f0b' : '#0052d9'} strokeWidth={hover === i ? 3 : 2.2} />
             {showValue && data[i].usd > 0 && (
               <text x={pt[0]} y={pt[1] - 11} textAnchor="middle" fontSize="11" fontWeight={700} fill={i === peak ? '#ef4f0b' : '#33405a'}>{compact(data[i].usd)}</text>
             )}
@@ -96,23 +141,20 @@ function TrendChart({ data, unitLabel }: { data: { key: string; label: string; u
           <div style={{ fontWeight: 700 }}>{hv.label}</div>
           <div>金额 <b>{money(hv.usd)}</b> USD</div>
           <div>订单 <b>{hv.n}</b> 单 · 占比 <b>{total ? Math.round((hv.usd / total) * 100) : 0}%</b></div>
-          {hv.usd > 0 && <div className="hint">{hv.label === data[peak].label ? '本期最高' : ''}</div>}
+          {hv.usd > 0 && hv.label === data[peak].label && <div className="hint">本期最高</div>}
         </div>
       )}
-      <div className="hint" style={{ marginTop: 2 }}>柱线含义：每个点为一期金额，橙色圈为最高期；鼠标移到点上可看金额与单数</div>
     </div>
   )
 }
-const cycleTone = (d: number | null) => (d == null ? 'var(--sub)' : d <= 30 ? '#059669' : d <= 90 ? '#a35c00' : 'var(--danger)')
 
 export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   const [sales, setSales] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [product, setProduct] = useState('')
-  // 看板口径：默认「年度」；切到「月度」时可再按年份看 12 个月的走势
-  const [trendMode, setTrendMode] = useState<'year' | 'month'>('year')
-  const [year, setYear] = useState('')
   const [rows, setRows] = useState<OrderRow[]>([]); const [stats, setStats] = useState<Stats | null>(null); const [msg, setMsg] = useState('')
   const [reasons, setReasons] = useState<ReasonData | null>(null)
-  const [reasonView, setReasonView] = useState<'win' | 'lost'>('win')
+  const [trendMode, setTrendMode] = useState<'year' | 'month'>('year')
+  const [year, setYear] = useState('')
+
   const load = useCallback(async () => {
     try {
       const p = new URLSearchParams()
@@ -124,7 +166,6 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   }, [sales, from, to, product])
   useEffect(() => { void load() }, [load])
 
-  // 有数据的年份（降序），用于「月度」口径选年
   const years = useMemo(() => {
     const s2 = new Set<string>()
     rows.forEach((r) => { const y = String(r.won_date).slice(0, 4); if (/^\d{4}$/.test(y)) s2.add(y) })
@@ -133,196 +174,176 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   const curYear = String(new Date().getFullYear())
   const activeYear = year || (years.includes(curYear) ? curYear : (years[0] ?? curYear))
 
-  // 金额趋势：年度看板（每年一根）或月度看板（选定年份的 1–12 月），均跟随上方筛选
   const trend = useMemo(() => {
     if (trendMode === 'year') {
       const m = new Map<string, { usd: number; n: number }>()
       rows.forEach((r) => {
         const k = String(r.won_date).slice(0, 4)
         if (!/^\d{4}$/.test(k)) return
-        const a = m.get(k) ?? { usd: 0, n: 0 }
-        a.usd += r.usdApprox || 0; a.n += 1
-        m.set(k, a)
+        const a = m.get(k) ?? { usd: 0, n: 0 }; a.usd += r.usdApprox || 0; a.n += 1; m.set(k, a)
       })
       return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([key, v]) => ({ key, label: `${key}年`, ...v }))
     }
     const arr = Array.from({ length: 12 }, (_, i) => ({ key: `${activeYear}-${String(i + 1).padStart(2, '0')}`, label: `${i + 1}月`, usd: 0, n: 0 }))
     rows.forEach((r) => {
-      const d = String(r.won_date)
-      if (!d.startsWith(activeYear + '-')) return
-      const i = Number(d.slice(5, 7)) - 1
+      const dd = String(r.won_date)
+      if (!dd.startsWith(activeYear + '-')) return
+      const i = Number(dd.slice(5, 7)) - 1
       if (i < 0 || i > 11) return
       arr[i].usd += r.usdApprox || 0; arr[i].n += 1
     })
     return arr
   }, [rows, trendMode, activeYear])
-  const trendSum = trend.reduce((a, b) => a + b.usd, 0)
   const trendN = trend.reduce((a, b) => a + b.n, 0)
-  // 客户 Top10
+
+  // 产品维度（含金额折USD，用于图文结合）
+  const fx = meta.fx ?? { USD: 1, CNY: 7.12, EUR: 0.92 }
+  const productRows = useMemo(() => {
+    const m = new Map<string, { count: number; usd: number; cycles: number[] }>()
+    rows.forEach((r) => {
+      (r.items || []).forEach((it) => {
+        const a = m.get(it.product_name) ?? { count: 0, usd: 0, cycles: [] }
+        a.count += 1
+        a.usd += (Number(it.amount) || 0) / (fx[it.currency] || 1)
+        if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
+        m.set(it.product_name, a)
+      })
+    })
+    return Array.from(m.entries()).map(([name, v]) => ({
+      name, count: v.count, usd: Math.round(v.usd),
+      avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
+    })).sort((a, b) => b.count - a.count || b.usd - a.usd)
+  }, [rows, fx])
+
   const topCustomers = useMemo(() => {
     const m = new Map<string, { usd: number; n: number }>()
     rows.forEach((r) => { const a = m.get(r.customer_name) ?? { usd: 0, n: 0 }; a.usd += r.usdApprox || 0; a.n += 1; m.set(r.customer_name, a) })
     return Array.from(m.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.usd - a.usd).slice(0, 10)
   }, [rows])
-  const maxCust = Math.max(1, ...topCustomers.map((c) => c.usd))
-  const card: React.CSSProperties = { flex: '1 1 170px', minWidth: 170, background: '#fff', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px' }
+
+  const sumUsd = rows.reduce((s, r) => s + (r.usdApprox || 0), 0)
+  const winSum = reasons?.win
+  const lostSum = reasons?.lost
+
   return (
-    <div className="card">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <h3 style={{ margin: 0 }}>销售订单分析</h3>
-        <span className="hint">基于已成交销售订单：金额、转化周期、产品/销售/客户维度</span>
-        <span style={{ flex: 1 }} />
-        <select className="sa" value={sales} onChange={(e) => setSales(e.target.value)}><option value="">全部销售</option>{meta.sales.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}</select>
-        <input className="sa" style={{ width: 150 }} value={product} onChange={(e) => setProduct(e.target.value)} placeholder="产品名称" />
-        <input className="sa" type="date" value={from} onChange={(e) => setFrom(e.target.value)} title="成单日期起" />
-        <input className="sa" type="date" value={to} onChange={(e) => setTo(e.target.value)} title="成单日期止" />
-        <button className="btn" onClick={() => void load()}>查询</button>
-        <button className="btn" onClick={() => { setSales(''); setFrom(''); setTo(''); setProduct('') }}>重置</button>
-      </div>
-      {msg && <div className="msg err">{msg}</div>}
-
-      {stats && (
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '10px 0' }}>
-          <div style={card}><div className="hint">销售订单数</div><div style={{ fontSize: 22, fontWeight: 800 }}>{stats.contractCount}</div></div>
-          <div style={card}><div className="hint">订单金额（折USD）</div><div style={{ fontSize: 22, fontWeight: 800, color: 'var(--brand)' }}>{money(stats.usdTotal)}</div></div>
-          <div style={card}><div className="hint">平均转化周期</div><div style={{ fontSize: 22, fontWeight: 800, color: cycleTone(stats.avgCycle) }}>{stats.avgCycle == null ? '—' : stats.avgCycle + ' 天'}</div></div>
-          <div style={card}><div className="hint">中位转化周期</div><div style={{ fontSize: 22, fontWeight: 800 }}>{stats.medianCycle == null ? '—' : stats.medianCycle + ' 天'}</div></div>
-          <div style={card}><div className="hint">最短 ~ 最长</div><div style={{ fontSize: 22, fontWeight: 800 }}>{stats.minCycle == null ? '—' : `${stats.minCycle} ~ ${stats.maxCycle} 天`}</div></div>
+    <>
+      <section className="card">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <h3 style={{ margin: 0 }}>销售订单分析</h3>
+          <span className="hint">基于已成交销售订单：金额、转化周期、产品/销售/客户与成交·丢单原因</span>
+          <span style={{ flex: 1 }} />
+          <select className="sa" value={sales} onChange={(e) => setSales(e.target.value)}><option value="">全部销售</option>{meta.sales.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}</select>
+          <input className="sa" style={{ width: 150 }} value={product} onChange={(e) => setProduct(e.target.value)} placeholder="产品名称" />
+          <input className="sa" type="date" value={from} onChange={(e) => setFrom(e.target.value)} title="成单/丢单日期起" />
+          <input className="sa" type="date" value={to} onChange={(e) => setTo(e.target.value)} title="成单/丢单日期止" />
+          <button className="btn" onClick={() => void load()}>查询</button>
+          <button className="btn" onClick={() => { setSales(''); setFrom(''); setTo(''); setProduct('') }}>重置</button>
         </div>
+        {msg && <div className="msg err">{msg}</div>}
+      </section>
+
+      {/* 板块 1：总体概览 */}
+      {stats && (
+        <Panel title="总体概览" hint="当前筛选范围内的成交情况">
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <Kpi label="销售订单数" value={`${stats.contractCount} 单`} />
+            <Kpi label="订单金额（折USD）" value={money(stats.usdTotal)} tone="var(--brand)" note={`平均单值 ${stats.contractCount ? money(stats.usdTotal / stats.contractCount) : '—'} USD`} />
+            <Kpi label="平均转化周期" value={stats.avgCycle == null ? '—' : `${stats.avgCycle} 天`} tone={cycleTone(stats.avgCycle)} note="询价日期 → 成单日期" />
+            <Kpi label="中位转化周期" value={stats.medianCycle == null ? '—' : `${stats.medianCycle} 天`} note={stats.minCycle == null ? '' : `最短 ${stats.minCycle} 天 / 最长 ${stats.maxCycle} 天`} />
+            <Kpi label="成交原因已填" value={winSum ? `${winSum.total - winSum.missing} / ${winSum.total}` : '—'} tone={winSum && winSum.missing > 0 ? '#a35c00' : '#059669'} note="用于成交原因分析" />
+          </div>
+        </Panel>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '12px 0 6px' }}>
-        <h4 style={{ margin: 0 }}>订单金额趋势（折USD）</h4>
-        <span className="seg">
-          <button className={trendMode === 'year' ? 'on' : ''} onClick={() => setTrendMode('year')}>年度看板</button>
-          <button className={trendMode === 'month' ? 'on' : ''} onClick={() => setTrendMode('month')}>月度看板</button>
-        </span>
-        {trendMode === 'month' && (
-          <select className="sa" style={{ width: 120 }} value={activeYear} onChange={(e) => setYear(e.target.value)}>
-            {(years.length ? years : [curYear]).map((y) => <option key={y} value={y}>{y} 年</option>)}
-          </select>
-        )}
-        <span className="hint">
-          {trendMode === 'year'
-            ? `按年汇总（跟随上方筛选）：合计 ≈USD ${money(trendSum)} · ${trendN} 单`
-            : `${activeYear} 年各月（跟随上方筛选）：合计 ≈USD ${money(trendSum)} · ${trendN} 单`}
-        </span>
-      </div>
-      {trend.length && trendN > 0
-        ? <TrendChart data={trend} unitLabel={trendMode === 'year' ? '按年' : `${activeYear} 年按月`} />
-        : <div className="hint">暂无数据</div>}
-
-      {stats && (
-        <div className="dash-cols2" style={{ marginTop: 14 }}>
-          <div>
-            <h4 style={{ margin: '0 0 6px' }}>按产品：成单次数与转化周期</h4>
-            <div className="tablewrap" style={{ overflowX: 'auto' }}>
-              <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                <thead><tr>{['产品', '成单次数', '平均周期'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: 6, textAlign: 'left', borderBottom: '1px solid var(--line)' }}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {stats.byProduct.map((p) => <tr key={p.name} style={{ borderBottom: '1px solid var(--line2)' }}><td style={{ padding: 6 }}>{p.name}</td><td style={{ padding: 6 }}>{p.count}</td><td style={{ padding: 6, color: cycleTone(p.avgCycle), fontWeight: 700 }}>{p.avgCycle} 天</td></tr>)}
-                  {stats.byProduct.length === 0 && <tr><td colSpan={3} className="hint" style={{ padding: 12, textAlign: 'center' }}>暂无数据</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <div>
-            <h4 style={{ margin: '0 0 6px' }}>按销售：成单次数与转化周期</h4>
-            <div className="tablewrap" style={{ overflowX: 'auto' }}>
-              <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                <thead><tr>{['销售', '成单次数', '平均周期'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: 6, textAlign: 'left', borderBottom: '1px solid var(--line)' }}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {stats.bySales.map((p) => <tr key={p.name} style={{ borderBottom: '1px solid var(--line2)' }}><td style={{ padding: 6 }}>{p.name || '—'}</td><td style={{ padding: 6 }}>{p.count}</td><td style={{ padding: 6, color: cycleTone(p.avgCycle), fontWeight: 700 }}>{p.avgCycle} 天</td></tr>)}
-                  {stats.bySales.length === 0 && <tr><td colSpan={3} className="hint" style={{ padding: 12, textAlign: 'center' }}>暂无数据</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '16px 0 6px' }}>
-        <h4 style={{ margin: 0 }}>原因分析</h4>
-        <span className="seg">
-          <button className={reasonView === 'win' ? 'on' : ''} onClick={() => setReasonView('win')}>成交原因分析</button>
-          <button className={reasonView === 'lost' ? 'on' : ''} onClick={() => setReasonView('lost')}>丢单原因分析</button>
-        </span>
-        <span className="hint">{reasonView === 'win' ? '来源：销售订单里填写的「成交原因」（成单日期口径，跟随上方筛选）' : '来源：标记「未成单」时填写的丢单原因（丢单日期口径，跟随上方筛选）'}</span>
-      </div>
-      {(() => {
-        const st = reasonView === 'win' ? reasons?.win : reasons?.lost
-        if (!st) return <div className="hint">暂无数据</div>
-        const label = reasonView === 'win' ? '成交' : '丢单'
-        const maxUsd = Math.max(1, ...st.items.map((x) => x.usd))
-        return (
+      {/* 板块 2：金额趋势 */}
+      <Panel
+        title="订单金额趋势（折USD）"
+        hint={trendMode === 'year' ? `按年汇总：合计 ≈USD ${money(trend.reduce((a, b) => a + b.usd, 0))} · ${trendN} 单` : `${activeYear} 年各月：合计 ≈USD ${money(trend.reduce((a, b) => a + b.usd, 0))} · ${trendN} 单`}
+        extra={(
           <>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
-              <div style={card}><div className="hint">{label}单数</div><div style={{ fontSize: 22, fontWeight: 800 }}>{st.total}</div></div>
-              <div style={card}><div className="hint">{label}金额（折USD）</div><div style={{ fontSize: 22, fontWeight: 800, color: reasonView === 'win' ? '#059669' : 'var(--danger)' }}>{money(st.usdTotal)}</div></div>
-              <div style={card}><div className="hint">原因种类</div><div style={{ fontSize: 22, fontWeight: 800 }}>{st.items.filter((x) => x.reason !== '未填写').length}</div></div>
-              <div style={card}><div className="hint">未填写原因</div><div style={{ fontSize: 22, fontWeight: 800, color: st.missing ? '#a35c00' : 'var(--sub)' }}>{st.missing}</div></div>
-            </div>
-            <div className="tablewrap" style={{ overflowX: 'auto' }}>
-              <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                <thead><tr>{(reasonView === 'win'
-                  ? ['成交原因', '订单数', '占比', '金额（折USD）', '金额占比', '平均转化周期']
-                  : ['丢单原因', '丢单数', '占比', '丢单金额（折USD）', '金额占比', '平均丢单周期']).map((h) => <th key={h} style={{ background: '#f8fafd', padding: 6, textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {st.items.map((x) => (
-                    <tr key={x.reason} style={{ borderBottom: '1px solid var(--line2)' }}>
-                      <td style={{ padding: 6, fontWeight: x.reason === '未填写' ? 400 : 600, color: x.reason === '未填写' ? 'var(--sub)' : 'var(--text)' }}>
-                        {reasonView === 'lost' && x.reason !== '未填写' ? <span className="tag lost" style={{ marginRight: 6 }}>丢单</span> : null}{x.reason}
-                      </td>
-                      <td style={{ padding: 6 }}>{x.count}</td>
-                      <td style={{ padding: 6, minWidth: 150 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <div style={{ flex: 1, background: '#eef1f6', borderRadius: 4, height: 10, overflow: 'hidden', minWidth: 60 }}>
-                            <div style={{ width: `${Math.max(2, Math.round((x.count / Math.max(1, st.total)) * 100))}%`, height: '100%', background: reasonView === 'win' ? 'linear-gradient(90deg,#059669,#34d399)' : 'linear-gradient(90deg,#dc2626,#f87171)' }} />
-                          </div>
-                          <span className="mono" style={{ width: 46, textAlign: 'right' }}>{x.share}%</span>
-                        </div>
-                      </td>
-                      <td className="mono" style={{ padding: 6 }} title={`占金额 ${x.usdShare}%`}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ width: 66, textAlign: 'right' }}>{money(x.usd)}</span>
-                          <div style={{ flex: 1, background: '#eef1f6', borderRadius: 4, height: 10, overflow: 'hidden', minWidth: 50 }}>
-                            <div style={{ width: `${Math.max(2, Math.round((x.usd / maxUsd) * 100))}%`, height: '100%', background: 'linear-gradient(90deg,#0052d9,#5b92f5)' }} />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="mono" style={{ padding: 6 }}>{x.usdShare}%</td>
-                      <td style={{ padding: 6, color: cycleTone(x.avgCycle), fontWeight: 700 }}>{x.avgCycle == null ? '—' : `${x.avgCycle} 天`}</td>
-                    </tr>
-                  ))}
-                  {st.items.length === 0 && <tr><td colSpan={6} className="hint" style={{ padding: 12, textAlign: 'center' }}>暂无数据</td></tr>}
-                </tbody>
-              </table>
-            </div>
-            {reasonView === 'win' && st.missing > 0 && (
-              <div className="hint" style={{ marginTop: 6 }}>有 {st.missing} 笔订单还没填成交原因：到「询报价管理 → 编辑 → 销售订单」或「销售订单管理 → 编辑」里补填后，这里会立即统计。</div>
-            )}
-            {reasonView === 'lost' && st.total === 0 && (
-              <div className="hint" style={{ marginTop: 6 }}>还没有「未成单」记录：在「询报价管理 → 编辑」里勾选「标记为未成单（丢单）」并选择原因即可。</div>
+            <span className="seg">
+              <button className={trendMode === 'year' ? 'on' : ''} onClick={() => setTrendMode('year')}>年度看板</button>
+              <button className={trendMode === 'month' ? 'on' : ''} onClick={() => setTrendMode('month')}>月度看板</button>
+            </span>
+            {trendMode === 'month' && (
+              <select className="sa" style={{ width: 110 }} value={activeYear} onChange={(e) => setYear(e.target.value)}>
+                {(years.length ? years : [curYear]).map((y) => <option key={y} value={y}>{y} 年</option>)}
+              </select>
             )}
           </>
-        )
-      })()}
+        )}
+      >
+        {trend.length && trendN > 0 ? <TrendChart data={trend} /> : <div className="hint">暂无数据</div>}
+      </Panel>
 
-      <h4 style={{ margin: '14px 0 6px' }}>客户 Top10（按订单金额折USD）</h4>
-      <div style={{ maxWidth: 860 }}>
-        {topCustomers.map((c, i) => (
-          <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' }}>
-            <span className="mini" style={{ width: 20, textAlign: 'right' }}>{i + 1}</span>
-            <span style={{ width: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={c.name}>{c.name}</span>
-            <div style={{ flex: 1, background: '#eef1f6', borderRadius: 4, height: 12, overflow: 'hidden' }}>
-              <div style={{ width: `${Math.round((c.usd / maxCust) * 100)}%`, height: '100%', background: 'linear-gradient(90deg,#0052d9,#5b92f5)' }} />
-            </div>
-            <span className="mono" style={{ width: 110, textAlign: 'right' }}>{money(c.usd)} USD</span>
-            <span className="hint" style={{ width: 60 }}>{c.n} 单</span>
-          </div>
-        ))}
-        {topCustomers.length === 0 && <div className="hint">暂无数据</div>}
-      </div>
-    </div>
+      {/* 板块 3：按产品 */}
+      <Panel title="按产品" hint={`共 ${productRows.length} 个产品 · 合计成单 ${productRows.reduce((a, b) => a + b.count, 0)} 次`}>
+        <BarList
+          items={productRows.slice(0, 12).map((p) => ({
+            key: p.name, label: p.name, value: p.count, text: `${p.count} 次`, note: `${money(p.usd)} USD · 平均 ${p.avgCycle == null ? '—' : `${p.avgCycle} 天`}`,
+          }))}
+          tone="blue"
+          empty="暂无成单产品"
+        />
+        {productRows.length > 12 && <div className="hint" style={{ marginTop: 4 }}>仅显示前 12 个产品</div>}
+      </Panel>
+
+      {/* 板块 4：按销售 */}
+      <Panel title="按销售" hint="成单次数与平均转化周期">
+        <BarList
+          items={(stats?.bySales ?? []).map((p) => ({
+            key: p.name || '—', label: p.name || '未指定', value: p.count, text: `${p.count} 单`, note: `平均 ${p.avgCycle} 天`,
+          }))}
+          tone="blue"
+          empty="暂无成单销售"
+        />
+      </Panel>
+
+      {/* 板块 5：成交原因分析 */}
+      <Panel
+        title="成交原因分析"
+        hint="来源：销售订单里填写的「成交原因」（按成单日期，跟随上方筛选）"
+        extra={winSum && winSum.missing > 0 ? <span className="hint" style={{ color: '#a35c00' }}>有 {winSum.missing} 笔订单未填写成交原因</span> : undefined}
+      >
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+          <Kpi label="成交单数" value={`${winSum?.total ?? 0} 单`} tone="#059669" />
+          <Kpi label="成交金额（折USD）" value={money(winSum?.usdTotal ?? 0)} tone="#059669" />
+          <Kpi label="原因种类" value={`${winSum?.items.filter((x) => x.reason !== '未填写').length ?? 0} 类`} />
+        </div>
+        <BarList
+          items={(winSum?.items ?? []).map((x) => ({
+            key: x.reason, label: x.reason, value: x.count, tone: x.reason === '未填写' ? 'blue' : 'green',
+            text: `${x.count} 单 · ${x.share}%`, note: `${money(x.usd)} USD（${x.usdShare}%）· 平均 ${x.avgCycle == null ? '—' : `${x.avgCycle} 天`}`,
+          }))}
+          empty="暂无成交原因数据（生成或编辑销售订单时填写成交原因即可）"
+        />
+      </Panel>
+
+      {/* 板块 6：丢单原因分析 */}
+      <Panel title="丢单原因分析" hint="来源：标记「未成单」时填写的丢单原因（按丢单日期，跟随上方筛选）">
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+          <Kpi label="丢单单数" value={`${lostSum?.total ?? 0} 单`} tone="var(--danger)" />
+          <Kpi label="丢单金额（折USD）" value={money(lostSum?.usdTotal ?? 0)} tone="var(--danger)" note="按询价报价合计折算" />
+          <Kpi label="原因种类" value={`${lostSum?.items.filter((x) => x.reason !== '未填写').length ?? 0} 类`} />
+          <Kpi label="丢单 / 成交 金额比" value={winSum && winSum.usdTotal > 0 && lostSum ? `${Math.round((lostSum.usdTotal / winSum.usdTotal) * 100)}%` : '—'} note="丢单金额 ÷ 成交金额" />
+        </div>
+        <BarList
+          items={(lostSum?.items ?? []).map((x) => ({
+            key: x.reason, label: x.reason, value: x.count, tone: 'red',
+            text: `${x.count} 单 · ${x.share}%`, note: `${money(x.usd)} USD（${x.usdShare}%）· 平均 ${x.avgCycle == null ? '—' : `${x.avgCycle} 天`}`,
+          }))}
+          empty="暂无丢单记录（在「询报价管理 → 编辑」里勾选「标记为未成单（丢单）」并选择原因）"
+        />
+      </Panel>
+
+      {/* 板块 7：客户 Top10 */}
+      <Panel title="客户 Top10" hint={`按订单金额折USD排序 · 合计 ${money(sumUsd)} USD`}>
+        <BarList
+          items={topCustomers.map((c) => ({ key: c.name, label: c.name, value: c.usd, text: `${money(c.usd)} USD`, note: `${c.n} 单 · 占 ${sumUsd ? Math.round((c.usd / sumUsd) * 100) : 0}%` }))}
+          tone="blue"
+          empty="暂无数据"
+        />
+      </Panel>
+    </>
   )
 }
