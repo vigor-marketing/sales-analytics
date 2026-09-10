@@ -25,7 +25,12 @@ const money = (n: number | null | undefined) => (n == null ? '—' : Math.round(
 const DEFAULT_METHODS = ['电话', '邮件', '微信', '拜访', '展会', '其他']
 const today = () => new Date().toISOString().slice(0, 10)
 
-export default function FollowUps({ meta, target }: { meta: MetaLite; target?: { sales: string; no: string } | null }) {
+export default function FollowUps({ meta, target, resetSignal, onDetailChange }: {
+  meta: MetaLite
+  target?: { sales: string; no: string } | null
+  resetSignal?: number
+  onDetailChange?: (open: boolean) => void
+}) {
   const methods = meta.methods?.length ? meta.methods : DEFAULT_METHODS
   const [sales, setSales] = useState('')
   const [no, setNo] = useState('')
@@ -45,6 +50,15 @@ export default function FollowUps({ meta, target }: { meta: MetaLite; target?: {
   const [options, setOptions] = useState<{ id: string; inquiry_no: string; customer_name: string; date: string }[]>([])
   const [optLoading, setOptLoading] = useState(false)
   const [busy, setBusy] = useState(false)
+
+  // 详情打开状态上报（用于页面右上角显示「返回询报价跟进」）
+  useEffect(() => { onDetailChange?.(Boolean(hit)) }, [hit, onDetailChange])
+  // 页面右上角点了「返回询报价跟进」：退出详情回到列表
+  useEffect(() => {
+    if (!resetSignal) return
+    setNo(''); setHit(null); setLookErr('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [resetSignal])
 
   // 进入跟进（仪表盘跳转 / 点击跟进记录行）时保留已选询价，仅手动切换销售才清空
   const keepNoRef = useRef(false)

@@ -120,9 +120,13 @@ export default function App() {
   const [page, setPage] = useState<PageKey>(() => initialPage())
   // 仪表盘「去跟进」：跳到跟进页并带出该询价
   const [followTarget, setFollowTarget] = useState<{ sales: string; no: string } | null>(null)
+  // 跟进详情是否打开 + 关闭信号（用于页面右上角「返回询报价跟进」）
+  const [followDetailOpen, setFollowDetailOpen] = useState(false)
+  const [followReset, setFollowReset] = useState(0)
   // 页面访问历史：让子页面能「返回上一页」
   const [pageHist, setPageHist] = useState<PageKey[]>([])
   const navTo = useCallback((k: PageKey) => {
+    setFollowDetailOpen(false)
     setPage((cur) => { if (k !== cur) setPageHist((h) => [...h.slice(-9), cur]); return k })
   }, [])
   const goBack = useCallback(() => {
@@ -230,13 +234,17 @@ export default function App() {
   }
 
   if (page !== 'entry') return (
-    <Shell page={page} onNav={navTo} headRight={pageHist.length && page === 'followups' ? (
-      <button className="btn sm" onClick={goBack} title="返回上一级页面">← 返回 {TITLES[pageHist[pageHist.length - 1]]}</button>
+    <Shell page={page} onNav={navTo} headRight={page === 'followups' ? (
+      followDetailOpen
+        ? <button className="btn sm" onClick={() => setFollowReset((n) => n + 1)} title="退出当前询价详情，返回跟进列表">← 返回询报价跟进</button>
+        : (pageHist.length
+          ? <button className="btn sm" onClick={goBack} title="返回上一级页面">← 返回 {TITLES[pageHist[pageHist.length - 1]]}</button>
+          : undefined)
     ) : undefined}>
       {page === 'manage' && <InquiryManager meta={meta} />}
       {page === 'dashboard' && <Dashboard onGoFollow={(t) => { setFollowTarget(t); navTo('followups') }} />}
       {page === 'followups' && (
-        <FollowUps meta={meta} target={followTarget} />
+        <FollowUps meta={meta} target={followTarget} resetSignal={followReset} onDetailChange={setFollowDetailOpen} />
       )}
       {page === 'contracts' && <Contracts meta={meta} />}
       {page === 'contractsAnalysis' && <ContractsAnalysis meta={meta} />}
