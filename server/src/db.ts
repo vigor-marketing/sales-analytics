@@ -59,6 +59,9 @@ export function schema(): void {
       last_amount REAL, last_qty REAL, use_count INTEGER NOT NULL DEFAULT 0,
       last_used_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       UNIQUE(name COLLATE NOCASE));
+    CREATE TABLE IF NOT EXISTS followup_comments (
+      id TEXT PRIMARY KEY, followup_id TEXT NOT NULL, content TEXT NOT NULL,
+      by_name TEXT, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS product_prices (
       id TEXT PRIMARY KEY, product_name TEXT NOT NULL, currency TEXT NOT NULL DEFAULT 'USD',
       amount REAL, qty REAL, prev_amount REAL, prev_qty REAL, prev_currency TEXT,
@@ -97,6 +100,12 @@ export function schema(): void {
   try { db.exec('ALTER TABLE inquiries ADD COLUMN is_lost INTEGER NOT NULL DEFAULT 0') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN lost_reason TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN lost_date TEXT') } catch { /* 已存在 */ }
+  // 跟进评论表（旧库补建）
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS followup_comments (
+      id TEXT PRIMARY KEY, followup_id TEXT NOT NULL, content TEXT NOT NULL,
+      by_name TEXT, created_at TEXT NOT NULL)`)
+  } catch { /* 已存在 */ }
   // 产品价格变动记录表（旧库补建）
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS product_prices (

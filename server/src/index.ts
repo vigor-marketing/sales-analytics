@@ -391,10 +391,33 @@ app.get('/api/followups', (req, res) => {
   const rows = d.prepare(`SELECT f.*, i.inquiry_no, i.sales, i.is_key_customer, i.is_key_project, c.name AS customer_name FROM followups f
     JOIN inquiries i ON i.id = f.inquiry_id LEFT JOIN customers c ON c.id = i.customer_id
     WHERE ${parts.join(' AND ')} ORDER BY f.date DESC, f.created_at DESC LIMIT 300`).all(...args) as Record<string, unknown>[]
+  // 跟进评论（跟进指导）：一次性取出并挂到对应记录上
+  const ids = rows.map((r) => text(r.id))
+  const comments = new Map<string, { id: string; content: string; by_name: string | null; created_at: string }[]>()
+  if (ids.length) {
+    const marks = ids.map(() => '?').join(',')
+    const cs = d.prepare(`SELECT id, followup_id, content, by_name, created_at FROM followup_comments WHERE followup_id IN (${marks}) ORDER BY created_at ASC`).all(...ids) as
+      { id: string; followup_id: string; content: string; by_name: string | null; created_at: string }[]
+    cs.forEach((c) => { const a = comments.get(c.followup_id) ?? []; a.push({ id: c.id, content: c.content, by_name: c.by_name, created_at: c.created_at }); comments.set(c.followup_id, a) })
+  }
   ok(res, rows.map((r) => {
     const parse = (v: unknown) => { try { const a = JSON.parse(str(v)); return Array.isArray(a) ? a : [] } catch { return [] } }
-    return { ...r, photos: parse(r.photos), attachments: parse(r.attachments) }
+    return { ...r, photos: parse(r.photos), attachments: parse(r.attachments), comments: comments.get(text(r.id)) ?? [] }
   }))
+})
+
+// —— 跟进评论：对某条跟进记录做指导/批注 ——
+app.post('/api/followups/:id/comments', (req, res) => {
+  const d = getDb()
+  const fid = str(req.params.id)
+  const f = d.prepare('SELECT id, inquiry_id, by_name FROM followups WHERE id = ?').get(fid) as { id: string; inquiry_id: string; by_name: string | null } | undefined
+  if (!f) return fail(res, '跟进记录不存在', 404)
+  const content = text(req.body?.content)
+  if (!content) return fail(res, '请填写评论内容')
+  const byName = str(req.body?.byName) || null
+  const cid = newId(); const t = nowIso()
+  d.prepare('INSERT INTO followup_comments (id, followup_id, content, by_name, created_at) VALUES (?, ?, ?, ?, ?)').run(cid, fid, content, byName, t)
+  ok(res, { id: cid, followupId: fid, content, byName, createdAt: t }, 201)
 })
 app.post('/api/followups', (req, res) => {
   const d = getDb()
