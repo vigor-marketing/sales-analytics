@@ -3,7 +3,7 @@ import { del, get, put } from './api'
 import { COUNTRIES } from './countries'
 
 interface TotalItem { currency: string; total: number }
-interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number }
+interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number }
 interface Detail extends Row { items: { product_name: string; qty: number | null; amount: number; currency: string }[] }
 interface MetaLite { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[] }
 
@@ -14,6 +14,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
   const [q, setQ] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState('')
   const [sales, setSales] = useState(''); const [pur, setPur] = useState(''); const [src, setSrc] = useState('')
   const [rows, setRows] = useState<Row[]>([]); const [total, setTotal] = useState(0)
+  const [sum, setSum] = useState<{ usdTotal: number; wonCount: number; winRate: number; wonUsd: number }>({ usdTotal: 0, wonCount: 0, winRate: 0, wonUsd: 0 })
   const [msg, setMsg] = useState(''); const [busy, setBusy] = useState(false)
   const [viewId, setViewId] = useState<string | null>(null)
   const [editId, setEditId] = useState<string | null>(null)
@@ -24,9 +25,9 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
       if (q) p.set('q', q); if (from) p.set('from', from); if (to) p.set('to', to)
       if (sales) p.set('sales', sales); if (pur) p.set('purchaser', pur); if (src) p.set('source', src)
       const url = `/inquiries?${p.toString()}`
-      const d = await get<{ rows: Row[]; meta: { total: number } }>(url)
+      const d = await get<{ rows: Row[]; meta: { total: number; usdTotal: number; wonCount: number; winRate: number; wonUsd: number } }>(url)
       if (!d || !d.rows) throw new Error(`接口 ${url} 返回异常：${JSON.stringify(d)}`)
-      setRows(d.rows); setTotal(d.meta.total)
+      setRows(d.rows); setTotal(d.meta.total); setSum({ usdTotal: d.meta.usdTotal ?? 0, wonCount: d.meta.wonCount ?? 0, winRate: d.meta.winRate ?? 0, wonUsd: d.meta.wonUsd ?? 0 })
     } catch (e) { setMsg('加载失败：' + (e as Error).message) }
   }, [q, from, to, sales, pur, src])
   useEffect(() => { void load() }, [load])
@@ -41,7 +42,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
     <div className="card">
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 style={{ margin: 0 }}>合同·询报价管理</h3>
-        <span className="hint">命中 {total} 条 · 折USD合计 ≈ {money(sumUsd)}</span>
+        <span className="hint">命中 {total} 条 · 累计金额 ≈USD {money(sum.usdTotal)} · 成单 {sum.wonCount} 条（{money(sum.wonUsd)} USD）· 成交率 {sum.winRate}%</span>
       </header>
       {msg && <div className="msg ok">{msg}</div>}
       <div className="row" style={{ margin: '10px 0' }}>
@@ -89,11 +90,12 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
   )
 }
 
-function TagBlocks({ r }: { r: { is_key_customer?: number; is_key_project?: number } }) {
-  const kc = Number(r.is_key_customer) === 1, kp = Number(r.is_key_project) === 1
-  if (!kc && !kp) return <span className="hint">—</span>
+function TagBlocks({ r }: { r: { is_key_customer?: number; is_key_project?: number; is_won?: number } }) {
+  const kc = Number(r.is_key_customer) === 1, kp = Number(r.is_key_project) === 1, won = Number(r.is_won) === 1
+  if (!kc && !kp && !won) return <span className="hint">—</span>
   return (
     <>
+      {won && <span className="tag won">已成单</span>}
       {kc && <span className="tag kc">重点客户</span>}
       {kp && <span className="tag kp">重点项目</span>}
     </>
@@ -114,7 +116,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
         {d && (
           <>
             <div className="meta" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', margin: '10px 0', fontSize: 13 }}>
-              <span>日期 <b>{d.date}</b></span><span>标签 <b><TagBlocks r={d} /></b></span><span>国别 <b>{d.country || '—'}</b></span><span>使用地 <b>{d.use_location || '—'}</b></span>
+              <span>日期 <b>{d.date}</b></span><span>状态 <b>{Number(d.is_won) === 1 ? <span className="tag won">已成单</span> : <span className="hint">跟进中</span>}</b></span><span>标签 <b><TagBlocks r={d} /></b></span><span>国别 <b>{d.country || '—'}</b></span><span>使用地 <b>{d.use_location || '—'}</b></span>
               <span>销售 <b>{d.sales}</b></span><span>采购 <b>{d.purchaser}</b></span><span>来源 <b>{d.source}</b></span>
               <span>行数 <b>{d.itemCount ?? (d.items || []).length}</b></span>
               <span>报价合计 <b>{(d.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ')}</b></span>
@@ -136,9 +138,9 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
 
 function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onClose, onSaved }: { id: string; meta?: MetaLite; onClose: () => void; onSaved: () => void }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
-  const [form, setForm] = useState<{ inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; note: string; keyCust: boolean; keyProj: boolean; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
+  const [form, setForm] = useState<{ inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; note: string; keyCust: boolean; keyProj: boolean; won: boolean; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
   const set = (patch: Partial<typeof form>) => setForm((f) => (f ? { ...f, ...patch } : f))
-  useEffect(() => { get<Detail>(`/inquiries/${id}`).then((d) => setForm({ inquiryNo: d.inquiry_no, customerName: d.customer_name, date: d.date, country: d.country || '', useLoc: d.use_location || '', sales: d.sales, purchaser: d.purchaser, source: d.source, handTotal: d.hand_total == null ? '' : String(d.hand_total), note: d.note || '', keyCust: Number(d.is_key_customer) === 1, keyProj: Number(d.is_key_project) === 1, items: (d.items || []).map((it) => ({ productName: it.product_name, qty: it.qty == null ? '' : String(it.qty), amount: String(it.amount), currency: it.currency })) })).catch((e) => setErr((e as Error).message)) }, [id])
+  useEffect(() => { get<Detail>(`/inquiries/${id}`).then((d) => setForm({ inquiryNo: d.inquiry_no, customerName: d.customer_name, date: d.date, country: d.country || '', useLoc: d.use_location || '', sales: d.sales, purchaser: d.purchaser, source: d.source, handTotal: d.hand_total == null ? '' : String(d.hand_total), note: d.note || '', keyCust: Number(d.is_key_customer) === 1, keyProj: Number(d.is_key_project) === 1, won: Number(d.is_won) === 1, items: (d.items || []).map((it) => ({ productName: it.product_name, qty: it.qty == null ? '' : String(it.qty), amount: String(it.amount), currency: it.currency })) })).catch((e) => setErr((e as Error).message)) }, [id])
   const save = async () => {
     if (!form) return
     if (!form.items.some((it) => it.productName.trim() && Number(it.amount) > 0)) return setErr('至少一行有效产品')
@@ -147,7 +149,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
       await put(`/inquiries/${id}`, {
         date: form.date, country: form.country, useLocation: form.useLoc || form.country, sales: form.sales, purchaser: form.purchaser, source: form.source,
         totalAmount: form.handTotal ? Number(form.handTotal) : undefined, note: form.note,
-        isKeyCustomer: form.keyCust, isKeyProject: form.keyProj,
+        isKeyCustomer: form.keyCust, isKeyProject: form.keyProj, isWon: form.won,
         items: form.items.filter((it) => it.productName.trim() && Number(it.amount) > 0).map((it) => ({ productName: it.productName.trim(), qty: it.qty ? Number(it.qty) : undefined, amount: Number(it.amount), currency: it.currency })),
       })
       onSaved()
@@ -190,6 +192,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
             ))}
             <button className="btn sm" onClick={() => set({ items: [...form.items, { productName: '', qty: '', amount: '', currency: 'USD' }] })}>＋ 添加产品</button>
             <div className="row" style={{ alignItems: 'center', gap: 18 }}>
+              <label className="chk"><input type="checkbox" checked={form.won} onChange={(e) => set({ won: e.target.checked })} /> <span className="tag won">已成单</span></label>
               <label className="chk"><input type="checkbox" checked={form.keyCust} onChange={(e) => set({ keyCust: e.target.checked })} /> <span className="tag kc">重点客户</span></label>
               <label className="chk"><input type="checkbox" checked={form.keyProj} onChange={(e) => set({ keyProj: e.target.checked })} /> <span className="tag kp">重点项目</span></label>
             </div>

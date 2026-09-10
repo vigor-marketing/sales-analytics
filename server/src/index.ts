@@ -34,10 +34,11 @@ app.get('/api/customers', (req, res) => {
     ? d.prepare('SELECT id, name, country, use_location, source, created_at, updated_at FROM customers WHERE name LIKE ? OR country LIKE ? ORDER BY updated_at DESC LIMIT 500').all(like, like)
     : d.prepare('SELECT id, name, country, use_location, source, created_at, updated_at FROM customers ORDER BY updated_at DESC LIMIT 500').all()) as Record<string, unknown>[]
   const out = rows.map((c) => {
-    const inqs = d.prepare('SELECT id, date, is_key_customer, is_key_project, (SELECT COALESCE(SUM(amount),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw FROM inquiries i WHERE i.customer_id = ? ORDER BY date DESC').all(c.id) as { id: string; date: string; is_key_customer: number; is_key_project: number; raw: number }[]
+    const inqs = d.prepare('SELECT id, date, is_key_customer, is_key_project, is_won, (SELECT COALESCE(SUM(amount),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw FROM inquiries i WHERE i.customer_id = ? ORDER BY date DESC').all(c.id) as { id: string; date: string; is_key_customer: number; is_key_project: number; is_won: number; raw: number }[]
     let usd = 0
     inqs.forEach((i) => { const totals = d.prepare('SELECT currency, COALESCE(SUM(amount),0) AS t FROM inquiry_items WHERE inquiry_id = ? GROUP BY currency').all(i.id) as { currency: string; t: number }[]; totals.forEach((x) => { usd += (x.t || 0) / (FX2[x.currency] || 1) }) })
-    return { ...c, inquiryCount: inqs.length, lastDate: inqs[0]?.date ?? null, usdTotal: Math.round(usd), keyCustomer: inqs.some((i) => Number(i.is_key_customer) === 1) ? 1 : 0, keyProjectCount: inqs.filter((i) => Number(i.is_key_project) === 1).length }
+    const won = inqs.filter((i) => Number((i as Record<string, unknown>).is_won) === 1)
+    return { ...c, inquiryCount: inqs.length, lastDate: inqs[0]?.date ?? null, usdTotal: Math.round(usd), wonCount: won.length, winRate: inqs.length ? Math.round((won.length / inqs.length) * 1000) / 10 : 0, keyCustomer: inqs.some((i) => Number(i.is_key_customer) === 1) ? 1 : 0, keyProjectCount: inqs.filter((i) => Number(i.is_key_project) === 1).length }
   })
   ok(res, out)
 })
@@ -52,7 +53,8 @@ app.get('/api/customers/:id', (req, res) => {
     const usd = totals.reduce((s, x) => s + x.total / (FX2[x.currency] || 1), 0)
     return { ...i, itemCount: items.length, totals, usdApprox: Math.round(usd) }
   })
-  ok(res, { ...c, inquiries: list, summary: { inquiryCount: list.length, usdTotal: Math.round(list.reduce((s, x) => s + (x.usdApprox || 0), 0)), keyProjectCount: list.filter((x) => Number((x as Record<string, unknown>).is_key_project) === 1).length } })
+  const wonList = list.filter((x) => Number((x as Record<string, unknown>).is_won) === 1)
+  ok(res, { ...c, inquiries: list, summary: { inquiryCount: list.length, usdTotal: Math.round(list.reduce((s, x) => s + (x.usdApprox || 0), 0)), wonCount: wonList.length, winRate: list.length ? Math.round((wonList.length / list.length) * 1000) / 10 : 0, wonUsd: Math.round(wonList.reduce((s, x) => s + (x.usdApprox || 0), 0)), keyProjectCount: list.filter((x) => Number((x as Record<string, unknown>).is_key_project) === 1).length } })
 })
 
 // —— 询价号唯一性检查 ——
@@ -110,6 +112,7 @@ app.post('/api/inquiries', (req, res) => {
   const note = text(req.body?.note) || null
   const keyCust = req.body?.isKeyCustomer ? 1 : 0
   const keyProj = req.body?.isKeyProject ? 1 : 0
+  const isWon = req.body?.isWon ? 1 : 0
   const items = (Array.isArray(req.body?.items) ? (req.body.items as unknown[]) : []) as { productName?: unknown; qty?: unknown; amount?: unknown; currency?: unknown }[]
   if (!no) return fail(res, '询价号必填')
   if (d.prepare('SELECT 1 FROM inquiries WHERE inquiry_no = ?').get(no)) return fail(res, `询价号 ${no} 已存在`, 409)
@@ -134,8 +137,8 @@ app.post('/api/inquiries', (req, res) => {
       d.prepare('UPDATE customers SET country = COALESCE(?, country), use_location = COALESCE(?, use_location), source = COALESCE(?, source), updated_at = ? WHERE id = ?').run(country || null, useLocation || null, source || null, t, cus.id)
     }
     const iid = newId()
-    d.prepare('INSERT INTO inquiries (id, inquiry_no, date, customer_id, country, use_location, sales, purchaser, source, hand_total, note, is_key_customer, is_key_project, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(iid, no, date, cus.id, country || cus.country, useLocation, sales, purchaser, source, handTotal, note, keyCust, keyProj, t, t)
+    d.prepare('INSERT INTO inquiries (id, inquiry_no, date, customer_id, country, use_location, sales, purchaser, source, hand_total, note, is_key_customer, is_key_project, is_won, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(iid, no, date, cus.id, country || cus.country, useLocation, sales, purchaser, source, handTotal, note, keyCust, keyProj, isWon, t, t)
     const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
     cleanItems.forEach((it) => ins.run(newId(), iid, it.productName, it.qty, it.amount, it.currency, it.sort))
   })()
@@ -164,7 +167,7 @@ app.get('/api/inquiries', (req, res) => {
   if (country) { parts.push('(i.country = ? OR i.use_location = ?)'); args.push(country, country) }
   const where = parts.length ? `WHERE ${parts.join(' AND ')}` : ''
   const join = 'FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id'
-  const rows = d.prepare(`SELECT i.id, i.inquiry_no, i.date, i.country, i.use_location, i.sales, i.purchaser, i.source, i.hand_total, i.note, i.is_key_customer, i.is_key_project, i.created_at, c.name AS customer_name ${join} ${where} ORDER BY i.date DESC, i.created_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
+  const rows = d.prepare(`SELECT i.id, i.inquiry_no, i.date, i.country, i.use_location, i.sales, i.purchaser, i.source, i.hand_total, i.note, i.is_key_customer, i.is_key_project, i.is_won, i.created_at, c.name AS customer_name ${join} ${where} ORDER BY i.date DESC, i.created_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
   const ids = rows.map((r) => str(r.id))
   const totalsOf = new Map<string, { currency: string; amount: number }[]>()
   if (ids.length) {
@@ -178,7 +181,12 @@ app.get('/api/inquiries', (req, res) => {
     return { ...r, itemCount: (totalsOf.get(str(r.id)) ?? []).length, totals: t, usdApprox: Math.round(usd) }
   })
   const totalN = (d.prepare(`SELECT COUNT(*) AS n FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id ${where}`).get(...args) as { n: number }).n
-  ok(res, { rows: out, meta: { total: totalN, shown: out.length } })
+  // 全量（当前筛选）累计金额 / 成单统计
+  const allRows = out
+  const usdTotal = Math.round(allRows.reduce((s, r) => s + (r.usdApprox || 0), 0))
+  const wonCount = allRows.filter((r) => Number((r as Record<string, unknown>).is_won) === 1).length
+  const wonUsd = Math.round(allRows.filter((r) => Number((r as Record<string, unknown>).is_won) === 1).reduce((s, r) => s + (r.usdApprox || 0), 0))
+  ok(res, { rows: out, meta: { total: totalN, shown: out.length, usdTotal, wonCount, winRate: allRows.length ? Math.round((wonCount / allRows.length) * 1000) / 10 : 0, wonUsd } })
 })
 app.get('/api/inquiries/:id', (req, res) => {
   const d = getDb()
@@ -201,6 +209,7 @@ app.put('/api/inquiries/:id', (req, res) => {
   const note = req.body?.note !== undefined ? (text(req.body?.note) || null) : str(old.note) || null
   const keyCust = req.body?.isKeyCustomer !== undefined ? (req.body.isKeyCustomer ? 1 : 0) : (num(old.is_key_customer) ?? 0)
   const keyProj = req.body?.isKeyProject !== undefined ? (req.body.isKeyProject ? 1 : 0) : (num(old.is_key_project) ?? 0)
+  const isWon = req.body?.isWon !== undefined ? (req.body.isWon ? 1 : 0) : (num(old.is_won) ?? 0)
   const itemsProvided = Array.isArray(req.body?.items)
   const items = itemsProvided ? (req.body.items as unknown[]) : []
   const clean = items
@@ -209,7 +218,7 @@ app.put('/api/inquiries/:id', (req, res) => {
   if (itemsProvided && !clean.length) return fail(res, '至少一行产品（产品名称与金额>0）')
   const t = nowIso()
   d.transaction(() => {
-    d.prepare('UPDATE inquiries SET date = ?, country = ?, use_location = ?, sales = ?, purchaser = ?, source = ?, hand_total = ?, note = ?, is_key_customer = ?, is_key_project = ?, updated_at = ? WHERE id = ?').run(date, country, useLocation, sales, purchaser, source, handTotal, note, keyCust, keyProj, t, req.params.id)
+    d.prepare('UPDATE inquiries SET date = ?, country = ?, use_location = ?, sales = ?, purchaser = ?, source = ?, hand_total = ?, note = ?, is_key_customer = ?, is_key_project = ?, is_won = ?, updated_at = ? WHERE id = ?').run(date, country, useLocation, sales, purchaser, source, handTotal, note, keyCust, keyProj, isWon, t, req.params.id)
     if (itemsProvided) {
       d.prepare('DELETE FROM inquiry_items WHERE inquiry_id = ?').run(req.params.id)
       const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')

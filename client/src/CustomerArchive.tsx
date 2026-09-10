@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { get } from './api'
 
-interface CustRow { id: string; name: string; country: string | null; use_location: string | null; source: string | null; inquiryCount: number; lastDate: string | null; usdTotal: number; keyCustomer: number; keyProjectCount: number }
-interface InqRow { id: string; inquiry_no: string; date: string; sales: string; purchaser: string; source: string; is_key_customer: number; is_key_project: number; totals: { currency: string; total: number }[]; usdApprox: number; itemCount: number }
-interface CustDetail extends CustRow { inquiries: InqRow[]; summary: { inquiryCount: number; usdTotal: number; keyProjectCount: number } }
+interface CustRow { id: string; name: string; country: string | null; use_location: string | null; source: string | null; inquiryCount: number; lastDate: string | null; usdTotal: number; wonCount: number; winRate: number; keyCustomer: number; keyProjectCount: number }
+interface InqRow { id: string; inquiry_no: string; date: string; sales: string; purchaser: string; source: string; is_key_customer: number; is_key_project: number; is_won: number; totals: { currency: string; total: number }[]; usdApprox: number; itemCount: number }
+interface CustDetail extends CustRow { inquiries: InqRow[]; summary: { inquiryCount: number; usdTotal: number; wonCount: number; winRate: number; wonUsd: number; keyProjectCount: number } }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Math.round(Number(n)).toLocaleString('zh-CN'))
-function Tags({ kc, kp }: { kc?: number; kp?: number }) {
-  const a = Number(kc) === 1, b = Number(kp) > 0
-  if (!a && !b) return <span className="hint">—</span>
-  return <>{a && <span className="tag kc">重点客户</span>}{b && <span className="tag kp">重点项目{kp && kp > 1 ? ` ×${kp}` : ''}</span>}</>
+function Tags({ kc, kp, won }: { kc?: number; kp?: number; won?: number }) {
+  const a = Number(kc) === 1, b = Number(kp) > 0, w = Number(won) === 1
+  if (!a && !b && !w) return <span className="hint">—</span>
+  return <>{w && <span className="tag won">已成单</span>}{a && <span className="tag kc">重点客户</span>}{b && <span className="tag kp">重点项目{kp && kp > 1 ? ` ×${kp}` : ''}</span>}</>
 }
 
 export default function CustomerArchive({ initialQuery }: { initialQuery?: string }) {
@@ -37,21 +37,23 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
       <div className="hint" style={{ margin: '8px 0' }}>共 {rows.length} 个客户 · 询价 {totals.n} 条 · 累计折USD ≈ {money(totals.usd)}</div>
       <div className="tablewrap" style={{ overflow: 'auto', maxHeight: '62vh' }}>
         <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-          <thead><tr>{['客户名称', '国别', '标签', '询价数', '折USD合计', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+          <thead><tr>{['客户名称', '国别', '标签', '询价数', '累计金额(USD)', '成单', '成交率', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} style={{ borderBottom: '1px solid var(--line2)' }}>
                 <td style={{ padding: '6px 8px', fontWeight: 600 }}>{r.name}</td>
                 <td style={{ padding: '6px 8px' }}>{r.country || '—'}</td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><Tags kc={r.keyCustomer} kp={r.keyProjectCount} /></td>
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><Tags kc={r.keyCustomer} kp={r.keyProjectCount} won={r.wonCount > 0 ? 1 : 0} /></td>
                 <td style={{ padding: '6px 8px' }}>{r.inquiryCount}</td>
                 <td style={{ padding: '6px 8px' }} className="mono">{money(r.usdTotal)}</td>
+                <td style={{ padding: '6px 8px' }}>{r.wonCount}</td>
+                <td style={{ padding: '6px 8px', fontWeight: 700, color: r.winRate >= 50 ? '#059669' : r.winRate > 0 ? '#a35c00' : 'var(--sub)' }}>{r.winRate}%</td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
                   <button className="btn sm" onClick={() => setDetailId(r.id)}>查看</button>
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无客户档案（先到「询报价录入」录一单，即自动建档）</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无客户档案（先到「询报价录入」录一单，即自动建档）</td></tr>}
           </tbody>
         </table>
       </div>
@@ -63,6 +65,7 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
 function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   const [d, setD] = useState<CustDetail | null>(null)
   const [err, setErr] = useState('')
+  const [detailInquiryId, setDetailInquiryId] = useState<string | null>(null)
   useEffect(() => { get<CustDetail>(`/customers/${id}`).then(setD).catch((e) => setErr((e as Error).message)) }, [id])
   return (
     <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
@@ -79,7 +82,8 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', margin: '10px 0', fontSize: 13 }}>
               <span>国别 <b>{d.country || '—'}</b></span><span>使用地 <b>{d.use_location || '—'}</b></span><span>来源 <b>{d.source || '—'}</b></span>
               <span>标签 <b><Tags kc={d.keyCustomer} kp={d.keyProjectCount} /></b></span>
-              <span>询价 <b>{d.summary?.inquiryCount ?? 0}</b> 条</span><span>累计折USD <b>{money(d.summary?.usdTotal)}</b></span>
+              <span>询价 <b>{d.summary?.inquiryCount ?? 0}</b> 条</span><span>累计金额 <b>≈USD {money(d.summary?.usdTotal)}</b></span>
+              <span>成单 <b>{d.summary?.wonCount ?? 0}</b> 条（{money(d.summary?.wonUsd)} USD）</span><span>成交率 <b style={{ color: '#059669' }}>{d.summary?.winRate ?? 0}%</b></span>
               <span>建档时间 <b className="mono">{((d as unknown as { created_at?: string }).created_at ?? '').slice(0, 16)}</b></span>
             </div>
             <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -87,12 +91,12 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               <tbody>
                 {(d.inquiries ?? []).map((i) => (
                   <tr key={i.id} style={{ borderBottom: '1px solid var(--line2)' }}>
-                    <td style={{ padding: 6 }} className="mono">{i.inquiry_no}</td>
+                    <td style={{ padding: 6 }} className="mono"><button className="btn sm" onClick={() => setDetailInquiryId(i.id)} title="查看询价详情">{i.inquiry_no}</button></td>
                     <td style={{ padding: 6 }}>{i.date}</td>
                     <td style={{ padding: 6 }}>{i.sales}</td>
                     <td style={{ padding: 6 }}>{i.purchaser}</td>
                     <td style={{ padding: 6 }}>{i.source}</td>
-                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}><Tags kc={i.is_key_customer} kp={i.is_key_project} /></td>
+                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}><Tags kc={i.is_key_customer} kp={i.is_key_project} won={i.is_won} /></td>
                     <td style={{ padding: 6 }}>{i.itemCount}</td>
                     <td style={{ padding: 6 }}>{(i.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</td>
                     <td style={{ padding: 6 }} className="mono">{money(i.usdApprox)}</td>
@@ -101,6 +105,50 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                 {(d.inquiries ?? []).length === 0 && <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', color: 'var(--sub)' }}>该客户暂无询价</td></tr>}
               </tbody>
             </table>
+          </>
+        )}
+      </div>
+      {detailInquiryId && <InquiryDetailModal id={detailInquiryId} onClose={() => setDetailInquiryId(null)} />}
+    </div>
+  )
+}
+
+interface InquiryDetail extends InqRow { country?: string | null; use_location?: string | null; hand_total?: number | null; note?: string | null; items?: { product_name: string; qty: number | null; amount: number; currency: string }[] }
+
+function InquiryDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
+  const [d, setD] = useState<InquiryDetail | null>(null)
+  const [err, setErr] = useState('')
+  useEffect(() => { get<InquiryDetail>(`/inquiries/${id}`).then(setD).catch((e) => setErr((e as Error).message)) }, [id])
+  return (
+    <div className="modal-mask" style={{ zIndex: 30 }} onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ width: 'min(760px, 96vw)', maxHeight: '90vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="询价详情">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0 }}>询价详情 · {d?.inquiry_no ?? '加载中…'}</h3>
+          <button className="btn sm" onClick={onClose}>关闭</button>
+        </div>
+        {err && <div className="msg err">{err}</div>}
+        {d && (
+          <>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', margin: '10px 0', fontSize: 13 }}>
+              <span>日期 <b>{d.date}</b></span>
+              <span>状态 <b>{Number(d.is_won) === 1 ? <span className="tag won">已成单</span> : <span className="hint">跟进中</span>}</b></span>
+              <span>标签 <b><Tags kc={d.is_key_customer} kp={d.is_key_project} /></b></span>
+              <span>国别 <b>{d.country || '—'}</b></span><span>使用地 <b>{d.use_location || '—'}</b></span>
+              <span>销售 <b>{d.sales}</b></span><span>采购 <b>{d.purchaser}</b></span><span>来源 <b>{d.source}</b></span>
+              <span>报价合计 <b>{(d.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</b></span>
+              <span>折USD <b className="mono">{money(d.usdApprox)}</b></span>
+              <span>总金额(手填) <b className="mono">{money(d.hand_total)}</b></span>
+            </div>
+            <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead><tr>{['#', '产品名称', '数量', '金额', '币种'].map((h) => <th key={h} style={{ textAlign: 'left', padding: 6, borderBottom: '1px solid var(--line)' }}>{h}</th>)}</tr></thead>
+              <tbody>
+                {(d.items || []).map((it, i) => (
+                  <tr key={i}><td style={{ padding: 6 }}>{i + 1}</td><td style={{ padding: 6 }}>{it.product_name}</td><td style={{ padding: 6 }}>{it.qty ?? '—'}</td><td style={{ padding: 6 }} className="mono">{money(it.amount)}</td><td style={{ padding: 6 }}>{it.currency}</td></tr>
+                ))}
+                {(d.items || []).length === 0 && <tr><td colSpan={5} style={{ padding: 16, textAlign: 'center', color: 'var(--sub)' }}>暂无明细</td></tr>}
+              </tbody>
+            </table>
+            {d.note && <div className="hint" style={{ marginTop: 8 }}>备注：{d.note}</div>}
           </>
         )}
       </div>
