@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { get } from './api'
 import { StatusChip } from './StatusChip'
 import PriceHistoryModal from './PriceHistory'
+import GuidanceNote from './Guidance'
 
 interface TotalItem { currency: string; total: number }
 interface Detail {
@@ -208,21 +209,8 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                               <div key={a.url}><a className="mono" href={a.url} target="_blank" rel="noreferrer">{a.name || '附件'}</a></div>
                             ))}
                           </td>
-                          <td style={{ padding: '6px 8px', minWidth: 180 }}>
-                            {(() => {
-                              const cs = f.comments ?? []
-                              if (!cs.length) return <span className="hint">—</span>
-                              const last = cs[cs.length - 1]
-                              return (
-                                <div>
-                                  <span className="badge new" style={{ marginRight: 4 }}>💬 {cs.length}</span>
-                                  <span className="hint" style={{ whiteSpace: 'normal' }} title={cs.map((c) => `${c.by_name ?? ''}：${c.content}`).join('\n')}>
-                                    {last.by_name ? `${last.by_name}：` : ''}{last.content}
-                                  </span>
-                                </div>
-                              )
-                            })()}
-                          </td>
+                          {/* 跟进指导：此处只读查看，醒目标注；新增/追加在「询报价跟进」页 */}
+                          <td style={{ padding: '6px 8px', minWidth: 200 }}><GuidanceNote comments={f.comments} /></td>
                           <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.next_followup_at || '—'}</td>
                           <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.by_name || '—'}</td>
                           <td className="mono hint" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{String(f.created_at || '').slice(0, 16).replace('T', ' ')}</td>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { get } from './api'
 import { StatusChip } from './StatusChip'
+import GuidanceNote from './Guidance'
 
 interface Brief {
   id: string; inquiry_no: string; date: string; sales: string; purchaser: string; customer_name: string
@@ -122,12 +123,7 @@ export default function Dashboard({ onGoFollow }: { onGoFollow?: (t: { sales: st
                     <td className="mono" style={{ padding: '0 8px', fontWeight: r.kind === 'overdue' ? 700 : 400, color: r.kind === 'overdue' ? 'var(--danger)' : undefined }}>{fmt(r.next_followup_at)}</td>
                     <td className="mono cell-top" style={{ padding: '0 8px', textAlign: 'right' }}>{money(r.usd)}</td>
                     <td style={{ padding: '0 8px' }}>
-                      {r.lastComment ? (
-                        <span className="ellip" style={{ display: 'block' }} title={`${r.lastComment.by_name ?? ''}：${r.lastComment.content}（${String(r.lastComment.created_at).slice(0, 16).replace('T', ' ')}）`}>
-                          <span className="rem-kind" style={{ background: '#e8f1ff', color: 'var(--brand)', marginRight: 5 }}>💬{r.commentCount ?? 1}</span>
-                          {r.lastComment.by_name ? `${r.lastComment.by_name}：` : ''}{r.lastComment.content}
-                        </span>
-                      ) : <span className="hint">—</span>}
+                      <GuidanceNote compact comments={r.lastComment ? [{ ...r.lastComment }] : []} />
                     </td>
                     <td style={{ padding: '0 8px', textAlign: 'center' }}>
                       <button className="btn xs pri" onClick={() => onGoFollow?.({ sales: r.sales, no: r.inquiry_no })}>去跟进</button>

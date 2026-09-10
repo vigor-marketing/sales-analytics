@@ -133,6 +133,14 @@ ul.sugs li:hover, ul.sugs li.on { background: var(--brand-light) }
 .ana-sum{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
 .ana-sum-i{display:inline-flex;align-items:center;gap:5px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:12.5px;color:var(--sub)}
 .ana-sum-i b{color:var(--text);font-size:13.5px}
+/* 跟进指导：只读展示 + 醒目标注（淡黄底、左侧琥珀色条） */
+.gd-note{display:block;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:6px;padding:4px 8px}
+.gd-compact{max-width:100%}
+.gd-compact .gd-txt{display:block;font-size:11.5px;color:#92400e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gd-tag{display:inline-block;background:#fde68a;color:#92400e;border-radius:999px;padding:0 7px;font-size:10.5px;font-weight:700;margin-right:5px;line-height:1.7}
+.gd-block .gd-head{font-size:11.5px;font-weight:700;color:#92400e;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.gd-block .gd-meta{font-weight:400;color:#b45309}
+.gd-block .gd-body{font-size:12.5px;color:#78350f;margin-top:2px;white-space:pre-wrap}
 /* 仪表盘：跟进提醒 */
 .rem-tabs{display:inline-flex;align-items:center;gap:6px;background:#f3f5fa;border-radius:10px;padding:3px;flex-wrap:wrap}
 .rem-tabs button{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;background:transparent;padding:5px 12px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--sub);cursor:pointer;transition:background .15s,color .15s}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { get, post } from './api'
 import { StatusChip } from './StatusChip'
 import { KeyTags } from './KeyTags'
+import GuidanceNote from './Guidance'
 
 interface MetaLite { sales: { name: string; team: string }[]; methods?: string[] }
 interface Lookup {
@@ -295,11 +296,10 @@ export default function FollowUps({ meta, target }: { meta: MetaLite; target?: {
                     <td style={{ padding: '7px 8px', minWidth: 130 }}>
                       {(() => {
                         const cs = r.comments ?? []
-                        const last = cs[cs.length - 1]
                         return (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-start' }}>
-                            <button className="btn xs" onClick={() => setCommentOf(r)} title="查看 / 新增跟进指导">💬 {cs.length ? `指导 ${cs.length}` : '评论'}</button>
-                            {last && <span className="hint" style={{ fontSize: 11, maxWidth: 210, whiteSpace: 'normal' }} title={last.content}>{last.by_name ? `${last.by_name}：` : ''}{last.content}</span>}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                            <GuidanceNote compact comments={cs} />
+                            <button className="btn xs" onClick={() => setCommentOf(r)} title={cs.length ? '查看全部指导 / 继续追加' : '添加跟进指导'}>{cs.length ? '查看/追加指导' : '＋ 添加指导'}</button>
                           </div>
                         )
                       })()}
