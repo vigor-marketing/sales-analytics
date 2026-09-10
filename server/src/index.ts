@@ -507,6 +507,93 @@ app.delete('/api/orders/:id', (req, res) => {
   ok(res, { deleted: 1 })
 })
 
+// —— 仪表盘：本月数据 + 跟进提醒 ——
+app.get('/api/dashboard', (_req, res) => {
+  const d = getDb()
+  const month = todayStr().slice(0, 7)
+  const today = todayStr()
+  const monthFrom = `${month}-01`
+  const monthTo = `${month}-31`
+  const usdOf = (inquiryId: string) => {
+    const items = d.prepare('SELECT amount, currency FROM inquiry_items WHERE inquiry_id = ?').all(inquiryId) as { amount: number; currency: string }[]
+    return items.reduce((s2, x) => s2 + (Number(x.amount) || 0) / (FX2[x.currency] || 1), 0)
+  }
+  const rowsOf = (sql: string, ...args: unknown[]) => d.prepare(sql).all(...args) as Record<string, unknown>[]
+
+  // 本月询价（按询价日期）
+  const inqs = rowsOf(`SELECT i.*, c.name AS customer_name FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id
+    WHERE i.date >= ? AND i.date <= ? ORDER BY i.date DESC`, monthFrom, monthTo)
+  const inqUsd = inqs.reduce((s2, r) => s2 + usdOf(text(r.id)), 0)
+  const wonMonth = rowsOf(`SELECT o.id, o.won_date, o.amount, o.currency, o.inquiry_id FROM orders o WHERE o.won_date >= ? AND o.won_date <= ?`, monthFrom, monthTo)
+  const wonUsd = wonMonth.reduce((s2, o) => s2 + usdOf(text(o.inquiry_id)), 0)
+  const lostMonth = inqs.filter((r) => Number(r.is_lost) === 1)
+  const lostUsd = lostMonth.reduce((s2, r) => s2 + usdOf(text(r.id)), 0)
+  const decided = wonMonth.length + lostMonth.length
+  const newCustomers = (d.prepare('SELECT COUNT(*) AS n FROM customers WHERE created_at >= ? AND created_at <= ?').get(`${monthFrom}T00:00:00`, `${monthTo}T23:59:59`) as { n: number }).n
+  const followMonth = (d.prepare('SELECT COUNT(*) AS n FROM followups WHERE date >= ? AND date <= ?').get(monthFrom, monthTo) as { n: number }).n
+
+  // 本月排行
+  const bySales = new Map<string, { n: number; usd: number }>()
+  wonMonth.forEach((o) => {
+    const inq = d.prepare('SELECT sales FROM inquiries WHERE id = ?').get(text(o.inquiry_id)) as { sales: string } | undefined
+    const k = inq?.sales || '未指定'
+    const a = bySales.get(k) ?? { n: 0, usd: 0 }
+    a.n += 1; a.usd += usdOf(text(o.inquiry_id))
+    bySales.set(k, a)
+  })
+  const monthBySales = Array.from(bySales.entries()).map(([name, v]) => ({ name, n: v.n, usd: Math.round(v.usd) })).sort((a, b) => b.usd - a.usd)
+  const byProduct = new Map<string, { n: number; usd: number }>()
+  wonMonth.forEach((o) => {
+    const items = d.prepare('SELECT product_name, amount, currency FROM inquiry_items WHERE inquiry_id = ?').all(text(o.inquiry_id)) as { product_name: string; amount: number; currency: string }[]
+    items.forEach((it) => {
+      const a = byProduct.get(it.product_name) ?? { n: 0, usd: 0 }
+      a.n += 1; a.usd += (Number(it.amount) || 0) / (FX2[it.currency] || 1)
+      byProduct.set(it.product_name, a)
+    })
+  })
+  const monthByProduct = Array.from(byProduct.entries()).map(([name, v]) => ({ name, n: v.n, usd: Math.round(v.usd) })).sort((a, b) => b.usd - a.usd)
+
+  // 跟进提醒：仅针对「跟进中」的询价
+  const openRows = rowsOf(`SELECT i.id, i.inquiry_no, i.date, i.sales, i.purchaser, i.last_followup_at, i.next_followup_at, i.customer_stars,
+      (SELECT COUNT(*) FROM orders o WHERE o.inquiry_id = i.id) AS has_order, c.name AS customer_name
+    FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id
+    WHERE COALESCE(i.is_lost, 0) = 0 ORDER BY i.date DESC`)
+  const staleDays = 7
+  const staleBefore = (() => { const dd = new Date(); dd.setDate(dd.getDate() - staleDays); return `${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}-${String(dd.getDate()).padStart(2, '0')}` })()
+  const weekEnd = (() => { const now = new Date(); const dow = (now.getDay() + 6) % 7; const sun = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow + 6); return `${sun.getFullYear()}-${String(sun.getMonth() + 1).padStart(2, '0')}-${String(sun.getDate()).padStart(2, '0')}` })()
+  const brief = (r: Record<string, unknown>) => ({
+    id: text(r.id), inquiry_no: text(r.inquiry_no), date: text(r.date), sales: text(r.sales), purchaser: text(r.purchaser),
+    customer_name: text(r.customer_name), customer_stars: num(r.customer_stars), last_followup_at: str(r.last_followup_at) || null,
+    next_followup_at: str(r.next_followup_at) || null, usd: Math.round(usdOf(text(r.id))),
+  })
+  const open = openRows.filter((r) => Number(r.has_order) === 0)
+  const overdue = open.filter((r) => str(r.next_followup_at) && String(r.next_followup_at).slice(0, 10) < today).map(brief)
+  const dueSoon = open.filter((r) => {
+    const nx = String(str(r.next_followup_at) || '').slice(0, 10)
+    return nx && nx >= today && nx <= weekEnd
+  }).map(brief)
+  const stale = open.filter((r) => {
+    const nx = String(str(r.next_followup_at) || '').slice(0, 10)
+    if (nx) return false
+    const last = str(r.last_followup_at)
+    return !last || last < staleBefore
+  }).map(brief)
+
+  ok(res, {
+    month, today, weekEnd,
+    kpi: {
+      inqCount: inqs.length, inqUsd: Math.round(inqUsd),
+      wonCount: wonMonth.length, wonUsd: Math.round(wonUsd),
+      lostCount: lostMonth.length, lostUsd: Math.round(lostUsd),
+      winRate: decided ? Math.round((wonMonth.length / decided) * 1000) / 10 : 0,
+      followCount: followMonth, newCustomers,
+      openCount: open.length,
+    },
+    reminders: { overdue, dueSoon, stale, staleDays, counts: { overdue: overdue.length, dueSoon: dueSoon.length, stale: stale.length } },
+    monthBySales, monthByProduct,
+  })
+})
+
 // —— 原因分析：成交原因（来源销售订单）与丢单原因（来源标记未成单的询价） ——
 app.get('/api/analysis/reasons', (req, res) => {
   const d = getDb()

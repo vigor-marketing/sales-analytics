@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get, post } from './api'
 import { StatusChip } from './StatusChip'
 import ProductPicker, { type ProductLite } from './ProductPicker'
+import Dashboard from './Dashboard'
 import { COUNTRIES } from './countries'
-import { ArticleIcon, CartIcon, ChartBarIcon, ChartColumnIcon, ChatBubbleHistoryIcon, EditIcon, SettingIcon, UserIcon } from 'tdesign-icons-react'
+import { ArticleIcon, CartIcon, ChartBarIcon, ChartColumnIcon, ChatBubbleHistoryIcon, DashboardIcon, EditIcon, SettingIcon, UserIcon } from 'tdesign-icons-react'
 import CustomerArchive from './CustomerArchive'
 import ProductArchive from './ProductArchive'
 import Contracts from './Contracts'
@@ -31,8 +32,9 @@ const DEFAULTS: Bootstrap = {
   month: new Date().toISOString().slice(0, 7),
 }
 
-type PageKey = 'entry' | 'manage' | 'followups' | 'contracts' | 'contractsAnalysis' | 'customers' | 'products' | 'settings'
+type PageKey = 'dashboard' | 'entry' | 'manage' | 'followups' | 'contracts' | 'contractsAnalysis' | 'customers' | 'products' | 'settings'
 const NAV: { key: PageKey; label: string; icon: JSX.Element }[] = [
+  { key: 'dashboard', label: '仪表盘', icon: <DashboardIcon /> },
   { key: 'entry', label: '询报价录入', icon: <EditIcon /> },
   { key: 'manage', label: '询报价管理', icon: <ArticleIcon /> },
   { key: 'followups', label: '询报价跟进', icon: <ChatBubbleHistoryIcon /> },
@@ -42,7 +44,7 @@ const NAV: { key: PageKey; label: string; icon: JSX.Element }[] = [
   { key: 'products', label: '产品档案', icon: <CartIcon /> },
   { key: 'settings', label: '字段与选项设置', icon: <SettingIcon /> },
 ]
-const PAGES: PageKey[] = ['entry', 'manage', 'followups', 'contracts', 'contractsAnalysis', 'customers', 'products', 'settings']
+const PAGES: PageKey[] = ['dashboard', 'entry', 'manage', 'followups', 'contracts', 'contractsAnalysis', 'customers', 'products', 'settings']
 /** 记忆当前页面：优先 URL hash，其次 localStorage，刷新后保持 */
 function initialPage(): PageKey {
   const fromHash = location.hash.replace(/^#\/?/, '')
@@ -51,7 +53,7 @@ function initialPage(): PageKey {
   if (PAGES.includes(saved as PageKey)) return saved as PageKey
   return 'entry'
 }
-const TITLES: Record<PageKey, string> = { entry: '询报价录入', manage: '询报价管理', followups: '询报价跟进', contracts: '销售订单管理', contractsAnalysis: '销售订单分析', customers: '客户档案', products: '产品档案', settings: '字段与选项设置' }
+const TITLES: Record<PageKey, string> = { dashboard: '仪表盘', entry: '询报价录入', manage: '询报价管理', followups: '询报价跟进', contracts: '销售订单管理', contractsAnalysis: '销售订单分析', customers: '客户档案', products: '产品档案', settings: '字段与选项设置' }
 function Shell({ page, onNav, children }: { page: PageKey; onNav: (p: PageKey) => void; children: React.ReactNode }) {
   return (
     <div className="sa-layout">
@@ -111,6 +113,8 @@ export default function App() {
   const [custId, setCustId] = useState('')
   const [cusFocus, setCusFocus] = useState(false)
   const [page, setPage] = useState<PageKey>(() => initialPage())
+  // 仪表盘「去跟进」：跳到跟进页并带出该询价
+  const [followTarget, setFollowTarget] = useState<{ sales: string; no: string } | null>(null)
   const noT = useRef<HTMLInputElement>(null)
   // 浏览器页签标题跟随当前页面
   useEffect(() => { document.title = `${TITLES[page]} · 销售数据分析` }, [page])
@@ -200,7 +204,8 @@ export default function App() {
   if (page !== 'entry') return (
     <Shell page={page} onNav={setPage}>
       {page === 'manage' && <InquiryManager meta={meta} />}
-      {page === 'followups' && <FollowUps meta={meta} />}
+      {page === 'dashboard' && <Dashboard onGoFollow={(t) => { setFollowTarget(t); setPage('followups') }} />}
+      {page === 'followups' && <FollowUps meta={meta} target={followTarget} />}
       {page === 'contracts' && <Contracts meta={meta} />}
       {page === 'contractsAnalysis' && <ContractsAnalysis meta={meta} />}
       {page === 'customers' && <CustomerArchive />}

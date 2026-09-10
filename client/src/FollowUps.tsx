@@ -22,7 +22,7 @@ const money = (n: number | null | undefined) => (n == null ? '—' : Math.round(
 const DEFAULT_METHODS = ['电话', '邮件', '微信', '拜访', '展会', '其他']
 const today = () => new Date().toISOString().slice(0, 10)
 
-export default function FollowUps({ meta }: { meta: MetaLite }) {
+export default function FollowUps({ meta, target }: { meta: MetaLite; target?: { sales: string; no: string } | null }) {
   const methods = meta.methods?.length ? meta.methods : DEFAULT_METHODS
   const [sales, setSales] = useState('')
   const [no, setNo] = useState('')
@@ -42,15 +42,24 @@ export default function FollowUps({ meta }: { meta: MetaLite }) {
   const [optLoading, setOptLoading] = useState(false)
   const [busy, setBusy] = useState(false)
 
+  // 从仪表盘「去跟进」进入：预选销售与询价号
   useEffect(() => {
-    setNo(''); setHit(null); setLookErr('')
+    if (!target?.sales || !target?.no) return
+    setSales(target.sales); setNo(target.no)
+  }, [target])
+
+  useEffect(() => {
+    // 手动切换销售时清空已选询价；由仪表盘带入时保留（等待目标销售生效期间也不清）
+    const targeting = Boolean(target?.sales && target.no)
+    const keepNo = targeting && (sales === '' || sales === target!.sales)
+    if (!keepNo) { setNo(''); setHit(null); setLookErr('') }
     if (!sales) { setOptions([]); return }
     setOptLoading(true)
     get<{ id: string; inquiry_no: string; customer_name: string; date: string }[] | { rows: { id: string; inquiry_no: string; customer_name: string; date: string }[] }>(`/inquiries?sales=${encodeURIComponent(sales)}`)
       .then((d) => setOptions(Array.isArray(d) ? d : (d?.rows ?? [])))
       .catch(() => setOptions([]))
       .finally(() => setOptLoading(false))
-  }, [sales])
+  }, [sales, target])
 
   const lookup = useCallback(async () => {
     setLookErr(''); setHit(null)
