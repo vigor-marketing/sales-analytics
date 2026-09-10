@@ -437,7 +437,8 @@ app.post('/api/followups', (req, res) => {
   d.transaction(() => {
     d.prepare('INSERT INTO followups (id, inquiry_id, date, method, content, summary, detail, photos, attachments, next_followup_at, by_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(fid, inquiryId, date, str(req.body?.method) || '电话', detail, summary, detail, JSON.stringify(photos), JSON.stringify(attachments), nextAt, byName, t)
-    d.prepare('UPDATE inquiries SET last_followup_at = ?, next_followup_at = COALESCE(?, next_followup_at), updated_at = ? WHERE id = ?').run(date, nextAt, t, inquiryId)
+    // 询价上的「最近跟进 / 下次跟进」始终与最新一条跟进记录保持一致（仪表盘提醒同源）
+    d.prepare('UPDATE inquiries SET last_followup_at = ?, next_followup_at = ?, updated_at = ? WHERE id = ?').run(date, nextAt, t, inquiryId)
   })()
   ok(res, { id: fid, inquiryId, date, nextFollowupAt: nextAt }, 201)
 })
@@ -587,10 +588,30 @@ app.get('/api/dashboard', (_req, res) => {
   const staleDays = 7
   const staleBefore = (() => { const dd = new Date(); dd.setDate(dd.getDate() - staleDays); return `${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}-${String(dd.getDate()).padStart(2, '0')}` })()
   const weekEnd = (() => { const now = new Date(); const dow = (now.getDay() + 6) % 7; const sun = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow + 6); return `${sun.getFullYear()}-${String(sun.getMonth() + 1).padStart(2, '0')}-${String(sun.getDate()).padStart(2, '0')}` })()
+  // 跟进指导（评论）：按询价汇总，用于提醒行与「最新指导」板块
+  const commentRows = rowsOf(`SELECT fc.id, fc.content, fc.by_name, fc.created_at, f.inquiry_id,
+      i.inquiry_no, i.sales, c.name AS customer_name
+    FROM followup_comments fc JOIN followups f ON f.id = fc.followup_id
+    LEFT JOIN inquiries i ON i.id = f.inquiry_id LEFT JOIN customers c ON c.id = i.customer_id
+    ORDER BY fc.created_at DESC`)
+  const guidanceByInquiry = new Map<string, { count: number; last: { content: string; by_name: string | null; created_at: string } }>()
+  commentRows.forEach((c) => {
+    const k = text(c.inquiry_id)
+    const cur = guidanceByInquiry.get(k) ?? { count: 0, last: { content: text(c.content), by_name: str(c.by_name) || null, created_at: text(c.created_at) } }
+    cur.count += 1
+    guidanceByInquiry.set(k, cur)
+  })
+  const guidance = commentRows.slice(0, 12).map((c) => ({
+    id: text(c.id), inquiry_no: text(c.inquiry_no), customer_name: text(c.customer_name), sales: text(c.sales),
+    content: text(c.content), by_name: str(c.by_name) || null, created_at: text(c.created_at),
+  }))
+
   const brief = (r: Record<string, unknown>) => ({
     id: text(r.id), inquiry_no: text(r.inquiry_no), date: text(r.date), sales: text(r.sales), purchaser: text(r.purchaser),
     customer_name: text(r.customer_name), customer_stars: num(r.customer_stars), last_followup_at: str(r.last_followup_at) || null,
     next_followup_at: str(r.next_followup_at) || null, usd: Math.round(usdOf(text(r.id))),
+    commentCount: guidanceByInquiry.get(text(r.id))?.count ?? 0,
+    lastComment: guidanceByInquiry.get(text(r.id))?.last ?? null,
   })
   const open = openRows.filter((r) => Number(r.has_order) === 0)
   const dateOf = (v: unknown) => String(str(v) || '').slice(0, 10)
@@ -624,6 +645,7 @@ app.get('/api/dashboard', (_req, res) => {
       openCount: open.length,
     },
     reminders: { overdue, dueSoon, stale, staleDays, counts: { overdue: overdue.length, dueSoon: dueSoon.length, stale: stale.length } },
+    guidance,
     monthBySales, monthByProduct,
   })
 })

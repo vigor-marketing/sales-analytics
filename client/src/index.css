@@ -142,7 +142,7 @@ ul.sugs li:hover, ul.sugs li.on { background: var(--brand-light) }
 .rem-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
 .rem-count{background:rgba(0,0,0,.06);border-radius:999px;padding:0 7px;font-size:11px;line-height:1.7}
 .rem-tabs button.on .rem-count{background:rgba(255,255,255,.28);color:#fff}
-.rem-table th,.rem-table td{height:38px}
+.rem-data-table th,.rem-data-table td{height:38px !important}
 .rem-kind{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700;white-space:nowrap}
 .rem-table tbody tr:hover>td{background:#f7faff}
 .dash-sec{grid-column:1/-1;display:flex;align-items:center;gap:8px;margin:10px 0 0}

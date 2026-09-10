@@ -6,7 +6,10 @@ interface Brief {
   id: string; inquiry_no: string; date: string; sales: string; purchaser: string; customer_name: string
   customer_stars: number | null; last_followup_at: string | null; next_followup_at: string | null; usd: number
   kind?: 'overdue' | 'dueSoon' | 'stale'; kindLabel?: string
+  commentCount?: number
+  lastComment?: { content: string; by_name: string | null; created_at: string } | null
 }
+interface Guidance { id: string; inquiry_no: string; customer_name: string; sales: string; content: string; by_name: string | null; created_at: string }
 interface Kpi {
   inqCount: number; inqUsd: number; wonCount: number; wonUsd: number; lostCount: number; lostUsd: number
   winRate: number; followCount: number; newCustomers: number; openCount: number
@@ -16,6 +19,7 @@ interface Dash {
   month: string; today: string; weekEnd: string
   kpi: Kpi
   reminders: { overdue: Brief[]; dueSoon: Brief[]; stale: Brief[]; staleDays: number; counts: { overdue: number; dueSoon: number; stale: number } }
+  guidance: Guidance[]
   monthBySales: Rank[]; monthByProduct: Rank[]
 }
 
@@ -70,7 +74,7 @@ export default function Dashboard({ onGoFollow }: { onGoFollow?: (t: { sales: st
         <div className="panel-head">
           <h4 className="panel-title">跟进提醒</h4>
           <span className="hint panel-hint">
-            {d ? `共 ${list.length} 条需要处理 · 已跟进的会自动从提醒中移除` : '加载中…'}
+            {d ? `共 ${list.length} 条需要处理 · 时间与「询报价跟进」实时一致，已跟进的自动移除` : '加载中…'}
           </span>
           <span style={{ flex: 1 }} />
           <span className="rem-tabs">
@@ -91,15 +95,16 @@ export default function Dashboard({ onGoFollow }: { onGoFollow?: (t: { sales: st
         <div className="hint" style={{ marginTop: 6 }}>{cur.note}</div>
 
         <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 8 }}>
-          <table className="grid data-table fixed-table rem-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+          <table className="grid data-table fixed-table rem-table rem-data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
             <colgroup>
-              <col style={{ width: '7%' }} /><col style={{ width: '15%' }} /><col style={{ width: '19%' }} /><col style={{ width: '9%' }} />
-              <col style={{ width: '9%' }} /><col style={{ width: '13%' }} /><col style={{ width: '13%' }} /><col style={{ width: '10%' }} /><col style={{ width: '5%' }} />
+              <col style={{ width: '7%' }} /><col style={{ width: '12%' }} /><col style={{ width: '15%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} />
+              <col style={{ width: '11%' }} /><col style={{ width: '11%' }} /><col style={{ width: '9%' }} /><col style={{ width: '14%' }} /><col style={{ width: '5%' }} />
             </colgroup>
             <thead><tr>
               <th style={{ textAlign: 'left' }}>类型</th><th style={{ textAlign: 'left' }}>询价号</th><th style={{ textAlign: 'left' }}>客户</th>
               <th style={{ textAlign: 'left' }}>销售</th><th style={{ textAlign: 'left' }}>采购</th><th style={{ textAlign: 'left' }}>上次跟进</th>
-              <th style={{ textAlign: 'left' }}>下次跟进</th><th style={{ textAlign: 'right' }}>报价(USD)</th><th style={{ textAlign: 'center' }}>操作</th>
+              <th style={{ textAlign: 'left' }}>下次跟进</th><th style={{ textAlign: 'right' }}>报价(USD)</th>
+              <th style={{ textAlign: 'left' }}>最新跟进指导</th><th style={{ textAlign: 'center' }}>操作</th>
             </tr></thead>
             <tbody>
               {list.map((r) => {
@@ -116,6 +121,14 @@ export default function Dashboard({ onGoFollow }: { onGoFollow?: (t: { sales: st
                     <td className="mono" style={{ padding: '0 8px' }}>{fmt(r.last_followup_at)}</td>
                     <td className="mono" style={{ padding: '0 8px', fontWeight: r.kind === 'overdue' ? 700 : 400, color: r.kind === 'overdue' ? 'var(--danger)' : undefined }}>{fmt(r.next_followup_at)}</td>
                     <td className="mono cell-top" style={{ padding: '0 8px', textAlign: 'right' }}>{money(r.usd)}</td>
+                    <td style={{ padding: '0 8px' }}>
+                      {r.lastComment ? (
+                        <span className="ellip" style={{ display: 'block' }} title={`${r.lastComment.by_name ?? ''}：${r.lastComment.content}（${String(r.lastComment.created_at).slice(0, 16).replace('T', ' ')}）`}>
+                          <span className="rem-kind" style={{ background: '#e8f1ff', color: 'var(--brand)', marginRight: 5 }}>💬{r.commentCount ?? 1}</span>
+                          {r.lastComment.by_name ? `${r.lastComment.by_name}：` : ''}{r.lastComment.content}
+                        </span>
+                      ) : <span className="hint">—</span>}
+                    </td>
                     <td style={{ padding: '0 8px', textAlign: 'center' }}>
                       <button className="btn xs pri" onClick={() => onGoFollow?.({ sales: r.sales, no: r.inquiry_no })}>去跟进</button>
                     </td>
@@ -123,11 +136,47 @@ export default function Dashboard({ onGoFollow }: { onGoFollow?: (t: { sales: st
                 )
               })}
               {list.length === 0 && (
-                <tr><td colSpan={9} style={{ padding: 22, textAlign: 'center', color: 'var(--sub)' }}>
+                <tr><td colSpan={10} style={{ padding: 22, textAlign: 'center', color: 'var(--sub)' }}>
                   <div style={{ fontSize: 20 }}>✅</div>
                   <div style={{ marginTop: 4 }}>{cur.label}：暂无需要提醒的询价（已跟进的会自动移除）</div>
                 </td></tr>
               )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="card panel-tight" style={{ marginTop: 12 }}>
+        <div className="panel-head">
+          <h4 className="panel-title">最新跟进指导</h4>
+          <span className="hint panel-hint">来自「询报价跟进」的指导评论，按时间倒序（最多 12 条）</span>
+          <span style={{ flex: 1 }} />
+          <span className="badge new">{d?.guidance.length ?? 0} 条</span>
+        </div>
+        <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 8 }}>
+          <table className="grid data-table fixed-table rem-table rem-data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <colgroup><col style={{ width: '16%' }} /><col style={{ width: '16%' }} /><col style={{ width: '10%' }} /><col style={{ width: '42%' }} /><col style={{ width: '10%' }} /><col style={{ width: '6%' }} /></colgroup>
+            <thead><tr>
+              <th style={{ textAlign: 'left' }}>询价号 / 客户</th><th style={{ textAlign: 'left' }}>评论人</th><th style={{ textAlign: 'left' }}>时间</th>
+              <th style={{ textAlign: 'left' }}>指导内容</th><th style={{ textAlign: 'left' }}>销售</th><th style={{ textAlign: 'center' }}>操作</th>
+            </tr></thead>
+            <tbody>
+              {(d?.guidance ?? []).map((g) => (
+                <tr key={g.id}>
+                  <td style={{ padding: '0 8px' }}>
+                    <div className="mono ellip" title={g.inquiry_no}>{g.inquiry_no}</div>
+                    <div className="hint ellip" style={{ fontSize: 11 }} title={g.customer_name}>{g.customer_name || '—'}</div>
+                  </td>
+                  <td className="ellip" style={{ padding: '0 8px' }}>{g.by_name || '—'}</td>
+                  <td className="mono" style={{ padding: '0 8px' }}>{String(g.created_at).slice(0, 16).replace('T', ' ')}</td>
+                  <td style={{ padding: '0 8px' }}><span className="ellip" style={{ display: 'block' }} title={g.content}>{g.content}</span></td>
+                  <td className="ellip" style={{ padding: '0 8px' }}>{g.sales || '—'}</td>
+                  <td style={{ padding: '0 8px', textAlign: 'center' }}>
+                    <button className="btn xs" onClick={() => onGoFollow?.({ sales: g.sales, no: g.inquiry_no })}>查看</button>
+                  </td>
+                </tr>
+              ))}
+              {(d?.guidance ?? []).length === 0 && <tr><td colSpan={6} className="hint" style={{ padding: 18, textAlign: 'center' }}>暂无跟进指导（在「询报价跟进」的记录里点 💬 评论即可留言）</td></tr>}
             </tbody>
           </table>
         </div>
