@@ -74,8 +74,8 @@ export default function App() {
   const [purchaser, setPurchaser] = useState('')
   const [source, setSource] = useState('')
   const [note, setNote] = useState('')
-  const [keyCust, setKeyCust] = useState(false)
-  const [keyProj, setKeyProj] = useState(false)
+  const [keyCust, setKeyCust] = useState<'' | '1' | '0'>('')
+  const [keyProj, setKeyProj] = useState<'' | '1' | '0'>('')
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [cusList, setCusList] = useState<{ id: string; name: string; country: string | null }[]>([])
@@ -114,7 +114,7 @@ export default function App() {
     return Array.from(map.entries())
   }, [meta])
 
-  const valid = Boolean(no.trim() && !noTaken && date && customer.trim() && sales && purchaser && source) && items.some((it) => it.productName.trim() && (Number(it.amount) || 0) > 0)
+  const valid = Boolean(no.trim() && !noTaken && date && customer.trim() && sales && purchaser && source && keyCust !== '' && keyProj !== '') && items.some((it) => it.productName.trim() && (Number(it.amount) || 0) > 0)
 
   const save = async (again: boolean) => {
     setMsg(null)
@@ -123,19 +123,21 @@ export default function App() {
     if (!sales) return setMsg({ t: 'err', text: '请选择销售人员' })
     if (!purchaser) return setMsg({ t: 'err', text: '请选择采购人员' })
     if (!source) return setMsg({ t: 'err', text: '请选择询价来源（可在来源设置中维护）' })
-    if (!items.some((it) => it.productName.trim() && Number(it.amount) > 0)) return setMsg({ t: 'err', text: '至少一行产品：填写产品名称且金额>0' })
+    if (keyCust === '') return setMsg({ t: 'err', text: '请选择是否为重点客户（基本信息必填）' })
+    if (keyProj === '') return setMsg({ t: 'err', text: '请选择是否为重点项目（询价明细必填）' })
+    if (!items.some((it) => it.productName.trim() && Number(it.amount) > 0)) return setMsg({ t: 'err', text: '至少一行询价明细：填写产品名称且金额>0' })
     setBusy(true)
     try {
       const res = await post<Saved>('/inquiries', {
         inquiryNo: no.trim(), date, customerName: customer.trim(), country: country.trim() || undefined,
         items: items.filter((it) => it.productName.trim() && Number(it.amount) > 0).map((it) => ({ productName: it.productName.trim(), qty: it.qty ? Number(it.qty) : undefined, amount: Number(it.amount), currency: it.currency })),
         sales, purchaser, source, totalAmount: handTotal ? Number(handTotal) : undefined, note: note.trim() || undefined,
-        useLocation: useLoc.trim() || undefined, isKeyCustomer: keyCust, isKeyProject: keyProj,
+        useLocation: useLoc.trim() || undefined, isKeyCustomer: keyCust === '1', isKeyProject: keyProj === '1',
       })
       setMsg({ t: 'ok', text: `已保存询价 ${res.inquiryNo}` })
       if (again) {
-        setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setKeyCust(false); setKeyProj(false); noT.current?.focus()
-      } else { setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setKeyCust(false); setKeyProj(false); setCustomer(''); setCountry(''); setUseLoc(''); setLocTouched(false); setSource('') }
+        setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setKeyCust(''); setKeyProj(''); noT.current?.focus()
+      } else { setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setKeyCust(''); setKeyProj(''); setCustomer(''); setCountry(''); setUseLoc(''); setLocTouched(false); setSource('') }
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) } finally { setBusy(false) }
   }
 
@@ -175,11 +177,23 @@ export default function App() {
             <input className="sa" style={{ width: '100%' }} value={useLoc} onChange={(e) => { setUseLoc(e.target.value); setLocTouched(true) }} placeholder={country || '输入使用地，默认同国别'} />
           </div>
         </div>
+        <div className="row" style={{ alignItems: 'center', gap: 18, marginTop: 10 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>重点客户 *</span>
+          <label className="chk"><input type="radio" name="kc" checked={keyCust === '1'} onChange={() => setKeyCust('1')} /> <span className="tag kc">是</span></label>
+          <label className="chk"><input type="radio" name="kc" checked={keyCust === '0'} onChange={() => setKeyCust('0')} /> 否</label>
+          <span className="hint">必选；选“是”将在列表与详情以琥珀色块标注「重点客户」</span>
+        </div>
       </div>
 
       {/* ② 产品明细 */}
       <div className="card">
-        <h3 className="sec-title">产品明细 <small>可添加多个产品；总报价金额自动合计</small></h3>
+        <h3 className="sec-title">询价明细 <small>可添加多个产品；总报价金额自动合计</small></h3>
+        <div className="row" style={{ alignItems: 'center', gap: 18, marginBottom: 10 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>重点项目 *</span>
+          <label className="chk"><input type="radio" name="kp" checked={keyProj === '1'} onChange={() => setKeyProj('1')} /> <span className="tag kp">是</span></label>
+          <label className="chk"><input type="radio" name="kp" checked={keyProj === '0'} onChange={() => setKeyProj('0')} /> 否</label>
+          <span className="hint">必选；选“是”将在列表与详情以蓝色块标注「重点项目」</span>
+        </div>
         {items.map((it, i) => (
           <div key={i} className="item-row">
             <div className="col grow1"><label>产品名称</label><input className="sa" style={{ width: '100%' }} value={it.productName} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, productName: e.target.value } : x))} placeholder="如：可溶桥塞" /></div>
@@ -233,11 +247,6 @@ export default function App() {
               {(meta?.sources ?? DEFAULTS.sources).map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-        </div>
-        <div className="row" style={{ alignItems: 'center', gap: 18, marginBottom: 8 }}>
-          <label className="chk"><input type="checkbox" checked={keyCust} onChange={(e) => setKeyCust(e.target.checked)} /> <span className="tag kc">重点客户</span></label>
-          <label className="chk"><input type="checkbox" checked={keyProj} onChange={(e) => setKeyProj(e.target.checked)} /> <span className="tag kp">重点项目</span></label>
-          <span className="hint">勾选后将在询报价管理列表中以彩色标签块展示</span>
         </div>
         <div className="col"><label>备注</label><textarea className="sa" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="客户要求、交期等补充说明（选填）" /></div>
         <div className="actions">
