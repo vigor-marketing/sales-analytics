@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { get } from './api'
+import { StatusChip } from './StatusChip'
 
 interface CustRow { id: string; name: string; country: string | null; use_location: string | null; source: string | null; inquiryCount: number; lastDate: string | null; usdTotal: number; wonCount: number; lostCount: number; winRate: number; keyCustomer: number; keyProjectCount: number; stars?: number | null }
 interface InqRow { id: string; inquiry_no: string; date: string; sales: string; purchaser: string; source: string; is_key_customer: number; is_key_project: number; is_won: number; status?: 'won' | 'lost' | 'following'; lost_reason?: string | null; lost_date?: string | null; totals: { currency: string; total: number }[]; usdApprox: number; itemCount: number }
@@ -98,7 +99,7 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                     <td style={{ padding: 6 }}>{i.sales}</td>
                     <td style={{ padding: 6 }}>{i.purchaser}</td>
                     <td style={{ padding: 6 }}>{i.source}</td>
-                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}>{i.status === 'won' || (!i.status && Number(i.is_won) === 1) ? <span className="tag won">已成单</span> : i.status === 'lost' ? <span className="tag lost">未成单</span> : <span className="badge">跟进中</span>}</td>
+                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}><StatusChip status={i.status ?? (Number(i.is_won) === 1 ? 'won' : 'following')} /></td>
                     <td style={{ padding: 6 }}>{i.lost_reason || '—'}{i.lost_date ? <span className="hint">（{i.lost_date}）</span> : null}</td>
                     <td style={{ padding: 6, whiteSpace: 'nowrap' }}><Tags kc={i.is_key_customer} kp={i.is_key_project} /></td>
                     <td style={{ padding: 6 }}>{i.itemCount}</td>

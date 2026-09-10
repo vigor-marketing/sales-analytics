@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { get, post } from './api'
+import { StatusChip } from './StatusChip'
 
 interface MetaLite { sales: { name: string; team: string }[]; methods?: string[] }
 interface Lookup {
   id: string; inquiry_no: string; date: string; customer_name: string; country: string | null; use_location: string | null
   sales: string; purchaser: string; source: string; is_won: number; won_date?: string | null; orderNo?: string | null
   productNames: string; usdApprox: number; totals: { currency: string; total: number }[]; itemCount?: number
-  last_followup_at?: string | null; next_followup_at?: string | null; items: { product_name: string; qty: number | null; amount: number; currency: string }[]
+  last_followup_at?: string | null; next_followup_at?: string | null; status?: 'won' | 'lost' | 'following'; items: { product_name: string; qty: number | null; amount: number; currency: string }[]
 }
 interface Att { url: string; name: string }
 interface Fu {
@@ -130,7 +131,7 @@ export default function FollowUps({ meta }: { meta: MetaLite }) {
             <span>来源 <b>{hit.source}</b></span>
             <span>询价日期 <b className="mono">{hit.date}</b></span>
             <span>报价合计 <b>{(hit.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</b>（≈USD {money(hit.usdApprox)}）</span>
-            <span>状态 <b>{Number(hit.is_won) === 1 ? <span className="tag won">已成单</span> : <span className="badge">跟进中</span>}</b></span>
+            <span>状态 <b><StatusChip status={hit.status ?? (Number(hit.is_won) === 1 ? 'won' : 'following')} /></b></span>
             <span>最近跟进 <b className="mono">{hit.last_followup_at || '—'}</b></span>
             <span>下次跟进 <b className="mono">{hit.next_followup_at || '—'}</b></span>
           </div>

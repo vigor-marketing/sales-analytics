@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { del, get, post, put } from './api'
+import { StatusChip, type Status } from './StatusChip'
 import { COUNTRIES } from './countries'
 
 interface TotalItem { currency: string; total: number }
@@ -11,14 +12,8 @@ const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).t
 const CURS = ['USD', 'CNY', 'EUR']
 const LOST_REASONS = ['价格无优势', '交期太长', '技术方案不满足', '客户选择竞品', '客户预算取消', '项目暂停/延期', '联系不上客户', '其他']
 /** 状态文案由后端自动判定：有订单=已成单，标记未成单=未成单，其余=跟进中 */
-type Status = 'won' | 'lost' | 'following'
-const statusLabel: Record<Status, string> = { won: '已成单', lost: '未成单', following: '跟进中' }
-function StatusTag({ status, big }: { status?: Status; big?: boolean }) {
-  const st: Status = status ?? 'following'
-  if (st === 'won') return <span className={'tag won' + (big ? ' big' : '')}>已成单</span>
-  if (st === 'lost') return <span className={'tag lost' + (big ? ' big' : '')}>未成单</span>
-  return <span className={'badge' + (big ? ' big' : '')}>跟进中</span>
-}
+// 状态标签统一尺寸（见 StatusChip），三种状态大小一致
+const StatusTag = StatusChip
 
 export default function InquiryManager({ meta = { sales: [], purchasers: [], sources: [] } }: { meta?: MetaLite }) {
   const [q, setQ] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState('')
@@ -85,7 +80,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                 <td style={{ padding: '6px 8px' }}>{r.customer_name}</td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
                   {/* 列表只显示状态，丢单原因在「查看」里展示 */}
-                  <StatusTag status={r.status} big={r.status === 'lost'} />
+                  <StatusTag status={r.status} />
                 </td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><TagBlocks r={r} /></td>
                 <td style={{ padding: '6px 8px' }} title={fmtT(r)}>≈USD {money(r.usdApprox)}<div className="hint">{fmtT(r)}</div></td>
@@ -164,7 +159,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)', marginLeft: 10 }}>重点项目</span>
               <span className={Number(d.is_key_project) === 1 ? 'tag kp' : 'badge'}>{Number(d.is_key_project) === 1 ? '是' : '否'}</span>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)', marginLeft: 10 }}>状态</span>
-              <StatusTag status={d.status} big={d.status === 'lost'} />
+              <StatusTag status={d.status} />
               <span className="hint">（自动判定：有销售订单即为已成单，标记未成单后为未成单，其余为跟进中）</span>
               {Number(d.is_won) === 1 && <span className="hint">订单号 {d.orderNo || '—'} · 成单日期 {d.won_date || '—'}{cycle != null ? ` · 转化 ${cycle} 天` : ''}</span>}
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)', marginLeft: 10 }}>跟进</span>

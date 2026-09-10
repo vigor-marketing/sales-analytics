@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get, post } from './api'
+import { StatusChip } from './StatusChip'
 import { COUNTRIES } from './countries'
 import { ArticleIcon, CartIcon, ChartBarIcon, ChartColumnIcon, ChatBubbleHistoryIcon, EditIcon, SettingIcon, UserIcon } from 'tdesign-icons-react'
 import CustomerArchive from './CustomerArchive'
@@ -221,7 +222,7 @@ export default function App() {
         <h3 className="sec-title">基本信息 <small>必填：询价号 / 日期 / 销售人员 / 客户 / 采购人员 / 询价来源 / 重点客户</small></h3>
         <div className="row" style={{ alignItems: 'center', gap: 10, marginBottom: 4 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>状态</span>
-          <span className="badge">跟进中</span>
+          <StatusChip status="following" />
           <span className="hint">新录入的询价自动为「跟进中」；生成销售订单后自动变「已成单」，客户丢单时在「询报价管理 → 编辑」里标记「未成单」并填写原因</span>
         </div>
         <div className="row">
