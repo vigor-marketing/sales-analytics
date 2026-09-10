@@ -11,6 +11,9 @@ export const DB_FILE = process.env.DB_PATH ?? path.resolve(__dirname, '../data/s
 const raw = new DatabaseSync(DB_FILE)
 raw.exec('PRAGMA journal_mode = WAL')
 raw.exec('PRAGMA foreign_keys = ON')
+// 写锁等待：避免并发写入时直接抛 "database is locked"
+raw.exec('PRAGMA busy_timeout = 5000')
+raw.exec('PRAGMA synchronous = NORMAL')
 // 语句缓存：复用 prepared statement，避免频繁创建/回收（也规避驱动层 GC 问题）
 const stmtCache = new Map<string, ReturnType<DatabaseSync['prepare']>>()
 const db = {
@@ -28,9 +31,19 @@ const db = {
 }
 
 export const nowIso = () => new Date().toISOString()
-export const todayStr = () => nowIso().slice(0, 10)
+// 本地日期（避免 UTC 造成每天 8 小时的日期错位）
+export const todayStr = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 export const newId = () => randomUUID()
-export const num = (v: unknown): number | null => { const n = Number(v); return Number.isFinite(n) ? n : null }
+// 注意：Number(null)===0、Number('')===0，会把「未填写」静默写成 0，这里显式排除
+export const num = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === '') return null
+  if (typeof v === 'string' && !v.trim()) return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
 export const text = (v: unknown): string => (typeof v === 'string' && v.trim() ? v.trim() : '')
 
 export function schema(): void {
@@ -100,6 +113,23 @@ export function schema(): void {
   try { db.exec('ALTER TABLE inquiries ADD COLUMN is_lost INTEGER NOT NULL DEFAULT 0') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN lost_reason TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN lost_date TEXT') } catch { /* 已存在 */ }
+  // 常用查询索引（幂等创建，提升联表与过滤效率）
+  const indexes = [
+    'CREATE INDEX IF NOT EXISTS idx_inquiries_no ON inquiries(inquiry_no COLLATE NOCASE)',
+    'CREATE INDEX IF NOT EXISTS idx_inquiries_customer ON inquiries(customer_id)',
+    'CREATE INDEX IF NOT EXISTS idx_inquiries_sales_date ON inquiries(sales, date)',
+    'CREATE INDEX IF NOT EXISTS idx_inquiries_lost ON inquiries(is_lost)',
+    'CREATE INDEX IF NOT EXISTS idx_items_inquiry ON inquiry_items(inquiry_id)',
+    'CREATE INDEX IF NOT EXISTS idx_orders_inquiry ON orders(inquiry_id)',
+    'CREATE INDEX IF NOT EXISTS idx_orders_won_date ON orders(won_date)',
+    'CREATE INDEX IF NOT EXISTS idx_followups_inquiry ON followups(inquiry_id)',
+    'CREATE INDEX IF NOT EXISTS idx_comments_followup ON followup_comments(followup_id)',
+    'CREATE INDEX IF NOT EXISTS idx_prices_name ON product_prices(product_name COLLATE NOCASE)',
+    'CREATE INDEX IF NOT EXISTS idx_products_name ON products(name COLLATE NOCASE)',
+    'CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name COLLATE NOCASE)',
+  ]
+  indexes.forEach((sql) => { try { db.exec(sql) } catch { /* 忽略 */ } })
+
   // 跟进评论表（旧库补建）
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS followup_comments (

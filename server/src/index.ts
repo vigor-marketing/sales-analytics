@@ -20,6 +20,12 @@ app.use((err: unknown, _req: express.Request, res: express.Response, next: expre
 })
 
 const str = (v: unknown) => text(v)
+/** 文本长度上限校验：超长返回中文错误信息，正常返回 null（避免脏数据把库和界面撑坏） */
+function overLimit(fields: [unknown, number, string][]): string | null {
+  for (const [v, max, label] of fields) { if (text(v).length > max) return `${label}过长（最多 ${max} 个字符）` }
+  return null
+}
+const NAME_MAX = 120
 /** 录入/更新询价时把产品沉淀进产品档案 */
 function upsertProducts(
   items: { productName: string; qty: number | null; amount: number; currency: string }[],
@@ -80,6 +86,16 @@ function cleanupOrphans(): void {
 }
 
 const ok = (res: express.Response, data: unknown, st = 200) => res.status(st).json({ ok: true, data })
+// LIKE 参数：转义用户输入中的 % 与 _，配合 SQL 里的 ESCAPE \'!\' 使用（避免把通配符当字面量/全表匹配）
+const likeArg = (v: string) => `%${v.replace(/[!%_]/g, (m) => `!${m}`)}%`
+
+// 日期合法性（YYYY-MM-DD 且真实存在）
+const isDate = (v: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false
+  const [y, m, d] = v.split('-').map(Number)
+  const dt = new Date(y, m - 1, d)                       // 按本地时间构造，避免时区偏移
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d
+}
 const fail = (res: express.Response, msg: string, st = 400) => res.status(st).json({ ok: false, error: msg })
 
 // —— 基础元数据：组织人员 / 来源 / 国别 / 汇率（开发态近似，后续接设置）——
@@ -99,9 +115,9 @@ app.get('/api/meta/bootstrap', (_req, res) => {
 app.get('/api/products', (req, res) => {
   const d = getDb()
   const q = str(req.query.q)
-  const like = `%${q}%`
+  const like = likeArg(q)
   const rows = (q
-    ? d.prepare('SELECT * FROM products WHERE name LIKE ? ORDER BY use_count DESC, updated_at DESC LIMIT 500').all(like)
+    ? d.prepare('SELECT * FROM products WHERE name LIKE ? ESCAPE \'!\' ORDER BY use_count DESC, updated_at DESC LIMIT 500').all(like)
     : d.prepare('SELECT * FROM products ORDER BY use_count DESC, updated_at DESC LIMIT 500').all()) as Record<string, unknown>[]
   // 价格变动：最近一次记录里的“上一次金额/数量”，以及累计变动次数
   const hist = d.prepare('SELECT product_name, prev_amount, prev_qty, prev_currency, amount, qty, currency, created_at FROM product_prices ORDER BY created_at DESC').all() as
@@ -141,27 +157,46 @@ app.get('/api/products/history', (req, res) => {
 app.post('/api/products', (req, res) => {
   const name = str(req.body?.name)
   if (!name) return fail(res, '产品名称必填')
+  if (name.length > NAME_MAX) return fail(res, `产品名称过长（最多 ${NAME_MAX} 个字符）`)
   const t = nowIso()
-  const cur = ['USD', 'CNY', 'EUR'].includes(str(req.body?.currency)) ? str(req.body?.currency) : 'USD'
-  const d = getDb()
-  const before = d.prepare('SELECT * FROM products WHERE name = ? COLLATE NOCASE').get(name) as { last_amount: number | null; last_qty: number | null; currency: string } | undefined
-  d.prepare(`INSERT INTO products (id, name, currency, last_amount, last_qty, use_count, last_used_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?) ON CONFLICT(name) DO UPDATE SET currency=excluded.currency, updated_at=excluded.updated_at`)
-    .run(newId(), name, cur, num(req.body?.lastAmount), num(req.body?.lastQty), t, t)
+  // 只在显式传入时才覆盖已有值：未传币种/金额/数量时保留原值，避免手动维护把档案清空
+  const rawCur = str(req.body?.currency)
+  const cur = ['USD', 'CNY', 'EUR'].includes(rawCur) ? rawCur : null
   const amt = num(req.body?.lastAmount)
+  const qty = num(req.body?.lastQty)
+  const d = getDb()
+  const before = d.prepare('SELECT * FROM products WHERE name = ? COLLATE NOCASE').get(name) as { id: string; last_amount: number | null; last_qty: number | null; currency: string } | undefined
+  if (before) {
+    // 已有档案：只覆盖本次显式传入的字段，其余保留原值
+    d.prepare(`UPDATE products SET currency = COALESCE(?, currency), last_amount = COALESCE(?, last_amount),
+      last_qty = COALESCE(?, last_qty), updated_at = ? WHERE id = ?`).run(cur, amt, qty, t, before.id)
+  } else {
+    d.prepare(`INSERT INTO products (id, name, currency, last_amount, last_qty, use_count, last_used_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?)`).run(newId(), name, cur ?? 'USD', amt, qty, t, t)
+  }
+  const after = d.prepare('SELECT * FROM products WHERE name = ? COLLATE NOCASE').get(name) as { currency: string; last_amount: number | null; last_qty: number | null }
   if (amt != null && Number(before?.last_amount ?? -1) !== Number(amt)) {
     d.prepare(`INSERT INTO product_prices (id, product_name, currency, amount, qty, prev_amount, prev_qty, prev_currency, source, biz_date, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(newId(), name, cur, amt, num(req.body?.lastQty), before?.last_amount ?? null, before?.last_qty ?? null, before?.currency ?? null, '手动维护', todayStr(), t)
+      .run(newId(), name, after.currency, amt, qty, before?.last_amount ?? null, before?.last_qty ?? null, before?.currency ?? null, '手动维护', todayStr(), t)
   }
   ok(res, getDb().prepare('SELECT * FROM products WHERE name = ? COLLATE NOCASE').get(name), 201)
 })
 app.put('/api/products/:id', (req, res) => {
   const d = getDb()
-  if (!d.prepare('SELECT id FROM products WHERE id = ?').get(req.params.id)) return fail(res, '产品不存在', 404)
+  const oldP = d.prepare('SELECT id, name FROM products WHERE id = ?').get(req.params.id) as { id: string; name: string } | undefined
+  if (!oldP) return fail(res, '产品不存在', 404)
   const name = str(req.body?.name)
+  if (name.length > NAME_MAX) return fail(res, `产品名称过长（最多 ${NAME_MAX} 个字符）`)
   const cur = ['USD', 'CNY', 'EUR'].includes(str(req.body?.currency)) ? str(req.body?.currency) : null
-  if (name) d.prepare('UPDATE products SET name = ?, updated_at = ? WHERE id = ?').run(name, nowIso(), req.params.id)
+  if (name && name !== oldP.name) {
+    if (d.prepare('SELECT id FROM products WHERE name = ? COLLATE NOCASE AND id <> ?').get(name, req.params.id)) return fail(res, `产品名称「${name}」已存在`, 409)
+    d.transaction(() => {
+      d.prepare('UPDATE products SET name = ?, updated_at = ? WHERE id = ?').run(name, nowIso(), req.params.id)
+      // 价格历史按名称关联，改名同步迁移，避免历史「丢失」
+      d.prepare('UPDATE product_prices SET product_name = ? WHERE product_name = ? COLLATE NOCASE').run(name, oldP.name)
+    })()
+  }
   if (cur) d.prepare('UPDATE products SET currency = ?, updated_at = ? WHERE id = ?').run(cur, nowIso(), req.params.id)
   if (req.body?.lastAmount !== undefined) {
     const cur2 = d.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id) as { name: string; last_amount: number | null; last_qty: number | null; currency: string }
@@ -235,9 +270,9 @@ app.get('/api/customers', (req, res) => {
   const d = getDb()
   const q = str(req.query.q)
   const salesQ = str(req.query.sales)
-  const like = `%${q}%`
+  const like = likeArg(q)
   const parts: string[] = []; const args: unknown[] = []
-  if (q) { parts.push('(name LIKE ? OR country LIKE ?)'); args.push(like, like) }
+  if (q) { parts.push('(name LIKE ? ESCAPE \'!\' OR country LIKE ? ESCAPE \'!\')'); args.push(like, like) }
   if (salesQ) { parts.push('EXISTS (SELECT 1 FROM inquiries i WHERE i.customer_id = customers.id AND i.sales = ?)'); args.push(salesQ) }
   const where = parts.length ? `WHERE ${parts.join(' AND ')}` : ''
   const rows = d.prepare(`SELECT id, name, country, use_location, source, stars, created_at, updated_at FROM customers ${where} ORDER BY updated_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
@@ -269,13 +304,14 @@ app.get('/api/customers/:id', (req, res) => {
   const wonList = list.filter((x) => Number((x as Record<string, unknown>).is_won) === 1)
   const lostList = list.filter((x) => (x as { status?: string }).status === 'lost')
   const decided = wonList.length + lostList.length
-  ok(res, { ...c, inquiries: list, summary: { inquiryCount: list.length, usdTotal: Math.round(list.reduce((s, x) => s + (x.usdApprox || 0), 0)), wonCount: wonList.length, lostCount: lostList.length, winRate: decided ? Math.round((wonList.length / decided) * 1000) / 10 : 0, wonUsd: Math.round(wonList.reduce((s, x) => s + (x.usdApprox || 0), 0)), keyProjectCount: list.filter((x) => Number((x as Record<string, unknown>).is_key_project) === 1).length } })
+  const keyProjectCount = list.filter((x) => Number((x as Record<string, unknown>).is_key_project) === 1).length
+  ok(res, { ...c, keyCustomer: list.some((x) => Number((x as Record<string, unknown>).is_key_customer) === 1) ? 1 : 0, keyProjectCount, inquiries: list, summary: { inquiryCount: list.length, usdTotal: Math.round(list.reduce((s, x) => s + (x.usdApprox || 0), 0)), wonCount: wonList.length, lostCount: lostList.length, winRate: decided ? Math.round((wonList.length / decided) * 1000) / 10 : 0, wonUsd: Math.round(wonList.reduce((s, x) => s + (x.usdApprox || 0), 0)), keyProjectCount: list.filter((x) => Number((x as Record<string, unknown>).is_key_project) === 1).length } })
 })
 
 // —— 询价号唯一性检查 ——
 app.get('/api/inquiries/exists', (req, res) => {
   const no = str(req.query.no)
-  const r = no ? getDb().prepare('SELECT 1 FROM inquiries WHERE inquiry_no = ?').get(no) : undefined
+  const r = no ? getDb().prepare('SELECT 1 FROM inquiries WHERE inquiry_no = ? COLLATE NOCASE').get(no) : undefined
   ok(res, { exists: Boolean(r) })
 })
 
@@ -356,7 +392,8 @@ app.post('/api/inquiries', (req, res) => {
   const items = (Array.isArray(req.body?.items) ? (req.body.items as unknown[]) : []) as { productName?: unknown; qty?: unknown; amount?: unknown; currency?: unknown }[]
 
   if (!no) return fail(res, '询价号必填')
-  if (d.prepare('SELECT 1 FROM inquiries WHERE inquiry_no = ?').get(no)) return fail(res, `询价号 ${no} 已存在`, 409)
+  if (!isDate(date)) return fail(res, '询价日期格式应为 YYYY-MM-DD（且为真实日期）')
+  if (d.prepare('SELECT 1 FROM inquiries WHERE inquiry_no = ? COLLATE NOCASE').get(no)) return fail(res, `询价号 ${no} 已存在（不区分大小写）`, 409)
   if (!clientIdIn && !newName) return fail(res, '请选择客户档案中的客户，或选择“新客户”并填写名称')
   if (!sales) return fail(res, '请选择销售人员')
   if (!purchaser) return fail(res, '请选择采购人员')
@@ -366,6 +403,12 @@ app.post('/api/inquiries', (req, res) => {
     .map((it, i) => ({ productName: str(it.productName), qty: num(it.qty), amount: num(it.amount) ?? 0, currency: ['USD', 'CNY', 'EUR'].includes(str(it.currency)) ? str(it.currency) : 'USD', sort: i + 1 }))
     .filter((it) => it.productName && it.amount > 0)
   if (!cleanItems.length) return fail(res, '至少一行询价明细（产品名称与金额大于 0）')
+  if (cleanItems.some((it) => it.qty != null && it.qty < 0)) return fail(res, '数量不能为负数')
+  if (cleanItems.some((it) => it.amount > 1e12)) return fail(res, '金额超出合理范围')
+  const tooLongNew = overLimit([[no, 60, '询价号'], [newName, NAME_MAX, '客户名称'], [note, 5000, '备注'], [blockers, 3000, '卡点'], [actionPlan, 3000, '行动计划'], [supportNeeded, 3000, '需要的支持']])
+  if (tooLongNew) return fail(res, tooLongNew)
+  if (cleanItems.length > 50) return fail(res, '询价明细最多 50 行')
+  if (cleanItems.some((it) => it.productName.length > NAME_MAX)) return fail(res, `产品名称过长（最多 ${NAME_MAX} 个字符）`)
 
   const t = nowIso()
   let customer = clientIdIn ? (d.prepare('SELECT * FROM customers WHERE id = ?').get(clientIdIn) as Record<string, unknown> | undefined) : undefined
@@ -430,7 +473,7 @@ app.get('/api/followups', (req, res) => {
   const parts: string[] = ['1=1']; const args: unknown[] = []
   if (inquiryId) { parts.push('f.inquiry_id = ?'); args.push(inquiryId) }
   if (salesQ) { parts.push('i.sales = ?'); args.push(salesQ) }
-  if (q) { parts.push('(i.inquiry_no LIKE ? OR f.content LIKE ? OR c.name LIKE ?)'); const l = `%${q}%`; args.push(l, l, l) }
+  if (q) { parts.push('(i.inquiry_no LIKE ? ESCAPE \'!\' OR f.content LIKE ? ESCAPE \'!\' OR c.name LIKE ? ESCAPE \'!\')'); const l = likeArg(q); args.push(l, l, l) }
   const rows = d.prepare(`SELECT f.*, i.inquiry_no, i.sales, i.is_key_customer, i.is_key_project, c.name AS customer_name FROM followups f
     JOIN inquiries i ON i.id = f.inquiry_id LEFT JOIN customers c ON c.id = i.customer_id
     WHERE ${parts.join(' AND ')} ORDER BY f.date DESC, f.created_at DESC LIMIT 300`).all(...args) as Record<string, unknown>[]
@@ -474,14 +517,21 @@ app.post('/api/followups', (req, res) => {
   const photos = Array.isArray(req.body?.photos) ? (req.body.photos as unknown[]).map((x) => str(x)).filter(Boolean).slice(0, 20) : []
   const attachments = Array.isArray(req.body?.attachments) ? (req.body.attachments as { url?: unknown; name?: unknown; size?: unknown }[]).map((x) => ({ url: str(x.url), name: str(x.name), size: num(x.size) ?? null })).filter((x) => x.url).slice(0, 20) : []
   const nextAt = str(req.body?.nextFollowupAt) || null
+  if (!isDate(date)) return fail(res, '跟进日期格式应为 YYYY-MM-DD（且为真实日期）')
+  if (nextAt && !isDate(nextAt)) return fail(res, '下次跟进日期格式应为 YYYY-MM-DD（且为真实日期）')
+  const tooLongFu = overLimit([[summary, 2000, '跟进简述'], [detail, 5000, '跟进内容'], [str(req.body?.method), 40, '跟进方式']])
+  if (tooLongFu) return fail(res, tooLongFu)
   const byName = str(req.body?.byName) || text(iq.sales)
   const t = nowIso()
   const fid = newId()
   d.transaction(() => {
     d.prepare('INSERT INTO followups (id, inquiry_id, date, method, content, summary, detail, photos, attachments, next_followup_at, by_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(fid, inquiryId, date, str(req.body?.method) || '电话', detail, summary, detail, JSON.stringify(photos), JSON.stringify(attachments), nextAt, byName, t)
-    // 询价上的「最近跟进 / 下次跟进」始终与最新一条跟进记录保持一致（仪表盘提醒同源）
-    d.prepare('UPDATE inquiries SET last_followup_at = ?, next_followup_at = ?, updated_at = ? WHERE id = ?').run(date, nextAt, t, inquiryId)
+    // 询价上的「最近跟进 / 下次跟进」按**最新一条**跟进记录重算（补录历史日期不会覆盖最新状态）
+    d.prepare(`UPDATE inquiries SET
+        last_followup_at = (SELECT f2.date FROM followups f2 WHERE f2.inquiry_id = ? ORDER BY f2.date DESC, f2.created_at DESC, f2.rowid DESC LIMIT 1),
+        next_followup_at = (SELECT f3.next_followup_at FROM followups f3 WHERE f3.inquiry_id = ? ORDER BY f3.date DESC, f3.created_at DESC, f3.rowid DESC LIMIT 1),
+        updated_at = ? WHERE id = ?`).run(inquiryId, inquiryId, t, inquiryId)
   })()
   ok(res, { id: fid, inquiryId, date, nextFollowupAt: nextAt }, 201)
 })
@@ -500,15 +550,15 @@ app.get('/api/orders', (req, res) => {
   const q = str(req.query.q), salesQ = str(req.query.sales), from = str(req.query.from), to = str(req.query.to), productQ = str(req.query.product)
   const orderNoQ = str(req.query.orderNo), customerQ = str(req.query.customer), purchaserQ = str(req.query.purchaser), sourceQ = str(req.query.source)
   const parts: string[] = ['1=1']; const args: unknown[] = []
-  if (q) { parts.push('(o.order_no LIKE ? OR i.inquiry_no LIKE ? OR c.name LIKE ?)'); const l = `%${q}%`; args.push(l, l, l) }
-  if (orderNoQ) { parts.push('(o.order_no LIKE ? OR i.inquiry_no LIKE ?)'); const l = `%${orderNoQ}%`; args.push(l, l) }
-  if (customerQ) { parts.push('c.name LIKE ?'); args.push(`%${customerQ}%`) }
+  if (q) { parts.push('(o.order_no LIKE ? ESCAPE \'!\' OR i.inquiry_no LIKE ? ESCAPE \'!\' OR c.name LIKE ? ESCAPE \'!\')'); const l = likeArg(q); args.push(l, l, l) }
+  if (orderNoQ) { parts.push('(o.order_no LIKE ? ESCAPE \'!\' OR i.inquiry_no LIKE ? ESCAPE \'!\')'); const l = likeArg(orderNoQ); args.push(l, l) }
+  if (customerQ) { parts.push('c.name LIKE ? ESCAPE \'!\''); args.push(likeArg(customerQ)) }
   if (purchaserQ) { parts.push('i.purchaser = ?'); args.push(purchaserQ) }
   if (sourceQ) { parts.push('i.source = ?'); args.push(sourceQ) }
   if (salesQ) { parts.push('i.sales = ?'); args.push(salesQ) }
   if (from) { parts.push('o.won_date >= ?'); args.push(from) }
   if (to) { parts.push('o.won_date <= ?'); args.push(to) }
-  if (productQ) { parts.push('EXISTS (SELECT 1 FROM inquiry_items it WHERE it.inquiry_id = i.id AND it.product_name LIKE ?)'); args.push(`%${productQ}%`) }
+  if (productQ) { parts.push('EXISTS (SELECT 1 FROM inquiry_items it WHERE it.inquiry_id = i.id AND it.product_name LIKE ? ESCAPE \'!\')'); args.push(likeArg(productQ)) }
   const rows = d.prepare(`SELECT o.id AS order_id, o.order_no, o.won_date, o.amount AS order_amount, o.currency AS order_currency, o.note AS order_note, o.win_reason AS win_reason,
       o.created_at AS order_created_at, o.updated_at AS order_updated_at,
       i.id AS inquiry_id, i.inquiry_no, i.date, i.sales, i.purchaser, i.source, i.country, i.use_location, i.hand_total, i.is_key_customer, i.is_key_project,
@@ -547,9 +597,12 @@ app.post('/api/orders', (req, res) => {
   if (d.prepare('SELECT id FROM orders WHERE order_no = ?').get(orderNo)) return fail(res, `订单号 ${orderNo} 已存在`, 409)
   const cur = ['USD', 'CNY', 'EUR'].includes(str(req.body?.currency)) ? str(req.body.currency) : 'USD'
   const amount = num(req.body?.amount)
+  if (amount != null && (amount < 0 || amount > 1e12)) return fail(res, '订单金额需为 0 ~ 1e12 之间的数值')
   const t = nowIso()
   const oid = newId()
   const winReason = text(req.body?.winReason) || null
+  const tooLongOrd = overLimit([[orderNo, 60, '订单号'], [winReason, 2000, '成单原因'], [text(req.body?.note), 5000, '订单备注']])
+  if (tooLongOrd) return fail(res, tooLongOrd)
   d.prepare('INSERT INTO orders (id, order_no, inquiry_id, customer_id, won_date, amount, currency, note, win_reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run(oid, orderNo, inquiryId, text(inq.customer_id) || null, wonDate, amount, cur, text(req.body?.note) || null, winReason, t, t)
   ok(res, { id: oid, orderNo, wonDate }, 201)
@@ -565,9 +618,12 @@ app.put('/api/orders/:id', (req, res) => {
   const dup = d.prepare('SELECT id FROM orders WHERE order_no = ? AND id <> ?').get(orderNo, req.params.id)
   if (dup) return fail(res, `订单号 ${orderNo} 已存在`, 409)
   const amount = req.body?.amount !== undefined ? num(req.body.amount) : num(o.amount)
+  if (amount != null && (amount < 0 || amount > 1e12)) return fail(res, '订单金额需为 0 ~ 1e12 之间的数值')
   const cur = req.body?.currency !== undefined && ['USD', 'CNY', 'EUR'].includes(str(req.body.currency)) ? str(req.body.currency) : str(o.currency)
   const note = req.body?.note !== undefined ? (text(req.body.note) || null) : str(o.note) || null
   const winReason = req.body?.winReason !== undefined ? (text(req.body.winReason) || null) : (str(o.win_reason) || null)
+  const tooLongOrd2 = overLimit([[orderNo, 60, '订单号'], [winReason, 2000, '成单原因'], [note, 5000, '订单备注']])
+  if (tooLongOrd2) return fail(res, tooLongOrd2)
   d.prepare('UPDATE orders SET order_no = ?, won_date = ?, amount = ?, currency = ?, note = ?, win_reason = ?, updated_at = ? WHERE id = ?').run(orderNo, wonDate, amount, cur, note, winReason, nowIso(), req.params.id)
   ok(res, { id: req.params.id })
 })
@@ -717,7 +773,7 @@ app.get('/api/analysis/reasons', (req, res) => {
   if (salesQ) { wParts.push('i.sales = ?'); wArgs.push(salesQ) }
   if (from) { wParts.push('o.won_date >= ?'); wArgs.push(from) }
   if (to) { wParts.push('o.won_date <= ?'); wArgs.push(to) }
-  if (productQ) { wParts.push('EXISTS (SELECT 1 FROM inquiry_items it WHERE it.inquiry_id = i.id AND it.product_name LIKE ?)'); wArgs.push(`%${productQ}%`) }
+  if (productQ) { wParts.push('EXISTS (SELECT 1 FROM inquiry_items it WHERE it.inquiry_id = i.id AND it.product_name LIKE ? ESCAPE \'!\')'); wArgs.push(likeArg(productQ)) }
   const wins = d.prepare(`SELECT i.id AS inquiry_id, i.date AS inq_date, o.won_date, o.win_reason FROM orders o JOIN inquiries i ON i.id = o.inquiry_id WHERE ${wParts.join(' AND ')}`)
     .all(...wArgs) as { inquiry_id: string; inq_date: string; won_date: string; win_reason: string | null }[]
 
@@ -725,7 +781,7 @@ app.get('/api/analysis/reasons', (req, res) => {
   if (salesQ) { lParts.push('i.sales = ?'); lArgs.push(salesQ) }
   if (from) { lParts.push('COALESCE(i.lost_date, i.date) >= ?'); lArgs.push(from) }
   if (to) { lParts.push('COALESCE(i.lost_date, i.date) <= ?'); lArgs.push(to) }
-  if (productQ) { lParts.push('EXISTS (SELECT 1 FROM inquiry_items it WHERE it.inquiry_id = i.id AND it.product_name LIKE ?)'); lArgs.push(`%${productQ}%`) }
+  if (productQ) { lParts.push('EXISTS (SELECT 1 FROM inquiry_items it WHERE it.inquiry_id = i.id AND it.product_name LIKE ? ESCAPE \'!\')'); lArgs.push(likeArg(productQ)) }
   const losts = d.prepare(`SELECT i.id, i.lost_reason, i.date AS inq_date, COALESCE(i.lost_date, i.date) AS lost_at FROM inquiries i LEFT JOIN orders o ON o.inquiry_id = i.id WHERE ${lParts.join(' AND ')}`)
     .all(...lArgs) as { id: string; lost_reason: string | null; inq_date: string; lost_at: string }[]
 
@@ -765,15 +821,20 @@ app.get('/api/analysis/reasons', (req, res) => {
   ok(res, { win: agg(winRows), lost: agg(lostRows), reasons: { win: getWinReasons(), lost: getLostReasons() } })
 })
 
+// 历史遗留接口：与 /api/orders 同口径（按订单表统计），避免出现两套成交口径
 app.get('/api/contracts', (req, res) => {
+  const p2 = new URLSearchParams(req.query as Record<string, string>).toString()
+  return res.redirect(307, `/api/orders${p2 ? `?${p2}` : ''}`)
+})
+app.get('/api/contracts-legacy', (req, res) => {
   const d = getDb()
   const q = str(req.query.q), salesQ = str(req.query.sales), from = str(req.query.from), to = str(req.query.to), productQ = str(req.query.product)
   const parts: string[] = ['i.is_won = 1']; const args: unknown[] = []
-  if (q) { parts.push('(i.inquiry_no LIKE ? OR c.name LIKE ?)'); const l = `%${q}%`; args.push(l, l) }
+  if (q) { parts.push('(i.inquiry_no LIKE ? ESCAPE \'!\' OR c.name LIKE ? ESCAPE \'!\')'); const l = likeArg(q); args.push(l, l) }
   if (salesQ) { parts.push('i.sales = ?'); args.push(salesQ) }
   if (from) { parts.push('i.won_date >= ?'); args.push(from) }
   if (to) { parts.push('i.won_date <= ?'); args.push(to) }
-  if (productQ) { parts.push('EXISTS (SELECT 1 FROM inquiry_items it WHERE it.inquiry_id = i.id AND it.product_name LIKE ?)'); args.push(`%${productQ}%`) }
+  if (productQ) { parts.push('EXISTS (SELECT 1 FROM inquiry_items it WHERE it.inquiry_id = i.id AND it.product_name LIKE ? ESCAPE \'!\')'); args.push(likeArg(productQ)) }
   const rows = d.prepare(`SELECT i.*, c.name AS customer_name FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id WHERE ${parts.join(' AND ')} ORDER BY i.won_date DESC, i.updated_at DESC LIMIT 1000`).all(...args) as Record<string, unknown>[]
   const list = rows.map((i) => {
     const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(i.id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
@@ -823,7 +884,7 @@ app.get('/api/inquiries', (req, res) => {
   const q = str(req.query.q), from = str(req.query.from), to = str(req.query.to)
   const sales = str(req.query.sales), purchaser = str(req.query.purchaser), source = str(req.query.source), country = str(req.query.country)
   const statusQ = str(req.query.status)
-  if (q) { parts.push('(i.inquiry_no LIKE ? OR c.name LIKE ? OR i.note LIKE ?)'); const l = `%${q}%`; args.push(l, l, l) }
+  if (q) { parts.push('(i.inquiry_no LIKE ? ESCAPE \'!\' OR c.name LIKE ? ESCAPE \'!\' OR i.note LIKE ? ESCAPE \'!\')'); const l = likeArg(q); args.push(l, l, l) }
   if (from) { parts.push('i.date >= ?'); args.push(from) }
   if (to) { parts.push('i.date <= ?'); args.push(to) }
   if (sales) { parts.push('i.sales = ?'); args.push(sales) }
@@ -868,13 +929,16 @@ app.get('/api/inquiries/:id', (req, res) => {
   const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(req.params.id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
   const order = d.prepare('SELECT id, order_no, won_date, amount, currency, note, win_reason FROM orders WHERE inquiry_id = ?').get(req.params.id) as Record<string, unknown> | undefined
   const { is_won: _legacyWon, won_date: _legacyWonDate, ...base } = r
-  ok(res, { ...base, is_won: order ? 1 : 0, status: inquiryStatus(Boolean(order), r.is_lost), won_date: order ? str(order.won_date) : null, orderNo: order ? str(order.order_no) : null, order: order ?? null, items, totals: fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount }))) })
+  const totals = fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount })))
+  const usdApprox = Math.round(totals.reduce((s2, x) => s2 + x.total / (FX2[x.currency] || 1), 0))
+  ok(res, { ...base, is_won: order ? 1 : 0, status: inquiryStatus(Boolean(order), r.is_lost), won_date: order ? str(order.won_date) : null, orderNo: order ? str(order.order_no) : null, order: order ?? null, items, usdApprox, totals: fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount }))) })
 })
 app.put('/api/inquiries/:id', (req, res) => {
   const d = getDb()
   const old = d.prepare('SELECT * FROM inquiries WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
   if (!old) return fail(res, '询价不存在', 404)
   const date = str(req.body?.date) || str(old.date)
+  if (!isDate(date)) return fail(res, '询价日期格式应为 YYYY-MM-DD（且为真实日期）')
   const country = req.body?.country !== undefined ? str(req.body?.country) || null : str(old.country) || null
   const useLocation = req.body?.useLocation !== undefined ? str(req.body?.useLocation) || country : str(old.use_location) || country
   const sales = str(req.body?.sales) || str(old.sales)
@@ -884,7 +948,8 @@ app.put('/api/inquiries/:id', (req, res) => {
   const note = req.body?.note !== undefined ? (text(req.body?.note) || null) : str(old.note) || null
   const keyCust = req.body?.isKeyCustomer !== undefined ? (req.body.isKeyCustomer ? 1 : 0) : (num(old.is_key_customer) ?? 0)
   const keyProj = req.body?.isKeyProject !== undefined ? (req.body.isKeyProject ? 1 : 0) : (num(old.is_key_project) ?? 0)
-  const isWon = req.body?.isWon !== undefined ? (req.body.isWon ? 1 : 0) : (num(old.is_won) ?? 0)
+  // 成交只能来自销售订单：忽略入参 isWon，保持原值（迁移期兼容旧数据）
+  const isWon = num(old.is_won) ?? 0
   const blockers = req.body?.blockers !== undefined ? (text(req.body?.blockers) || null) : (str(old.blockers) || null)
   const actionPlan = req.body?.actionPlan !== undefined ? (text(req.body?.actionPlan) || null) : (str(old.action_plan) || null)
   const supportNeeded = req.body?.supportNeeded !== undefined ? (text(req.body?.supportNeeded) || null) : (str(old.support_needed) || null)
@@ -910,6 +975,12 @@ app.put('/api/inquiries/:id', (req, res) => {
     .map((it, i) => ({ productName: str((it as { productName?: unknown }).productName), qty: num((it as { qty?: unknown }).qty), amount: num((it as { amount?: unknown }).amount) ?? 0, currency: ['USD', 'CNY', 'EUR'].includes(str((it as { currency?: unknown }).currency)) ? str((it as { currency?: unknown }).currency) : 'USD', sort: i + 1 }))
     .filter((x) => x.productName && x.amount > 0)
   if (itemsProvided && !clean.length) return fail(res, '至少一行产品（产品名称与金额>0）')
+  if (clean.some((it) => it.qty != null && it.qty < 0)) return fail(res, '数量不能为负数')
+  if (clean.some((it) => it.amount > 1e12)) return fail(res, '金额超出合理范围')
+  const tooLongUpd = overLimit([[note, 5000, '备注'], [blockers, 3000, '卡点'], [actionPlan, 3000, '行动计划'], [supportNeeded, 3000, '需要的支持'], [lostReason, 500, '丢单原因']])
+  if (tooLongUpd) return fail(res, tooLongUpd)
+  if (clean.length > 50) return fail(res, '询价明细最多 50 行')
+  if (clean.some((it) => it.productName.length > NAME_MAX)) return fail(res, `产品名称过长（最多 ${NAME_MAX} 个字符）`)
   const t = nowIso()
   d.transaction(() => {
     d.prepare('UPDATE inquiries SET date = ?, country = ?, use_location = ?, sales = ?, purchaser = ?, source = ?, hand_total = ?, note = ?, is_key_customer = ?, is_key_project = ?, is_won = ?, blockers = ?, action_plan = ?, support_needed = ?, customer_stars = ?, is_lost = ?, lost_reason = ?, lost_date = ?, updated_at = ? WHERE id = ?').run(date, country, useLocation, sales, purchaser, source, handTotal, note, keyCust, keyProj, isWon, blockers, actionPlan, supportNeeded, customerStars, isLost, lostReason, lostDate, t, req.params.id)
@@ -932,12 +1003,21 @@ app.put('/api/inquiries/:id', (req, res) => {
 // 询报价不允许删除（如需作废请在编辑中处理；成交以订单为准）
 app.delete('/api/inquiries/:id', (_req, res) => fail(res, '询报价不允许删除', 403))
 
-schema(); ensurePeople(); backfillProducts(); migrateWonToOrders()
+schema(); ensurePeople(); backfillProducts()
+// 注：历史成交迁移 migrateWonToOrders() 已不再随启动自动执行（避免废弃列 is_won 反向物化订单）；
+// 如需迁移旧库，可手动调用一次。
 cleanupOrphans()
 
 // 生产托管前端产物（可选）
 const clientDist = path.resolve(__dirname, '../../client/dist')
-app.use('/uploads', express.static(UPLOAD_DIR))
+// 上传文件加固：禁止类型嗅探、限制页面能力；可执行/文档类强制下载，避免同源存储型 XSS
+app.use('/uploads', express.static(UPLOAD_DIR, {
+  setHeaders(res, filePath) {
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'")
+    if (/\.(html?|svg|js|mjs|xml)$/i.test(filePath)) res.setHeader('Content-Disposition', 'attachment')
+  },
+}))
 if (existsSync(clientDist)) {
   app.use(express.static(clientDist, {
     setHeaders(res, filePath) {
