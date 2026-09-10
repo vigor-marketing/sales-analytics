@@ -4,6 +4,7 @@ import { StatusChip, type Status } from './StatusChip'
 import ReasonPicker from './ReasonPicker'
 import ProductPicker, { type ProductLite } from './ProductPicker'
 import { KeyTags } from './KeyTags'
+import PriceHistoryModal from './PriceHistory'
 import { COUNTRIES } from './countries'
 
 interface TotalItem { currency: string; total: number }
@@ -37,6 +38,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
       if (sales) p.set('sales', sales); if (pur) p.set('purchaser', pur); if (src) p.set('source', src); if (st) p.set('status', st)
       const url = `/inquiries?${p.toString()}`
       const d = await get<{ rows: Row[]; meta: { total: number; usdTotal: number; wonCount: number; lostCount: number; winRate: number; wonUsd: number } }>(url)
+      void get<ProductLite[]>('/products').then((l) => setProducts(Array.isArray(l) ? l : [])).catch(() => { /* */ })
       if (!d || !d.rows) throw new Error(`接口 ${url} 返回异常：${JSON.stringify(d)}`)
       setRows(d.rows); setTotal(d.meta.total); setSum({ usdTotal: d.meta.usdTotal ?? 0, wonCount: d.meta.wonCount ?? 0, lostCount: d.meta.lostCount ?? 0, winRate: d.meta.winRate ?? 0, wonUsd: d.meta.wonUsd ?? 0 })
     } catch (e) { setMsg('加载失败：' + (e as Error).message) }
@@ -101,7 +103,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
           </tbody>
         </table>
       </div>
-      {viewId && <DetailModal id={viewId} onClose={() => setViewId(null)} />}
+      {viewId && <DetailModal id={viewId} products={products} onClose={() => setViewId(null)} />}
       {editId && <EditModal id={editId} meta={meta} products={products} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); void load() }} />}
     </div>
   )
@@ -123,12 +125,13 @@ interface FuRow {
   photos: string[]; attachments: { url: string; name: string }[]; next_followup_at: string | null; by_name: string | null; created_at: string
 }
 
-function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
+function DetailModal({ id, products = [], onClose }: { id: string; products?: ProductLite[]; onClose: () => void }) {
   const [d, setD] = useState<Detail | null>(null)
   const [err, setErr] = useState('')
   // 与「询报价跟进」联动：查看时一并带出该询价下的全部跟进记录
   const [fus, setFus] = useState<FuRow[]>([])
   const [fuLoaded, setFuLoaded] = useState(false)
+  const [histName, setHistName] = useState<string | null>(null)
   useEffect(() => { get<Detail>(`/inquiries/${id}`).then(setD).catch((e) => setErr((e as Error).message)) }, [id])
   useEffect(() => {
     setFuLoaded(false)
@@ -202,6 +205,35 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               </div>
             ))}
             {(d.items || []).length === 0 && <div className="hint">暂无明细</div>}
+
+            {/* 金额版本：与产品档案联动，展示每个产品当前是第几版、最近一次变化 */}
+            {(() => {
+              const verOf = (nm: string) => products.find((x) => x.name.toLowerCase() === nm.trim().toLowerCase())
+              const list = (d.items || []).map((it) => ({ it, p: verOf(it.product_name) }))
+              return (
+                <div style={{ marginTop: 8, background: '#f8fafd', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 700 }}>金额版本</span>
+                    <span className="hint">（在「编辑」里改金额保存后，会同步生成产品档案的新版本）</span>
+                  </div>
+                  {list.map(({ it, p: pr }, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap', fontSize: 12.5 }}>
+                      <span style={{ minWidth: 180, fontWeight: 600 }}>{it.product_name}</span>
+                      {pr
+                        ? <>
+                          <span className="badge new">当前 V{pr.version ?? 0}</span>
+                          <span className="hint">最近报价 {money2(pr.last_amount)} {pr.currency}{pr.last_qty != null ? ` · 数量 ${pr.last_qty}` : ''}</span>
+                          {pr.prev_amount != null && <span className="hint">（上一版 {money2(pr.prev_amount)}）</span>}
+                        </>
+                        : <span className="badge">未建档</span>}
+                      <button className="btn xs" disabled={!pr} onClick={() => pr && setHistName(pr.name)}>查看记录</button>
+                    </div>
+                  ))}
+                  {list.length === 0 && <div className="hint" style={{ marginTop: 4 }}>暂无产品明细</div>}
+                </div>
+              )
+            })()}
+
             <div className="row" style={{ alignItems: 'center', gap: 8, marginTop: 6 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>总报价金额（自动）</span>
               {(d.totals || []).map((t) => (
@@ -227,6 +259,8 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                 <Field label="备注" value={d.note} area fixed />
               </div>
             </div>
+
+            {histName && <PriceHistoryModal name={histName} info={(() => { const pr = products.find((x) => x.name === histName); return pr ? { last_amount: pr.last_amount, currency: pr.currency, last_qty: pr.last_qty, use_count: pr.use_count } : undefined })()} onClose={() => setHistName(null)} />}
 
             {/* 跟进记录（与「询报价跟进」联动） */}
             <div style={{ marginTop: 12, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
@@ -284,6 +318,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
 function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, products = [], onClose, onSaved }: { id: string; meta?: MetaLite; products?: ProductLite[]; onClose: () => void; onSaved: () => void }) {
   const [order, setOrder] = useState<{ id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null>(null)
   const [ord, setOrd] = useState({ wonDate: new Date().toISOString().slice(0, 10), orderNo: '', amount: '', currency: 'USD', note: '', winReason: '' })
+  const [histName, setHistName] = useState<string | null>(null)
   const [ordErr, setOrdErr] = useState('')
   const [ordBusy, setOrdBusy] = useState(false)
   const [ordOpen, setOrdOpen] = useState(false)
@@ -436,6 +471,44 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
             <div className="row fixed-h" style={{ marginTop: 8 }}>
               <div className="col grow1 fixed-h"><label>备注</label><textarea className="sa fixed-h" value={form.note} onChange={(e) => set({ note: e.target.value })} /></div>
             </div>
+            {/* 金额版本记录：改金额保存后会在产品档案生成新版本，这里即时预演 */}
+            <div style={{ marginTop: 10, background: '#f8fafd', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700 }}>金额版本记录</span>
+                <span className="hint">保存后自动同步到产品档案：为每个产品生成一个新版本（金额/数量/币种有变化时）</span>
+              </div>
+              {form.items.filter((it) => it.productName.trim()).map((it, i) => {
+                const pr = products.find((x) => x.name.toLowerCase() === it.productName.trim().toLowerCase())
+                const amt = Number(it.amount) || 0
+                const qty = it.qty === '' ? null : Number(it.qty)
+                const changed = !pr
+                  || Number(pr.last_amount ?? -1) !== amt
+                  || Number(pr.last_qty ?? -1) !== Number(qty ?? -1)
+                  || pr.currency !== it.currency
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap', fontSize: 12.5 }}>
+                    <span style={{ minWidth: 180, fontWeight: 600 }}>{it.productName}</span>
+                    {pr
+                      ? <>
+                        <span className="badge new">当前 V{pr.version ?? 0}</span>
+                        <span className="hint">最近报价 {money(pr.last_amount)} {pr.currency}{pr.last_qty != null ? ` · 数量 ${pr.last_qty}` : ''}</span>
+                        {pr.prev_amount != null && <span className="hint">（上一版 {money(pr.prev_amount)}）</span>}
+                        <span className="hint">→ 本次录入 <b className="mono">{money(amt)} {it.currency}</b>{qty != null ? ` · 数量 ${qty}` : ''}</span>
+                        {changed
+                          ? <span style={{ color: '#a35c00', fontWeight: 700 }}>保存后生成 V{(pr.version ?? 0) + 1}</span>
+                          : <span className="hint" style={{ color: '#059669' }}>与最近一致，保存后版本不变</span>}
+                      </>
+                      : <>
+                        <span className="badge">未建档</span>
+                        <span style={{ color: '#a35c00', fontWeight: 700 }}>保存后创建 V1</span>
+                      </>}
+                    <button className="btn xs" disabled={!pr} onClick={() => pr && setHistName(pr.name)}>查看记录</button>
+                  </div>
+                )
+              })}
+              {form.items.filter((it) => it.productName.trim()).length === 0 && <div className="hint" style={{ marginTop: 4 }}>先填写产品名称与金额</div>}
+            </div>
+
             {/* 跟进状态：自动判定，未成单需填原因 */}
             <div className={form.isLost && !order ? 'statuswrap-lost' : ''} style={{ marginTop: 14, borderTop: form.isLost && !order ? 'none' : '1px dashed var(--line)', paddingTop: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -519,6 +592,8 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                 </div>
               )}
             </div>
+
+            {histName && <PriceHistoryModal name={histName} info={(() => { const pr = products.find((x) => x.name === histName); return pr ? { last_amount: pr.last_amount, currency: pr.currency, last_qty: pr.last_qty, use_count: pr.use_count } : undefined })()} onClose={() => setHistName(null)} />}
 
             {/* 保存按钮固定在弹窗最下方右下角 */}
             <div className="modal-foot">

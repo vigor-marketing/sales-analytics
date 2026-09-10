@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 
-export interface ProductLite { id: string; name: string; currency: string; last_amount: number | null; last_qty?: number | null; use_count: number }
+export interface ProductLite {
+  id: string; name: string; currency: string; last_amount: number | null; last_qty?: number | null; use_count: number
+  /** 产品档案里的价格版本信息（由 /api/products 返回） */
+  version?: number; prev_amount?: number | null; prev_qty?: number | null; amount_delta?: number | null; change_count?: number
+}
 
 /** 从产品档案选择后回填的内容：名称、币种，以及档案里的参考数量与参考金额 */
 export interface ProductPatch {
