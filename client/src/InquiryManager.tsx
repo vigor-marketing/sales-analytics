@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { del, get, put } from './api'
+import { del, get, post, put } from './api'
 import { COUNTRIES } from './countries'
 
 interface TotalItem { currency: string; total: number }
-interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; won_date?: string | null; blockers?: string | null; action_plan?: string | null; support_needed?: string | null }
+interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; won_date?: string | null; orderNo?: string | null; orderId?: string | null; blockers?: string | null; action_plan?: string | null; support_needed?: string | null }
 interface Detail extends Row { items: { product_name: string; qty: number | null; amount: number; currency: string }[] }
 interface MetaLite { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[] }
 
@@ -18,7 +18,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
   const [msg, setMsg] = useState(''); const [busy, setBusy] = useState(false)
   const [viewId, setViewId] = useState<string | null>(null)
   const [editId, setEditId] = useState<string | null>(null)
-  const [wonId, setWonId] = useState<string | null>(null)
+  const [orderId, setOrderId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -36,11 +36,6 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
     if (!window.confirm('确认删除这条询报价？将连同产品明细一起删除，不可恢复。')) return
     setBusy(true)
     try { await del(`/inquiries/${id}`); setMsg('已删除'); await load() } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) }
-  }
-  const doUnwon = async (r: Row) => {
-    if (!window.confirm(`取消「${r.inquiry_no}」的成单标记？`)) return
-    setBusy(true)
-    try { await put(`/inquiries/${r.id}/unwon`); setMsg(`已取消成单：${r.inquiry_no}`); await load() } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) }
   }
   const fmtT = (r: Row) => (r.totals ?? []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'
   const sumUsd = rows.reduce((s, r) => s + (r.usdApprox || 0), 0)
@@ -83,8 +78,8 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                   <button className="btn sm" onClick={() => setViewId(r.id)}>查看</button>
                   <button className="btn sm" onClick={() => setEditId(r.id)}>编辑</button>
                   {Number(r.is_won) === 1
-                    ? <button className="btn sm" disabled={busy} onClick={() => void doUnwon(r)} title={`成单日期 ${r.won_date || '—'}`}>取消成单</button>
-                    : <button className="btn sm pri" disabled={busy} onClick={() => setWonId(r.id)}>已成交</button>}
+                    ? <button className="btn sm" disabled={busy} onClick={() => setOrderId(r.id)} title={`订单号 ${r.orderNo || '—'} · 成单日期 ${r.won_date || '—'}`}>订单</button>
+                    : <button className="btn sm pri" disabled={busy} onClick={() => setOrderId(r.id)}>生成销售订单</button>}
                   <button className="btn sm danger" disabled={busy} onClick={() => void doDelete(r.id)}>删除</button>
                 </td>
               </tr>
@@ -95,7 +90,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
       </div>
       {viewId && <DetailModal id={viewId} onClose={() => setViewId(null)} />}
       {editId && <EditModal id={editId} meta={meta} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); void load() }} />}
-      {wonId && <WonModal inquiry={rows.find((x) => x.id === wonId) || null} onClose={() => setWonId(null)} onSaved={() => { setWonId(null); void load() }} />}
+      {orderId && <OrderModal inquiry={rows.find((x) => x.id === orderId) || null} onClose={() => setOrderId(null)} onSaved={() => { setOrderId(null); void load() }} />}
     </div>
   )
 }
@@ -111,35 +106,68 @@ function TagBlocks({ r }: { r: { is_key_customer?: number; is_key_project?: numb
     </>
   )
 }
-function WonModal({ inquiry, onClose, onSaved }: { inquiry: Row | null; onClose: () => void; onSaved: () => void }) {
+function OrderModal({ inquiry, onClose, onSaved }: { inquiry: Row | null; onClose: () => void; onSaved: () => void }) {
   const today = new Date().toISOString().slice(0, 10)
-  const [wonDate, setWonDate] = useState(today)
+  const editing = Number(inquiry?.is_won) === 1 && !!inquiry?.orderId
+  const [wonDate, setWonDate] = useState(editing ? (inquiry?.won_date || today) : today)
+  const [orderNo, setOrderNo] = useState(editing ? (inquiry?.orderNo || '') : '')
+  const [amount, setAmount] = useState('')
+  const [currency, setCurrency] = useState('USD')
+  const [note, setNote] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
-  const save = async () => {
+  useEffect(() => {
     if (!inquiry) return
+    setWonDate(editing ? (inquiry.won_date || today) : today)
+    setOrderNo(editing ? (inquiry.orderNo || '') : '')
+    setAmount(inquiry.hand_total != null ? String(inquiry.hand_total) : String(inquiry.usdApprox || ''))
+    setCurrency('USD')
+    setNote('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inquiry?.id])
+  if (!inquiry) return null
+  const cycle = wonDate && inquiry.date ? Math.round((Date.parse(wonDate) - Date.parse(inquiry.date)) / 86400000) : null
+  const save = async () => {
     if (!wonDate) return setErr('请选择成单日期')
     if (inquiry.date && wonDate < inquiry.date) return setErr(`成单日期不能早于询价日期（${inquiry.date}）`)
     setBusy(true); setErr('')
-    try { await put(`/inquiries/${inquiry.id}/won`, { wonDate }); onSaved() } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+    try {
+      if (editing && inquiry.orderId) {
+        await put(`/orders/${inquiry.orderId}`, { wonDate, orderNo: orderNo.trim() || undefined, amount: amount ? Number(amount) : undefined, currency, note })
+      } else {
+        await post('/orders', { inquiryId: inquiry.id, wonDate, orderNo: orderNo.trim() || undefined, amount: amount ? Number(amount) : undefined, currency, note })
+      }
+      onSaved()
+    } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
-  if (!inquiry) return null
-  const cycle = wonDate && inquiry.date ? Math.round((Date.parse(wonDate) - Date.parse(inquiry.date)) / 86400000) : null
+  const remove = async () => {
+    if (!inquiry.orderId) return
+    if (!window.confirm(`删除订单 ${inquiry.orderNo || ''}？删除后该询价将自动变为“跟进中”。`)) return
+    setBusy(true); setErr('')
+    try { await del(`/orders/${inquiry.orderId}`); onSaved() } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
   return (
     <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 'min(520px, 96vw)' }} role="dialog" aria-modal="true" aria-label="标记已成交">
+      <div className="modal" style={{ width: 'min(560px, 96vw)' }} role="dialog" aria-modal="true" aria-label="销售订单">
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <h3 style={{ margin: 0 }}>标记已成交 · {inquiry.inquiry_no}</h3>
+          <h3 style={{ margin: 0 }}>{editing ? `订单详情 · ${inquiry.orderNo || ''}` : `生成销售订单 · ${inquiry.inquiry_no}`}</h3>
           <button className="btn sm" onClick={onClose}>取消</button>
         </div>
         {err && <div className="msg err">{err}</div>}
-        <div className="hint" style={{ margin: '8px 0' }}>{inquiry.customer_name} · 询价日期 {inquiry.date} · 销售 {inquiry.sales}</div>
+        <div className="hint" style={{ margin: '8px 0' }}>{inquiry.customer_name} · 询价日期 {inquiry.date} · 销售 {inquiry.sales} · 报价 ≈USD {money(inquiry.usdApprox)}</div>
         <div className="row">
           <div className="col w2"><label>成单日期 *</label><input className="sa" type="date" value={wonDate} onChange={(e) => setWonDate(e.target.value)} /></div>
-          <span className="hint" style={{ alignSelf: 'center' }}>{cycle != null && cycle >= 0 ? `转化周期 ${cycle} 天` : '请选择成单日期'}</span>
+          <div className="col w2"><label>订单号 <span className="hint">（留空自动生成）</span></label><input className="sa" value={orderNo} onChange={(e) => setOrderNo(e.target.value)} placeholder="SO-YYYYMMDD-001" /></div>
         </div>
+        <div className="row">
+          <div className="col w2"><label>订单金额</label><input className="sa" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
+          <div className="col w1"><label>币种</label><select className="sa" value={currency} onChange={(e) => setCurrency(e.target.value)}>{['USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}</select></div>
+          <span className="hint" style={{ alignSelf: 'center' }}>{cycle != null && cycle >= 0 ? `转化周期 ${cycle} 天` : ''}</span>
+        </div>
+        <div className="col"><label>备注</label><textarea className="sa" rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></div>
         <div className="actions" style={{ marginTop: 10 }}>
-          <button className="btn pri" disabled={busy} onClick={() => void save()}>确认成交{busy ? '…' : ''}</button>
+          <button className="btn pri" disabled={busy} onClick={() => void save()}>{editing ? '保存修改' : '确认生成订单'}{busy ? '…' : ''}</button>
+          {editing && <button className="btn danger" disabled={busy} onClick={() => void remove()}>删除订单</button>}
         </div>
       </div>
     </div>
@@ -160,7 +188,8 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
         {d && (
           <>
             <div className="meta" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', margin: '10px 0', fontSize: 13 }}>
-              <span>日期 <b>{d.date}</b></span><span>状态 <b>{Number(d.is_won) === 1 ? <span className="tag won">已成单</span> : <span className="hint">跟进中</span>}</b></span><span>标签 <b><TagBlocks r={d} /></b></span>{Number(d.is_won) === 1 && <span>成单日期 <b className="mono">{String((d as unknown as { won_date?: string }).won_date || '—')}</b></span>}<span>国别 <b>{d.country || '—'}</b></span><span>使用地 <b>{d.use_location || '—'}</b></span>
+              <span>日期 <b>{d.date}</b></span><span>状态 <b>{Number(d.is_won) === 1 ? <span className="tag won">已成单</span> : <span className="hint">跟进中</span>}</b></span><span>标签 <b><TagBlocks r={d} /></b></span>{Number(d.is_won) === 1 && <span>成单日期 <b className="mono">{String((d as unknown as { won_date?: string }).won_date || '—')}</b></span>}
+              {Number(d.is_won) === 1 && <span>订单号 <b className="mono">{String((d as unknown as { orderNo?: string }).orderNo || '—')}</b></span>}<span>国别 <b>{d.country || '—'}</b></span><span>使用地 <b>{d.use_location || '—'}</b></span>
               <span>销售 <b>{d.sales}</b></span><span>采购 <b>{d.purchaser}</b></span><span>来源 <b>{d.source}</b></span>
               <span>行数 <b>{d.itemCount ?? (d.items || []).length}</b></span>
               <span>报价合计 <b>{(d.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ')}</b></span>

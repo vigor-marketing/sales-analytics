@@ -44,6 +44,11 @@ export function schema(): void {
       last_amount REAL, last_qty REAL, use_count INTEGER NOT NULL DEFAULT 0,
       last_used_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       UNIQUE(name COLLATE NOCASE));
+    CREATE TABLE IF NOT EXISTS orders (
+      id TEXT PRIMARY KEY, order_no TEXT NOT NULL, inquiry_id TEXT NOT NULL,
+      customer_id TEXT, won_date TEXT NOT NULL, amount REAL, currency TEXT NOT NULL DEFAULT 'USD',
+      note TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      UNIQUE(order_no), UNIQUE(inquiry_id));
     CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT NOT NULL);
   `)
   // 老库补列（幂等）
@@ -80,6 +85,17 @@ export function saveSources(list: string[]): void {
 export function getCountries(): string[] {
   try { const arr = JSON.parse(getSetting('countries', '')); if (Array.isArray(arr)) return arr.filter((x) => typeof x === 'string' && x.trim()) } catch { /* */ }
   return ['中国', '美国', '加拿大', '阿联酋', '沙特', '科威特', '印尼', '马来西亚', '俄罗斯', '哈萨克斯坦', '英国', '德国', '巴西', '墨西哥', '其他']
+}
+
+/** 历史成单询价迁移为销售订单（幂等）：仅当该询价尚无订单 */
+export function migrateWonToOrders(): void {
+  getDb().exec(`
+    INSERT OR IGNORE INTO orders (id, order_no, inquiry_id, customer_id, won_date, amount, currency, note, created_at, updated_at)
+    SELECT lower(hex(randomblob(16))), 'SO-LEGACY-' || i.inquiry_no, i.id, i.customer_id, COALESCE(i.won_date, i.date),
+           (SELECT COALESCE(SUM(ii.amount),0) FROM inquiry_items ii WHERE ii.inquiry_id = i.id), 'USD', i.note, datetime('now'), datetime('now')
+    FROM inquiries i
+    WHERE i.is_won = 1 AND i.won_date IS NOT NULL;
+  `)
 }
 
 /** 历史明细回填产品档案（幂等，仅补名称/次数/币种/最近价格） */

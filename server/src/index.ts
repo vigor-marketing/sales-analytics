@@ -1,7 +1,7 @@
 /** sales-analytics v3 起步：询报价录入页 API */
 import cors from 'cors'
 import express from 'express'
-import { schema, ensurePeople, backfillProducts, getDb, getSources, getCountries, saveSources, getSetting, setSetting, newId, nowIso, todayStr, text, num } from './db.js'
+import { schema, ensurePeople, backfillProducts, migrateWonToOrders, getDb, getSources, getCountries, saveSources, getSetting, setSetting, newId, nowIso, todayStr, text, num } from './db.js'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -81,10 +81,10 @@ app.get('/api/customers', (req, res) => {
   const where = parts.length ? `WHERE ${parts.join(' AND ')}` : ''
   const rows = d.prepare(`SELECT id, name, country, use_location, source, created_at, updated_at FROM customers ${where} ORDER BY updated_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
   const out = rows.map((c) => {
-    const inqs = d.prepare('SELECT id, date, is_key_customer, is_key_project, is_won, (SELECT COALESCE(SUM(amount),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw FROM inquiries i WHERE i.customer_id = ? ORDER BY date DESC').all(c.id) as { id: string; date: string; is_key_customer: number; is_key_project: number; is_won: number; raw: number }[]
+    const inqs = d.prepare('SELECT i.id, i.date, i.is_key_customer, i.is_key_project, (SELECT COUNT(*) FROM orders o WHERE o.inquiry_id = i.id) AS has_order, (SELECT COALESCE(SUM(amount),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw FROM inquiries i WHERE i.customer_id = ? ORDER BY i.date DESC').all(c.id) as { id: string; date: string; is_key_customer: number; is_key_project: number; has_order: number; raw: number }[]
     let usd = 0
     inqs.forEach((i) => { const totals = d.prepare('SELECT currency, COALESCE(SUM(amount),0) AS t FROM inquiry_items WHERE inquiry_id = ? GROUP BY currency').all(i.id) as { currency: string; t: number }[]; totals.forEach((x) => { usd += (x.t || 0) / (FX2[x.currency] || 1) }) })
-    const won = inqs.filter((i) => Number((i as Record<string, unknown>).is_won) === 1)
+    const won = inqs.filter((i) => Number((i as Record<string, unknown>).has_order) > 0)
     return { ...c, inquiryCount: inqs.length, lastDate: inqs[0]?.date ?? null, usdTotal: Math.round(usd), wonCount: won.length, winRate: inqs.length ? Math.round((won.length / inqs.length) * 1000) / 10 : 0, keyCustomer: inqs.some((i) => Number(i.is_key_customer) === 1) ? 1 : 0, keyProjectCount: inqs.filter((i) => Number(i.is_key_project) === 1).length }
   })
   ok(res, out)
@@ -93,12 +93,15 @@ app.get('/api/customers/:id', (req, res) => {
   const d = getDb()
   const c = d.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
   if (!c) return fail(res, '客户不存在', 404)
-  const inqs = d.prepare('SELECT i.*, (SELECT COALESCE(SUM(amount),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw_amount FROM inquiries i WHERE i.customer_id = ? ORDER BY i.date DESC').all(req.params.id) as Record<string, unknown>[]
+  const inqs = d.prepare(`SELECT i.*, o.order_no AS order_no, o.won_date AS order_won_date, CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END AS won_flag,
+      (SELECT COALESCE(SUM(amount),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw_amount
+    FROM inquiries i LEFT JOIN orders o ON o.inquiry_id = i.id WHERE i.customer_id = ? ORDER BY i.date DESC`).all(req.params.id) as Record<string, unknown>[]
   const list = inqs.map((i) => {
     const items = d.prepare('SELECT currency, amount FROM inquiry_items WHERE inquiry_id = ?').all(i.id) as { currency: string; amount: number }[]
     const totals = fmtTotals(items)
     const usd = totals.reduce((s, x) => s + x.total / (FX2[x.currency] || 1), 0)
-    return { ...i, itemCount: items.length, totals, usdApprox: Math.round(usd) }
+    const { won_flag, order_won_date, order_no, is_won: _w, won_date: _wd, ...ibase } = i
+    return { ...ibase, is_won: Number(won_flag) === 1 ? 1 : 0, won_date: str(order_won_date) || null, orderNo: str(order_no) || null, itemCount: items.length, totals, usdApprox: Math.round(usd) }
   })
   const wonList = list.filter((x) => Number((x as Record<string, unknown>).is_won) === 1)
   ok(res, { ...c, inquiries: list, summary: { inquiryCount: list.length, usdTotal: Math.round(list.reduce((s, x) => s + (x.usdApprox || 0), 0)), wonCount: wonList.length, winRate: list.length ? Math.round((wonList.length / list.length) * 1000) / 10 : 0, wonUsd: Math.round(wonList.reduce((s, x) => s + (x.usdApprox || 0), 0)), keyProjectCount: list.filter((x) => Number((x as Record<string, unknown>).is_key_project) === 1).length } })
@@ -218,25 +221,87 @@ app.post('/api/inquiries', (req, res) => {
   ok(res, { id: iid, inquiryNo: no, customerId: customerId, createdCustomer, team: teamName || null }, 201)
 })
 
-// —— 成单标记（补充成单日期）与取消 ——
-app.put('/api/inquiries/:id/won', (req, res) => {
+// —— 销售订单（成交的唯一来源；询价是否成交由是否存在订单自动判定） ——
+function nextOrderNo(): string {
   const d = getDb()
-  const r = d.prepare('SELECT id, date FROM inquiries WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
-  if (!r) return fail(res, '询价不存在', 404)
+  const seq = Number(getSetting('orderSeq', '0')) + 1
+  setSetting('orderSeq', String(seq))
+  const now = new Date()
+  const pad = (n: number, w = 2) => String(n).padStart(w, '0')
+  return `SO-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(seq, 3)}`
+}
+app.get('/api/orders', (req, res) => {
+  const d = getDb()
+  const q = str(req.query.q), salesQ = str(req.query.sales), from = str(req.query.from), to = str(req.query.to), productQ = str(req.query.product)
+  const parts: string[] = ['1=1']; const args: unknown[] = []
+  if (q) { parts.push('(o.order_no LIKE ? OR i.inquiry_no LIKE ? OR c.name LIKE ?)'); const l = `%${q}%`; args.push(l, l, l) }
+  if (salesQ) { parts.push('i.sales = ?'); args.push(salesQ) }
+  if (from) { parts.push('o.won_date >= ?'); args.push(from) }
+  if (to) { parts.push('o.won_date <= ?'); args.push(to) }
+  if (productQ) { parts.push('EXISTS (SELECT 1 FROM inquiry_items it WHERE it.inquiry_id = i.id AND it.product_name LIKE ?)'); args.push(`%${productQ}%`) }
+  const rows = d.prepare(`SELECT o.id AS order_id, o.order_no, o.won_date, o.amount AS order_amount, o.currency AS order_currency, o.note AS order_note,
+      i.id AS inquiry_id, i.inquiry_no, i.date, i.sales, i.purchaser, i.source, i.country, i.use_location, i.hand_total, i.is_key_customer, i.is_key_project,
+      c.name AS customer_name
+    FROM orders o JOIN inquiries i ON i.id = o.inquiry_id LEFT JOIN customers c ON c.id = i.customer_id
+    WHERE ${parts.join(' AND ')} ORDER BY o.won_date DESC, o.created_at DESC LIMIT 1000`).all(...args) as Record<string, unknown>[]
+  const list = rows.map((r) => {
+    const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(r.inquiry_id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
+    const totals = fmtTotals(items)
+    const usd = totals.reduce((s2, x) => s2 + x.total / (FX2[x.currency] || 1), 0)
+    const cycle = (r.won_date && r.date) ? Math.round((Date.parse(String(r.won_date)) - Date.parse(String(r.date))) / 86400000) : null
+    return { ...r, items, itemCount: items.length, totals, usdApprox: Math.round(usd), cycleDays: cycle, productNames: items.map((x) => x.product_name).join(' / ') }
+  })
+  const cycles = list.map((x) => x.cycleDays).filter((x): x is number => typeof x === 'number' && x >= 0).sort((a, b) => a - b)
+  const sum = cycles.reduce((a, b) => a + b, 0)
+  const byProductMap = new Map<string, number[]>()
+  list.forEach((x) => { if (typeof x.cycleDays === 'number') x.items.forEach((it) => { const a = byProductMap.get(it.product_name) ?? []; a.push(x.cycleDays as number); byProductMap.set(it.product_name, a) }) })
+  const byProduct = Array.from(byProductMap.entries()).map(([name, arr]) => ({ name, count: arr.length, avgCycle: Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) })).sort((a, b) => b.count - a.count || a.avgCycle - b.avgCycle).slice(0, 20)
+  const bySalesMap = new Map<string, number[]>()
+  list.forEach((x) => { if (typeof x.cycleDays === 'number') { const key = String((x as Record<string, unknown>).sales ?? ''); const a = bySalesMap.get(key) ?? []; a.push(x.cycleDays as number); bySalesMap.set(key, a) } })
+  const bySales = Array.from(bySalesMap.entries()).map(([name, arr]) => ({ name, count: arr.length, avgCycle: Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) })).sort((a, b) => b.count - a.count)
+  ok(res, { rows: list, stats: { contractCount: list.length, cycleCount: cycles.length, avgCycle: cycles.length ? Math.round(sum / cycles.length) : null, medianCycle: cycles.length ? cycles[Math.floor((cycles.length - 1) / 2)] : null, minCycle: cycles.length ? cycles[0] : null, maxCycle: cycles.length ? cycles[cycles.length - 1] : null, usdTotal: Math.round(list.reduce((s2, x) => s2 + x.usdApprox, 0)), byProduct, bySales } })
+})
+app.post('/api/orders', (req, res) => {
+  const d = getDb()
+  const inquiryId = str(req.body?.inquiryId)
+  const inq = d.prepare('SELECT * FROM inquiries WHERE id = ?').get(inquiryId) as Record<string, unknown> | undefined
+  if (!inq) return fail(res, '询价不存在', 404)
+  if (d.prepare('SELECT id FROM orders WHERE inquiry_id = ?').get(inquiryId)) return fail(res, '该询价已生成销售订单', 409)
   const wonDate = str(req.body?.wonDate) || todayStr()
   if (!/^\d{4}-\d{2}-\d{2}$/.test(wonDate)) return fail(res, '成单日期格式应为 YYYY-MM-DD')
-  if (wonDate < str(r.date)) return fail(res, '成单日期不能早于询价日期')
-  d.prepare('UPDATE inquiries SET is_won = 1, won_date = ?, updated_at = ? WHERE id = ?').run(wonDate, nowIso(), req.params.id)
-  ok(res, { id: req.params.id, is_won: 1, won_date: wonDate })
+  if (wonDate < str(inq.date)) return fail(res, '成单日期不能早于询价日期')
+  const orderNo = str(req.body?.orderNo) || nextOrderNo()
+  if (d.prepare('SELECT id FROM orders WHERE order_no = ?').get(orderNo)) return fail(res, `订单号 ${orderNo} 已存在`, 409)
+  const cur = ['USD', 'CNY', 'EUR'].includes(str(req.body?.currency)) ? str(req.body.currency) : 'USD'
+  const amount = num(req.body?.amount)
+  const t = nowIso()
+  const oid = newId()
+  d.prepare('INSERT INTO orders (id, order_no, inquiry_id, customer_id, won_date, amount, currency, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(oid, orderNo, inquiryId, text(inq.customer_id) || null, wonDate, amount, cur, text(req.body?.note) || null, t, t)
+  ok(res, { id: oid, orderNo, wonDate }, 201)
 })
-app.put('/api/inquiries/:id/unwon', (req, res) => {
+app.put('/api/orders/:id', (req, res) => {
   const d = getDb()
-  if (!d.prepare('SELECT id FROM inquiries WHERE id = ?').get(req.params.id)) return fail(res, '询价不存在', 404)
-  d.prepare('UPDATE inquiries SET is_won = 0, won_date = NULL, updated_at = ? WHERE id = ?').run(nowIso(), req.params.id)
-  ok(res, { id: req.params.id, is_won: 0 })
+  const o = d.prepare('SELECT o.*, i.date FROM orders o JOIN inquiries i ON i.id = o.inquiry_id WHERE o.id = ?').get(req.params.id) as Record<string, unknown> | undefined
+  if (!o) return fail(res, '订单不存在', 404)
+  const wonDate = req.body?.wonDate !== undefined ? str(req.body.wonDate) : str(o.won_date)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(wonDate)) return fail(res, '成单日期格式应为 YYYY-MM-DD')
+  if (wonDate < str(o.date)) return fail(res, '成单日期不能早于询价日期')
+  const orderNo = req.body?.orderNo !== undefined ? (str(req.body.orderNo) || str(o.order_no)) : str(o.order_no)
+  const dup = d.prepare('SELECT id FROM orders WHERE order_no = ? AND id <> ?').get(orderNo, req.params.id)
+  if (dup) return fail(res, `订单号 ${orderNo} 已存在`, 409)
+  const amount = req.body?.amount !== undefined ? num(req.body.amount) : num(o.amount)
+  const cur = req.body?.currency !== undefined && ['USD', 'CNY', 'EUR'].includes(str(req.body.currency)) ? str(req.body.currency) : str(o.currency)
+  const note = req.body?.note !== undefined ? (text(req.body.note) || null) : str(o.note) || null
+  d.prepare('UPDATE orders SET order_no = ?, won_date = ?, amount = ?, currency = ?, note = ?, updated_at = ? WHERE id = ?').run(orderNo, wonDate, amount, cur, note, nowIso(), req.params.id)
+  ok(res, { id: req.params.id })
+})
+app.delete('/api/orders/:id', (req, res) => {
+  const r = getDb().prepare('DELETE FROM orders WHERE id = ?').run(req.params.id)
+  if (!r.changes) return fail(res, '订单不存在', 404)
+  ok(res, { deleted: 1 })
 })
 
-// —— 合同管理：成单合同列表 + 转化周期统计 ——
 app.get('/api/contracts', (req, res) => {
   const d = getDb()
   const q = str(req.query.q), salesQ = str(req.query.sales), from = str(req.query.from), to = str(req.query.to), productQ = str(req.query.product)
@@ -299,7 +364,9 @@ app.get('/api/inquiries', (req, res) => {
   if (country) { parts.push('(i.country = ? OR i.use_location = ?)'); args.push(country, country) }
   const where = parts.length ? `WHERE ${parts.join(' AND ')}` : ''
   const join = 'FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id'
-  const rows = d.prepare(`SELECT i.id, i.inquiry_no, i.date, i.country, i.use_location, i.sales, i.purchaser, i.source, i.hand_total, i.note, i.blockers, i.action_plan, i.support_needed, i.is_key_customer, i.is_key_project, i.is_won, i.won_date, i.created_at, c.name AS customer_name ${join} ${where} ORDER BY i.date DESC, i.created_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
+  const rows = d.prepare(`SELECT i.id, i.inquiry_no, i.date, i.country, i.use_location, i.sales, i.purchaser, i.source, i.hand_total, i.note, i.blockers, i.action_plan, i.support_needed, i.is_key_customer, i.is_key_project, i.created_at, c.name AS customer_name,
+      CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END AS _won, o.won_date AS _won_date, o.order_no AS _order_no, o.id AS _order_id
+    ${join} LEFT JOIN orders o ON o.inquiry_id = i.id ${where} ORDER BY i.date DESC, i.created_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
   const ids = rows.map((r) => str(r.id))
   const totalsOf = new Map<string, { currency: string; amount: number }[]>()
   if (ids.length) {
@@ -310,7 +377,8 @@ app.get('/api/inquiries', (req, res) => {
   const out = rows.map((r) => {
     const t = fmtTotals(totalsOf.get(str(r.id)) ?? [])
     const usd = t.reduce((s, x) => s + x.total / (FX2[x.currency] || 1), 0)
-    return { ...r, itemCount: (totalsOf.get(str(r.id)) ?? []).length, totals: t, usdApprox: Math.round(usd) }
+    const { _won, _won_date, _order_no, _order_id, ...rest } = r
+    return { ...rest, is_won: Number(_won) === 1 ? 1 : 0, won_date: (str(_won_date) || null), orderNo: str(_order_no) || null, orderId: str(_order_id) || null, itemCount: (totalsOf.get(str(r.id)) ?? []).length, totals: t, usdApprox: Math.round(usd) }
   })
   const totalN = (d.prepare(`SELECT COUNT(*) AS n FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id ${where}`).get(...args) as { n: number }).n
   // 全量（当前筛选）累计金额 / 成单统计
@@ -325,7 +393,9 @@ app.get('/api/inquiries/:id', (req, res) => {
   const r = d.prepare('SELECT i.*, c.name AS customer_name FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id WHERE i.id = ?').get(req.params.id) as Record<string, unknown> | undefined
   if (!r) return fail(res, '询价不存在', 404)
   const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(req.params.id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
-  ok(res, { ...r, items, totals: fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount }))) })
+  const order = d.prepare('SELECT id, order_no, won_date, amount, currency, note FROM orders WHERE inquiry_id = ?').get(req.params.id) as Record<string, unknown> | undefined
+  const { is_won: _legacyWon, won_date: _legacyWonDate, ...base } = r
+  ok(res, { ...base, is_won: order ? 1 : 0, won_date: order ? str(order.won_date) : null, order: order ?? null, items, totals: fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount }))) })
 })
 app.put('/api/inquiries/:id', (req, res) => {
   const d = getDb()
@@ -370,7 +440,7 @@ app.delete('/api/inquiries/:id', (req, res) => {
   ok(res, { deleted: 1 })
 })
 
-schema(); ensurePeople(); backfillProducts()
+schema(); ensurePeople(); backfillProducts(); migrateWonToOrders()
 
 // 生产托管前端产物（可选）
 const clientDist = path.resolve(__dirname, '../../client/dist')
