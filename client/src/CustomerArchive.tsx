@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { get } from './api'
 import { StatusChip } from './StatusChip'
+import InquiryDetailModal from './InquiryDetail'
 
 interface CustRow { id: string; name: string; country: string | null; use_location: string | null; source: string | null; inquiryCount: number; lastDate: string | null; usdTotal: number; wonCount: number; lostCount: number; winRate: number; keyCustomer: number; keyProjectCount: number; stars?: number | null }
 interface InqRow { id: string; inquiry_no: string; date: string; sales: string; purchaser: string; source: string; is_key_customer: number; is_key_project: number; is_won: number; status?: 'won' | 'lost' | 'following'; lost_reason?: string | null; lost_date?: string | null; totals: { currency: string; total: number }[]; usdApprox: number; itemCount: number }
@@ -120,50 +121,3 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
 
 interface InquiryDetail extends InqRow { country?: string | null; use_location?: string | null; hand_total?: number | null; note?: string | null; blockers?: string | null; action_plan?: string | null; support_needed?: string | null; items?: { product_name: string; qty: number | null; amount: number; currency: string }[] }
 
-function InquiryDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
-  const [d, setD] = useState<InquiryDetail | null>(null)
-  const [err, setErr] = useState('')
-  useEffect(() => { get<InquiryDetail>(`/inquiries/${id}`).then(setD).catch((e) => setErr((e as Error).message)) }, [id])
-  return (
-    <div className="modal-mask" style={{ zIndex: 30 }} onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 'min(760px, 96vw)', maxHeight: '90vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="询价详情">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>询价详情 · {d?.inquiry_no ?? '加载中…'}</h3>
-          <button className="btn sm" onClick={onClose}>关闭</button>
-        </div>
-        {err && <div className="msg err">{err}</div>}
-        {d && (
-          <>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', margin: '10px 0', fontSize: 13 }}>
-              <span>日期 <b>{d.date}</b></span>
-              <span>状态 <b>{Number(d.is_won) === 1 ? <span className="tag won">已成单</span> : <span className="hint">跟进中</span>}</b></span>
-              <span>标签 <b><Tags kc={d.is_key_customer} kp={d.is_key_project} /></b></span>
-              <span>国别 <b>{d.country || '—'}</b></span><span>使用地 <b>{d.use_location || '—'}</b></span>
-              <span>销售 <b>{d.sales}</b></span><span>采购 <b>{d.purchaser}</b></span><span>来源 <b>{d.source}</b></span>
-              <span>报价合计 <b>{(d.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</b></span>
-              <span>折USD <b className="mono">{money(d.usdApprox)}</b></span>
-              <span>总金额(手填) <b className="mono">{money(d.hand_total)}</b></span>
-            </div>
-            <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead><tr>{['#', '产品名称', '数量', '金额', '币种'].map((h) => <th key={h} style={{ textAlign: 'left', padding: 6, borderBottom: '1px solid var(--line)' }}>{h}</th>)}</tr></thead>
-              <tbody>
-                {(d.items || []).map((it, i) => (
-                  <tr key={i}><td style={{ padding: 6 }}>{i + 1}</td><td style={{ padding: 6 }}>{it.product_name}</td><td style={{ padding: 6 }}>{it.qty ?? '—'}</td><td style={{ padding: 6 }} className="mono">{money(it.amount)}</td><td style={{ padding: 6 }}>{it.currency}</td></tr>
-                ))}
-                {(d.items || []).length === 0 && <tr><td colSpan={5} style={{ padding: 16, textAlign: 'center', color: 'var(--sub)' }}>暂无明细</td></tr>}
-              </tbody>
-            </table>
-            {(d.blockers || d.action_plan || d.support_needed) && (
-              <div style={{ marginTop: 8, fontSize: 13 }}>
-                {d.blockers && <div className="hint">卡点/问题：{d.blockers}</div>}
-                {d.action_plan && <div className="hint">行动计划：{d.action_plan}</div>}
-                {d.support_needed && <div className="hint">需要的支持：{d.support_needed}</div>}
-              </div>
-            )}
-            {d.note && <div className="hint" style={{ marginTop: 8 }}>备注：{d.note}</div>}
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
