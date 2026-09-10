@@ -548,7 +548,11 @@ app.get('/api/followups', (req, res) => {
   if (inquiryId) { parts.push('f.inquiry_id = ?'); args.push(inquiryId) }
   if (salesQ) { parts.push('i.sales = ?'); args.push(salesQ) }
   if (q) { parts.push('(i.inquiry_no LIKE ? ESCAPE \'!\' OR f.content LIKE ? ESCAPE \'!\' OR c.name LIKE ? ESCAPE \'!\')'); const l = likeArg(q); args.push(l, l, l) }
-  const rows = d.prepare(`SELECT f.*, i.inquiry_no, i.sales, i.is_key_customer, i.is_key_project, c.name AS customer_name FROM followups f
+  // seq：按跟进日期（同日按录入先后）算出「第几次跟进」；seq_total：该项目共几次
+  const rows = d.prepare(`SELECT f.*, i.inquiry_no, i.sales, i.is_key_customer, i.is_key_project, c.name AS customer_name,
+      ROW_NUMBER() OVER (PARTITION BY f.inquiry_id ORDER BY f.date ASC, f.created_at ASC, f.rowid ASC) AS seq,
+      COUNT(*) OVER (PARTITION BY f.inquiry_id) AS seq_total
+    FROM followups f
     JOIN inquiries i ON i.id = f.inquiry_id LEFT JOIN customers c ON c.id = i.customer_id
     WHERE ${parts.join(' AND ')} ORDER BY f.date DESC, f.created_at DESC LIMIT 300`).all(...args) as Record<string, unknown>[]
   // 跟进评论（跟进指导）：一次性取出并挂到对应记录上

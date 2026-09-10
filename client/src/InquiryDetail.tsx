@@ -37,6 +37,7 @@ function Field({ label, value, area, empty, fixed }: { label: string; value?: st
 interface FuRow {
   id: string; date: string; method: string; summary: string | null; detail: string | null
   photos: string[]; attachments: { url: string; name: string }[]; next_followup_at: string | null; by_name: string | null; created_at: string
+  seq?: number; seq_total?: number
   comments?: { id: string; content: string; by_name: string | null; created_at: string }[]
 }
 
@@ -224,11 +225,15 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
               {fus.length > 0 ? (
                 <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 8 }}>
                   <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                    <thead><tr>{['跟进日期', '方式', '简述', '具体内容', '图片', '附件', '跟进指导', '下次跟进', '跟进人', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+                    <thead><tr>{['跟进日期', '第几次跟进', '方式', '简述', '具体内容', '图片', '附件', '跟进指导', '下次跟进', '跟进人', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
                     <tbody>
                       {fus.map((f) => (
                         <tr key={f.id} style={{ borderBottom: '1px solid var(--line2)' }}>
                           <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.date}</td>
+                          <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }} title={`该询价第 ${f.seq ?? '—'} 次跟进（共 ${f.seq_total ?? '—'} 次）`}>
+                            {f.seq ? <span className="badge new">第 {f.seq} 次</span> : '—'}
+                            {f.seq_total && f.seq_total > 1 ? <span className="hint" style={{ marginLeft: 4 }}>/ 共 {f.seq_total}</span> : null}
+                          </td>
                           <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.method || '—'}</td>
                           <td style={{ padding: '6px 8px', minWidth: 150 }}>{f.summary || '—'}</td>
                           <td style={{ padding: '6px 8px', minWidth: 220, whiteSpace: 'pre-wrap' }}>{f.detail || '—'}</td>

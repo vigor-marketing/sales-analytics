@@ -18,6 +18,7 @@ interface Fu {
   method: string; content: string | null; summary: string | null; detail: string | null
   photos: string[]; attachments: Att[]; next_followup_at: string | null; by_name: string | null; created_at: string
   is_key_customer?: number; is_key_project?: number
+  seq?: number; seq_total?: number
   comments?: { id: string; content: string; by_name: string | null; created_at: string }[]
 }
 interface Comment { id: string; content: string; by_name: string | null; created_at: string }
@@ -214,7 +215,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
         </div>
         <div className="tablewrap" style={{ overflowX: 'auto' }}>
           <table className="grid follow-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-            <thead><tr>{['跟进日期', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+            <thead><tr>{['跟进日期', '第几次跟进', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
             <tbody>
               {list.map((r) => {
                 const detail = r.detail || r.content || ''
@@ -234,6 +235,11 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                       setSales(r.sales); setNo(r.inquiry_no)
                     }}>
                     <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.date}</td>
+                    {/* 第几次跟进：按跟进日期先后自动编号（同日按录入先后） */}
+                    <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }} title={`本条是该合同的第 ${r.seq ?? '—'} 次跟进（共 ${r.seq_total ?? '—'} 次）`}>
+                      {r.seq ? <span className="badge new">第 {r.seq} 次</span> : <span className="hint">—</span>}
+                      {r.seq_total && r.seq_total > 1 ? <span className="hint" style={{ marginLeft: 6 }}>共 {r.seq_total} 次</span> : null}
+                    </td>
                     <td style={{ padding: '7px 8px' }}>
                       <div className="mono" style={{ fontWeight: 600 }}>{r.inquiry_no}</div>
                       <div style={{ marginTop: 2 }}>{r.customer_name}</div>
@@ -297,7 +303,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                   </tr>
                 )
               })}
-              {list.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 20, color: 'var(--sub)' }}>暂无跟进记录</td></tr>}
+              {list.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', padding: 20, color: 'var(--sub)' }}>暂无跟进记录</td></tr>}
             </tbody>
           </table>
         </div>
