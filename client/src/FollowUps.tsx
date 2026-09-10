@@ -9,7 +9,7 @@ interface MetaLite { sales: { name: string; team: string }[]; methods?: string[]
 interface Lookup {
   id: string; inquiry_no: string; date: string; customer_name: string; country: string | null; use_location: string | null
   sales: string; purchaser: string; source: string; is_won: number; won_date?: string | null; orderNo?: string | null
-  productNames: string; usdApprox: number; totals: { currency: string; total: number }[]; itemCount?: number
+  productNames: string; usdApprox: number; totals: { currency: string; total: number }[]; itemCount?: number; feeTotal?: number; fee_currency?: string | null; grandTotals?: { currency: string; total: number }[]; quoteUsdApprox?: number
   last_followup_at?: string | null; next_followup_at?: string | null; status?: 'won' | 'lost' | 'following'; is_key_customer?: number; is_key_project?: number; items: { product_name: string; qty: number | null; amount: number; currency: string }[]
 }
 interface Att { url: string; name: string; size?: number }
@@ -177,7 +177,8 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
             <span>采购 <b>{hit.purchaser}</b></span>
             <span>来源 <b>{hit.source}</b></span>
             <span>询价日期 <b className="mono">{hit.date}</b></span>
-            <span>报价合计 <b>{(hit.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</b>（≈USD {money(hit.usdApprox)}）</span>
+            <span>产品合计 <b>{(hit.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</b>{(hit.feeTotal ?? 0) > 0 ? <> ＋ 费用 <b>{money(hit.feeTotal)} {hit.fee_currency || 'USD'}</b></> : null}</span>
+            <span>总报价（含费用） <b style={{ color: 'var(--brand)' }}>{(hit.grandTotals || hit.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</b>（≈USD {money(hit.usdApprox)}）</span>
             <span>状态 <b><StatusChip status={hit.status ?? (Number(hit.is_won) === 1 ? 'won' : 'following')} /></b></span>
             <span>标签 <b><KeyTags kc={hit.is_key_customer} kp={hit.is_key_project} compact /></b></span>
             <span>最近跟进 <b className="mono">{hit.last_followup_at || '—'}</b></span>

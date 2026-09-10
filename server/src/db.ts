@@ -59,6 +59,7 @@ export function schema(): void {
       is_key_customer INTEGER NOT NULL DEFAULT 0, is_key_project INTEGER NOT NULL DEFAULT 0,
       is_won INTEGER NOT NULL DEFAULT 0, won_date TEXT,
       customer_stars INTEGER, blockers TEXT, action_plan TEXT, support_needed TEXT,
+      freight REAL, tax REAL, commission REAL, other_fee REAL, fee_currency TEXT NOT NULL DEFAULT 'USD',
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS inquiry_items (
       id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL REFERENCES inquiries(id) ON DELETE CASCADE,
@@ -111,6 +112,12 @@ export function schema(): void {
   try { db.exec('ALTER TABLE inquiries ADD COLUMN next_followup_at TEXT') } catch { /* 已存在 */ }
   // 未成单（丢单）：人工标记 + 必填原因；成交仍由销售订单自动判定
   try { db.exec('ALTER TABLE inquiries ADD COLUMN is_lost INTEGER NOT NULL DEFAULT 0') } catch { /* 已存在 */ }
+  // 费用（运费/税费/佣金/其他）：单独记在询价上，总价 = 明细合计 + 费用合计
+  try { db.exec('ALTER TABLE inquiries ADD COLUMN freight REAL') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE inquiries ADD COLUMN tax REAL') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE inquiries ADD COLUMN commission REAL') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE inquiries ADD COLUMN other_fee REAL') } catch { /* 已存在 */ }
+  try { db.exec("ALTER TABLE inquiries ADD COLUMN fee_currency TEXT NOT NULL DEFAULT 'USD'") } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN lost_reason TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN lost_date TEXT') } catch { /* 已存在 */ }
   // 常用查询索引（幂等创建，提升联表与过滤效率）
@@ -222,6 +229,9 @@ export function migrateWonToOrders(): void {
     WHERE i.is_won = 1 AND i.won_date IS NOT NULL;
   `)
 }
+
+/** 询价费用相关列（统一在此维护，避免各处 SQL 漏字段） */
+export const FEE_COLUMNS = ['freight', 'tax', 'commission', 'other_fee', 'fee_currency'] as const
 
 /** 以销售订单为唯一口径，回写废弃列 is_won / won_date（保持旧接口与统计口径一致，幂等） */
 export function syncWonFlags(): void {

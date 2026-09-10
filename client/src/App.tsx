@@ -99,6 +99,9 @@ export default function App() {
   const [locTouched, setLocTouched] = useState(false)
   const [items, setItems] = useState<ItemD[]>([emptyRow()])
   const [handTotal, setHandTotal] = useState('')
+  // 费用（运费/税费/佣金/其他）：计入总报价
+  const [fees, setFees] = useState({ freight: '', tax: '', commission: '', otherFee: '' })
+  const [feeCur, setFeeCur] = useState('USD')
   const [sales, setSales] = useState('')
   const [salesTeam, setSalesTeam] = useState('')   // 销售人员：先选小组再选人
   const [purTeam, setPurTeam] = useState('')       // 采购人员：先选小组再选人
@@ -206,6 +209,19 @@ export default function App() {
     const fx = meta?.fx ?? { USD: 1, CNY: 7.12, EUR: 0.92 }
     return quoteByCur.reduce((s, [c, v]) => s + v / (fx[c] || 1), 0)
   }, [quoteByCur, meta])
+  // 费用合计（四项相加，留空按 0）
+  const feeTotal = useMemo(() => ['freight', 'tax', 'commission', 'otherFee']
+    .reduce((sum, k) => sum + (Number((fees as Record<string, string>)[k]) || 0), 0), [fees])
+  // 总报价（含费用）：把费用并到费用币种那一档
+  const grandByCur = useMemo(() => {
+    const m = new Map<string, number>(quoteByCur)
+    if (feeTotal) m.set(feeCur, (m.get(feeCur) ?? 0) + feeTotal)
+    return Array.from(m.entries()).filter(([, v]) => v > 0).sort((a, b) => CURRENCIES.indexOf(a[0]) - CURRENCIES.indexOf(b[0]))
+  }, [quoteByCur, feeTotal, feeCur])
+  const grandUsd = useMemo(() => {
+    const fx = meta?.fx ?? { USD: 1, CNY: 7.12, EUR: 0.92 }
+    return grandByCur.reduce((s, [c, v]) => s + v / (fx[c] || 1), 0)
+  }, [grandByCur, meta])
 
 
   // 采购人员（含所属小组）：用于「采购小组 → 采购人员」逐级筛选
@@ -245,12 +261,14 @@ export default function App() {
         newClient: isNew ? { name: customer.trim(), country: country.trim() || undefined, useLocation: useLoc.trim() || country.trim() || undefined } : undefined,
         items: items.filter((it) => it.productName.trim() && Number(it.amount) > 0).map((it) => ({ productName: it.productName.trim(), qty: it.qty ? Number(it.qty) : undefined, amount: Number(it.amount), currency: it.currency })),
         sales, purchaser, source, totalAmount: handTotal ? Number(handTotal) : undefined, note: note.trim() || undefined,
+        freight: fees.freight ? Number(fees.freight) : undefined, tax: fees.tax ? Number(fees.tax) : undefined,
+        commission: fees.commission ? Number(fees.commission) : undefined, otherFee: fees.otherFee ? Number(fees.otherFee) : undefined, feeCurrency: feeCur,
         useLocation: useLoc.trim() || undefined, isKeyCustomer: keyCust === '1', isKeyProject: keyProj === '1',
         blockers: blockers.trim() || undefined, actionPlan: actionPlan.trim() || undefined, supportNeeded: supportNeeded.trim() || undefined, customerStars: stars ? Number(stars) : undefined,
       })
       setMsg({ t: 'ok', text: `已保存询价 ${res.inquiryNo}` })
       if (again) {
-        setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setBlockers(''); setActionPlan(''); setSupportNeeded(''); setStars(''); setKeyCust(''); setKeyProj(''); setCustId(''); setCustomer(''); noT.current?.focus()
+        setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setFees({ freight: '', tax: '', commission: '', otherFee: '' }); setNote(''); setBlockers(''); setActionPlan(''); setSupportNeeded(''); setStars(''); setKeyCust(''); setKeyProj(''); setCustId(''); setCustomer(''); noT.current?.focus()
       } else { setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setBlockers(''); setActionPlan(''); setSupportNeeded(''); setStars(''); setKeyCust(''); setKeyProj(''); setCustId(''); setCustomer(''); setCountry(''); setUseLoc(''); setLocTouched(false); setSource('') }
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) } finally { setBusy(false) }
   }
@@ -414,16 +432,31 @@ export default function App() {
         </button>
 
         <div style={{ marginTop: 14, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
-          <div className="totals">
-            <span className="badge new">总报价金额（自动）：</span>
-            {quoteByCur.map(([c, v]) => <span key={c} className="t">{money(v)} {c}</span>)}
-            {quoteByCur.some(([c]) => c !== 'USD') && <span className="badge">折 USD 约 {money(Math.round(usdApprox))}</span>}
-            {quoteByCur.length === 0 && <span className="hint">填一行金额后自动合计</span>}
+          <div className="row" style={{ marginBottom: 6, alignItems: 'flex-end' }}>
+            <div className="col w1"><label>运费</label><input className="sa" type="number" min="0" value={fees.freight} onChange={(e) => setFees({ ...fees, freight: e.target.value })} placeholder="0" /></div>
+            <div className="col w1"><label>税费</label><input className="sa" type="number" min="0" value={fees.tax} onChange={(e) => setFees({ ...fees, tax: e.target.value })} placeholder="0" /></div>
+            <div className="col w1"><label>佣金</label><input className="sa" type="number" min="0" value={fees.commission} onChange={(e) => setFees({ ...fees, commission: e.target.value })} placeholder="0" /></div>
+            <div className="col w1"><label>其他费用</label><input className="sa" type="number" min="0" value={fees.otherFee} onChange={(e) => setFees({ ...fees, otherFee: e.target.value })} placeholder="0" /></div>
+            <div className="col w1"><label>费用币种</label>
+              <select className="sa" value={feeCur} onChange={(e) => setFeeCur(e.target.value)}>{CURRENCIES.map((c) => <option key={c}>{c}</option>)}</select>
+            </div>
           </div>
-          <div className="row" style={{ marginBottom: 0 }}>
+          <div className="hint" style={{ display: 'block' }}>费用选填，留空按 0 计算；费用会计入下面的「总报价（含费用）」。</div>
+          <div className="totals" style={{ marginTop: 8 }}>
+            <span className="badge new">总报价（含费用）：</span>
+            {grandByCur.map(([c, v]) => <span key={c} className="t">{money(v)} {c}</span>)}
+            {grandByCur.some(([c]) => c !== 'USD') && <span className="badge">折 USD 约 {money(Math.round(grandUsd))}</span>}
+            {grandByCur.length === 0 && <span className="hint">填一行金额后自动合计</span>}
+          </div>
+          <div className="hint" style={{ display: 'block', marginTop: 4 }}>
+            产品合计 {quoteByCur.length ? quoteByCur.map(([c, v]) => `${money(v)} ${c}`).join(' + ') : '—'}
+            {feeTotal > 0 ? ` ＋ 费用 ${money(feeTotal)} ${feeCur}` : ' ＋ 费用 —'}
+            （折 USD 约 {money(Math.round(grandUsd))}）
+          </div>
+          <div className="row" style={{ marginTop: 8, marginBottom: 0 }}>
             <div className="col w2"><label>总金额（手填 · 选填）</label><input className="sa" type="number" min="0" value={handTotal} onChange={(e) => setHandTotal(e.target.value)} placeholder="议价/最终金额" /></div>
           </div>
-          <div className="hint" style={{ display: 'block', marginTop: 4 }}>总报价金额=各行金额自动合计（只读）；总金额可另行手填最终/成交金额，与报价一致可留空。</div>
+          <div className="hint" style={{ display: 'block', marginTop: 4 }}>总报价（含费用）= 各行金额自动合计 + 运费 + 税费 + 佣金 + 其他费用；总金额可另行手填最终/成交金额，与报价一致可留空。</div>
         </div>
 
         <div style={{ marginTop: 12, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>

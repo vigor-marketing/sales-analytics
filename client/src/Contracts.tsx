@@ -135,6 +135,9 @@ function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
     get<FuLite[]>(`/followups?inquiryId=${encodeURIComponent(d.inquiry_id)}`).then((l) => setFus(Array.isArray(l) ? l : [])).catch(() => { /* */ })
   }, [d?.inquiry_id])
   const totalQuote = (d?.items || []).reduce((sum, it) => sum + (Number(it.amount) || 0), 0)
+  // 报价口径：产品合计 + 费用（运费/税费/佣金/其他）＝ 总报价
+  const feeTotal = ['freight', 'tax', 'commission', 'other_fee'].reduce((sum, k) => sum + (Number((d as unknown as Record<string, number>)?.[k]) || 0), 0)
+  const feeCur = (d as unknown as { fee_currency?: string })?.fee_currency || d?.order_currency || 'USD'
   return (
     <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ width: 'min(1040px, 97vw)', maxHeight: '92vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="订单详情">
@@ -172,7 +175,7 @@ function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
               <Info label="采购人员" value={d.purchaser} />
               <Info label="询价来源" value={d.source} />
               <Info label="标签" value={`${Number(d.is_key_customer) === 1 ? '重点客户 ' : ''}${Number(d.is_key_project) === 1 ? '重点项目' : ''}`.trim() || '—'} />
-              <Info label="成交时总报价（自动）" value={`${money(totalQuote)} ${d.order_currency}`} mono />
+              <Info label="成交时总报价（自动）" value={`${money(totalQuote + feeTotal)} ${feeTotal > 0 ? feeCur : d.order_currency}${feeTotal > 0 ? `（产品 ${money(totalQuote)} + 费用 ${money(feeTotal)}）` : ''}`} mono />
               <Info label="询价手填总金额" value={d.hand_total == null ? '—' : money(d.hand_total)} mono />
             </div>
 
@@ -192,10 +195,17 @@ function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
                       <td title={it.currency} style={{ textAlign: 'right' }}>{it.currency}</td>
                     </tr>
                   ))}
+                  {feeTotal > 0 && (
+                    <tr>
+                      <td colSpan={3} style={{ fontWeight: 700 }}>费用合计（运费/税费/佣金/其他）</td>
+                      <td className="mono" style={{ fontWeight: 700, textAlign: 'right' }}>{money(feeTotal)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700 }}>{feeCur}</td>
+                    </tr>
+                  )}
                   <tr>
-                    <td colSpan={3} style={{ fontWeight: 700 }}>报价合计</td>
-                    <td className="mono" style={{ fontWeight: 800, textAlign: 'right' }}>{money(totalQuote)}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700 }}>{d.order_currency}</td>
+                    <td colSpan={3} style={{ fontWeight: 700 }}>{feeTotal > 0 ? '总报价（含费用）' : '报价合计'}</td>
+                    <td className="mono" style={{ fontWeight: 800, textAlign: 'right' }}>{money(totalQuote + feeTotal)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700 }}>{feeTotal > 0 ? feeCur : d.order_currency}</td>
                   </tr>
                 </tbody>
               </table>

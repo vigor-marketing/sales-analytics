@@ -15,6 +15,9 @@ interface Detail {
   blockers?: string | null; action_plan?: string | null; support_needed?: string | null
   items: { product_name: string; qty: number | null; amount: number; currency: string }[]
   totals: TotalItem[]; usdApprox: number
+  freight?: number | null; tax?: number | null; commission?: number | null; other_fee?: number | null; fee_currency?: string | null
+  feeTotal?: number; grandTotals?: TotalItem[]; quoteUsdApprox?: number
+  fees?: { key: string; label: string; value: number | null }[]
   order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null
 }
 interface ProductLite { id: string; name: string; currency: string; last_amount: number | null; last_qty?: number | null; use_count: number; version?: number; prev_amount?: number | null }
@@ -150,11 +153,21 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
             })()}
 
             <div className="row" style={{ alignItems: 'center', gap: 8, marginTop: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>总报价金额（自动）</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>产品合计</span>
               {(d.totals || []).map((t) => (
                 <span key={t.currency} className="ro mono" style={{ width: 'auto', display: 'inline-flex' }}>{money2(t.total)} {t.currency}</span>
               ))}
-              {(d.totals || []).some((t) => t.currency !== 'USD') && (
+              {(d.totals || []).length === 0 && <span className="hint">—</span>}
+              {(d.feeTotal ?? 0) > 0 && (
+                <span className="ro mono" style={{ width: 'auto', display: 'inline-flex' }} title={(d.fees || []).filter((f) => f.value).map((f) => `${f.label} ${money2(f.value)}`).join(' · ')}>
+                  费用 {money2(d.feeTotal)} {d.fee_currency || 'USD'}
+                </span>
+              )}
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--brand)' }}>总报价（含费用）</span>
+              {(d.grandTotals || d.totals || []).map((t) => (
+                <span key={`g-${t.currency}`} className="badge new">{money2(t.total)} {t.currency}</span>
+              ))}
+              {(d.grandTotals || d.totals || []).some((t) => t.currency !== 'USD') && (
                 <span className="ro mono" style={{ width: 'auto', display: 'inline-flex' }}>折 USD 约 {money2(d.usdApprox)}</span>
               )}
               {(d.totals || []).length === 0 && <span className="hint">—</span>}
