@@ -24,12 +24,7 @@ const money = (n: number | null | undefined) => (n == null ? '—' : Math.round(
 const DEFAULT_METHODS = ['电话', '邮件', '微信', '拜访', '展会', '其他']
 const today = () => new Date().toISOString().slice(0, 10)
 
-export default function FollowUps({ meta, target, onBack, backLabel }: {
-  meta: MetaLite
-  target?: { sales: string; no: string } | null
-  onBack?: () => void
-  backLabel?: string
-}) {
+export default function FollowUps({ meta, target }: { meta: MetaLite; target?: { sales: string; no: string } | null }) {
   const methods = meta.methods?.length ? meta.methods : DEFAULT_METHODS
   const [sales, setSales] = useState('')
   const [no, setNo] = useState('')
@@ -119,7 +114,6 @@ export default function FollowUps({ meta, target, onBack, backLabel }: {
   return (
     <div className="card">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        {onBack && <button className="btn sm" onClick={onBack} title="返回上一页">← 返回{backLabel ? ` ${backLabel}` : ''}</button>}
         <h3 style={{ margin: 0 }}>询报价跟进</h3>
         <span className="hint">按「销售人员 + 询价号」逐级筛选并自动带出询价信息，随后建立详细跟进记录</span>
       </div>

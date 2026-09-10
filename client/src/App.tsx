@@ -55,7 +55,7 @@ function initialPage(): PageKey {
   return 'entry'
 }
 const TITLES: Record<PageKey, string> = { dashboard: '仪表盘', entry: '询报价录入', manage: '询报价管理', followups: '询报价跟进', contracts: '销售订单管理', contractsAnalysis: '销售订单分析', customers: '客户档案', products: '产品档案', settings: '字段与选项设置' }
-function Shell({ page, onNav, children }: { page: PageKey; onNav: (p: PageKey) => void; children: React.ReactNode }) {
+function Shell({ page, onNav, children, headRight }: { page: PageKey; onNav: (p: PageKey) => void; children: React.ReactNode; headRight?: React.ReactNode }) {
   return (
     <div className="sa-layout">
       <aside className="sa-sider">
@@ -80,6 +80,8 @@ function Shell({ page, onNav, children }: { page: PageKey; onNav: (p: PageKey) =
         <div className="sa-page-head">
           <h1>{TITLES[page]}</h1>
           <span className="badge new" title="页面构建版本">v{__BUILD_ID__}</span>
+          <span style={{ flex: 1 }} />
+          {headRight}
         </div>
         {children}
       </main>
@@ -228,16 +230,13 @@ export default function App() {
   }
 
   if (page !== 'entry') return (
-    <Shell page={page} onNav={navTo}>
+    <Shell page={page} onNav={navTo} headRight={pageHist.length && page === 'followups' ? (
+      <button className="btn sm" onClick={goBack} title="返回上一级页面">← 返回 {TITLES[pageHist[pageHist.length - 1]]}</button>
+    ) : undefined}>
       {page === 'manage' && <InquiryManager meta={meta} />}
       {page === 'dashboard' && <Dashboard onGoFollow={(t) => { setFollowTarget(t); navTo('followups') }} />}
       {page === 'followups' && (
-        <FollowUps
-          meta={meta}
-          target={followTarget}
-          onBack={pageHist.length ? goBack : undefined}
-          backLabel={pageHist.length ? TITLES[pageHist[pageHist.length - 1]] : ''}
-        />
+        <FollowUps meta={meta} target={followTarget} />
       )}
       {page === 'contracts' && <Contracts meta={meta} />}
       {page === 'contractsAnalysis' && <ContractsAnalysis meta={meta} />}
