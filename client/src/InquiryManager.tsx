@@ -56,7 +56,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
         <button className="btn" onClick={() => void load()}>查询</button>
         <button className="btn" onClick={() => { setQ(''); setFrom(''); setTo(''); setSales(''); setPur(''); setSrc(''); void load() }}>重置</button>
       </div>
-      <div className="tablewrap" style={{ overflow: 'auto', maxHeight: '62vh' }}>
+      <div className="tablewrap" style={{ overflowX: 'auto' }}>
         <table className="grid" style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12.5 }}>
           <thead><tr>{['询价号', '日期', '客户', '标签', '报价合计', '销售', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
           <tbody>
