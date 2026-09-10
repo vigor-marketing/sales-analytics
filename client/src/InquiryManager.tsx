@@ -159,10 +159,14 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               </div>
             ))}
             {(d.items || []).length === 0 && <div className="hint">暂无明细</div>}
-            <div className="totals" style={{ marginTop: 6 }}>
-              <span className="badge new">总报价金额（自动）：</span>
-              {(d.totals || []).map((t) => <span key={t.currency} className="t">{money2(t.total)} {t.currency}</span>)}
-              {(d.totals || []).some((t) => t.currency !== 'USD') && <span className="badge">折 USD 约 {money2(d.usdApprox)}</span>}
+            <div className="row" style={{ alignItems: 'center', gap: 8, marginTop: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>总报价金额（自动）</span>
+              {(d.totals || []).map((t) => (
+                <span key={t.currency} className="ro mono" style={{ width: 'auto', display: 'inline-flex' }}>{money2(t.total)} {t.currency}</span>
+              ))}
+              {(d.totals || []).some((t) => t.currency !== 'USD') && (
+                <span className="ro mono" style={{ width: 'auto', display: 'inline-flex' }}>折 USD 约 {money2(d.usdApprox)}</span>
+              )}
               {(d.totals || []).length === 0 && <span className="hint">—</span>}
             </div>
             <div className="row">
