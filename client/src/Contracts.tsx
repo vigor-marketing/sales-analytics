@@ -6,7 +6,11 @@ import { KeyTags } from './KeyTags'
 interface Item { product_name: string; qty: number | null; amount: number; currency: string }
 interface OrderRow {
   order_id: string; order_no: string; won_date: string; order_amount: number | null; order_currency: string; order_note: string | null
+  win_reason?: string | null; order_created_at?: string | null; order_updated_at?: string | null
   is_key_customer?: number; is_key_project?: number
+  customer_stars?: number | null; note?: string | null; blockers?: string | null; action_plan?: string | null; support_needed?: string | null
+  customer_country?: string | null; last_followup_at?: string | null; next_followup_at?: string | null
+  use_location?: string | null; country?: string | null
   inquiry_id: string; inquiry_no: string; date: string; sales: string; purchaser: string; source: string
   customer_name: string; hand_total: number | null; usdApprox: number; totals: { currency: string; total: number }[]
   productNames: string; itemCount: number; items: Item[]; cycleDays: number | null
@@ -88,32 +92,133 @@ function useOrder(id: string) {
 
 function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
   const { d, err } = useOrder(id)
+  const [fus, setFus] = useState<FuLite[]>([])
+  useEffect(() => {
+    if (!d?.inquiry_id) return
+    get<FuLite[]>(`/followups?inquiryId=${encodeURIComponent(d.inquiry_id)}`).then((l) => setFus(Array.isArray(l) ? l : [])).catch(() => { /* */ })
+  }, [d?.inquiry_id])
+  const totalQuote = (d?.items || []).reduce((sum, it) => sum + (Number(it.amount) || 0), 0)
   return (
     <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 'min(760px, 96vw)', maxHeight: '90vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="订单详情">
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <h3 style={{ margin: 0 }}>订单详情 · {d?.order_no ?? '加载中…'}</h3>
+      <div className="modal" style={{ width: 'min(1040px, 97vw)', maxHeight: '92vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="订单详情">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0 }}>订单详情 · {d?.order_no ?? '加载中…'}{d?.customer_name ? `（${d.customer_name}）` : ''}</h3>
           <button className="btn sm" onClick={onClose}>关闭</button>
         </div>
         {err && <div className="msg err">{err}</div>}
         {d && (
           <>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', margin: '10px 0', fontSize: 13 }}>
-              <span>询价号 <b className="mono">{d.inquiry_no}</b></span><span>客户 <b>{d.customer_name}</b></span>
-              <span>销售 <b>{d.sales}</b></span><span>采购 <b>{d.purchaser}</b></span><span>来源 <b>{d.source}</b></span>
-              <span>询价日期 <b className="mono">{d.date}</b></span><span>成单日期 <b className="mono">{d.won_date}</b></span>
-              <span>转化周期 <b style={{ color: cycleTone(d.cycleDays) }}>{d.cycleDays == null ? '—' : d.cycleDays + ' 天'}</b></span>
-              <span>订单金额 <b>{d.order_amount == null ? `≈USD ${money(d.usdApprox)}` : `${money(d.order_amount)} ${d.order_currency}`}</b></span>
+            {/* 订单信息 */}
+            <h4 className="sec-title" style={{ marginTop: 12 }}>订单信息</h4>
+            <div className="grid-2">
+              <Info label="订单号" value={d.order_no} mono />
+              <Info label="成单日期" value={d.won_date} mono />
+              <Info label="订单金额" value={d.order_amount == null ? `未填写（报价 ≈USD ${money(d.usdApprox)}）` : `${money(d.order_amount)} ${d.order_currency}`} mono />
+              <Info label="折 USD" value={`≈USD ${money(d.usdApprox)}`} mono />
+              <Info label="成交原因" value={d.win_reason || '未填写'} />
+              <Info label="转化周期" value={d.cycleDays == null ? '—' : `${d.cycleDays} 天（询价 ${d.date} → 成单 ${d.won_date}）`} />
+              <Info label="录入时间" value={d.order_created_at ? String(d.order_created_at).slice(0, 16).replace('T', ' ') : '—'} mono />
+              <Info label="最后更新" value={d.order_updated_at ? String(d.order_updated_at).slice(0, 16).replace('T', ' ') : '—'} mono />
             </div>
-            <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead><tr>{['#', '产品名称', '数量', '金额', '币种'].map((h) => <th key={h} style={{ textAlign: 'left', padding: 6, borderBottom: '1px solid var(--line)' }}>{h}</th>)}</tr></thead>
-              <tbody>{(d.items || []).map((it, i) => <tr key={i}><td style={{ padding: 6 }}>{i + 1}</td><td style={{ padding: 6 }}>{it.product_name}</td><td style={{ padding: 6 }}>{it.qty ?? '—'}</td><td style={{ padding: 6 }} className="mono">{money(it.amount)}</td><td style={{ padding: 6 }}>{it.currency}</td></tr>)}</tbody>
-            </table>
-            {(d as { win_reason?: string | null }).win_reason && <div className="hint" style={{ marginTop: 8 }}>成交原因：{(d as { win_reason?: string | null }).win_reason}</div>}
-            {d.order_note && <div className="hint" style={{ marginTop: 8 }}>订单备注：{d.order_note}</div>}
+            {d.order_note && <Info label="订单备注" value={d.order_note} block />}
+
+            {/* 询价与客户信息 */}
+            <h4 className="sec-title" style={{ marginTop: 14 }}>询价与客户信息</h4>
+            <div className="grid-2">
+              <Info label="询价号" value={d.inquiry_no} mono />
+              <Info label="询价日期" value={d.date} mono />
+              <Info label="客户名称" value={d.customer_name} />
+              <Info label="客户星级" value={d.customer_stars ? `${'★'.repeat(Number(d.customer_stars))}（${d.customer_stars} 星）` : '—'} />
+              <Info label="国别" value={d.country || d.customer_country || '—'} />
+              <Info label="使用地" value={d.use_location || '—'} />
+              <Info label="销售人员" value={d.sales} />
+              <Info label="采购人员" value={d.purchaser} />
+              <Info label="询价来源" value={d.source} />
+              <Info label="标签" value={`${Number(d.is_key_customer) === 1 ? '重点客户 ' : ''}${Number(d.is_key_project) === 1 ? '重点项目' : ''}`.trim() || '—'} />
+              <Info label="成交时总报价（自动）" value={`${money(totalQuote)} ${d.order_currency}`} mono />
+              <Info label="询价手填总金额" value={d.hand_total == null ? '—' : money(d.hand_total)} mono />
+            </div>
+
+            {/* 产品明细 */}
+            <h4 className="sec-title" style={{ marginTop: 14 }}>产品明细（{d.items?.length ?? 0} 行）</h4>
+            <div className="tablewrap" style={{ overflowX: 'auto' }}>
+              <table className="grid data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead><tr>{['序号', '产品名称', '数量', '金额', '币种'].map((h, i) => <th key={h} style={{ textAlign: i === 0 || i === 1 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {(d.items || []).map((it, i) => (
+                    <tr key={i}>
+                      <td style={{ padding: '6px 8px' }}>{i + 1}</td>
+                      <td style={{ padding: '6px 8px' }}>{it.product_name}</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right' }}>{it.qty ?? '—'}</td>
+                      <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>{money(it.amount)}</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right' }}>{it.currency}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ borderTop: '2px solid var(--line)' }}>
+                    <td colSpan={3} style={{ padding: '6px 8px', fontWeight: 700 }}>报价合计</td>
+                    <td className="mono" style={{ padding: '6px 8px', fontWeight: 800, textAlign: 'right' }}>{money(totalQuote)}</td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>{d.order_currency}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* 询价补充信息 */}
+            {(d.blockers || d.action_plan || d.support_needed || d.note) && (
+              <>
+                <h4 className="sec-title" style={{ marginTop: 14 }}>询价补充信息</h4>
+                <div className="grid-eq3">
+                  {d.blockers && <Info label="卡点/问题" value={d.blockers} block />}
+                  {d.action_plan && <Info label="行动计划" value={d.action_plan} block />}
+                  {d.support_needed && <Info label="需要的支持" value={d.support_needed} block />}
+                </div>
+                {d.note && <Info label="询价备注" value={d.note} block />}
+              </>
+            )}
+
+            {/* 跟进情况 */}
+            <h4 className="sec-title" style={{ marginTop: 14 }}>跟进情况（{fus.length} 条）</h4>
+            <div className="grid-2">
+              <Info label="最近跟进" value={d.last_followup_at || '—'} mono />
+              <Info label="下次跟进" value={d.next_followup_at ? String(d.next_followup_at).replace('T', ' ') : '—'} mono />
+            </div>
+            {fus.length > 0 ? (
+              <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 6 }}>
+                <table className="grid data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                  <thead><tr>{['跟进日期', '方式', '简述', '具体内容', '下次跟进', '跟进人'].map((h, i) => <th key={h} style={{ textAlign: i === 3 ? 'left' : i === 0 || i === 2 || i === 4 ? 'left' : 'left' }}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {fus.map((f) => (
+                      <tr key={f.id}>
+                        <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.date}</td>
+                        <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.method || '—'}</td>
+                        <td style={{ padding: '6px 8px' }}>{f.summary || '—'}</td>
+                        <td style={{ padding: '6px 8px', minWidth: 260, whiteSpace: 'pre-wrap' }}>{f.detail || '—'}</td>
+                        <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.next_followup_at ? String(f.next_followup_at).replace('T', ' ') : '—'}</td>
+                        <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.by_name || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <div className="hint" style={{ marginTop: 4 }}>该询价暂无跟进记录（可到「询报价跟进」页录入）</div>}
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+interface FuLite {
+  id: string; date: string; method: string; summary: string | null; detail: string | null
+  next_followup_at: string | null; by_name: string | null
+}
+
+/** 只读信息项：标签在上、值在下（保持固定尺寸，不做拉伸） */
+function Info({ label, value, mono, block }: { label: string; value: string; mono?: boolean; block?: boolean }) {
+  return (
+    <div className="col" style={block ? { gridColumn: '1 / -1', marginTop: 6 } : undefined}>
+      <label>{label}</label>
+      <div className={'ro' + (mono ? ' mono' : '')} style={{ minHeight: 30, whiteSpace: 'pre-wrap' }}>{value}</div>
     </div>
   )
 }

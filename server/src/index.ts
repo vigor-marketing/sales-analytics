@@ -435,8 +435,10 @@ app.get('/api/orders', (req, res) => {
   if (to) { parts.push('o.won_date <= ?'); args.push(to) }
   if (productQ) { parts.push('EXISTS (SELECT 1 FROM inquiry_items it WHERE it.inquiry_id = i.id AND it.product_name LIKE ?)'); args.push(`%${productQ}%`) }
   const rows = d.prepare(`SELECT o.id AS order_id, o.order_no, o.won_date, o.amount AS order_amount, o.currency AS order_currency, o.note AS order_note, o.win_reason AS win_reason,
+      o.created_at AS order_created_at, o.updated_at AS order_updated_at,
       i.id AS inquiry_id, i.inquiry_no, i.date, i.sales, i.purchaser, i.source, i.country, i.use_location, i.hand_total, i.is_key_customer, i.is_key_project,
-      c.name AS customer_name
+      i.customer_stars, i.note, i.blockers, i.action_plan, i.support_needed, i.is_lost, i.lost_reason, i.lost_date, i.last_followup_at, i.next_followup_at,
+      c.name AS customer_name, c.country AS customer_country
     FROM orders o JOIN inquiries i ON i.id = o.inquiry_id LEFT JOIN customers c ON c.id = i.customer_id
     WHERE ${parts.join(' AND ')} ORDER BY o.won_date DESC, o.created_at DESC LIMIT 1000`).all(...args) as Record<string, unknown>[]
   const list = rows.map((r) => {
