@@ -10,8 +10,8 @@ interface MetaLite { sales: { name: string; team: string }[]; purchasers: string
 const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
 const CURS = ['USD', 'CNY', 'EUR']
 
-export default function InquiryManager({ meta = { sales: [], purchasers: [], sources: [] }, initialQuery, onOpenCustomer }: { meta?: MetaLite; initialQuery?: string; onOpenCustomer?: (name: string) => void }) {
-  const [q, setQ] = useState(initialQuery ?? ''); const [from, setFrom] = useState(''); const [to, setTo] = useState('')
+export default function InquiryManager({ meta = { sales: [], purchasers: [], sources: [] } }: { meta?: MetaLite }) {
+  const [q, setQ] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState('')
   const [sales, setSales] = useState(''); const [pur, setPur] = useState(''); const [src, setSrc] = useState('')
   const [rows, setRows] = useState<Row[]>([]); const [total, setTotal] = useState(0)
   const [msg, setMsg] = useState(''); const [busy, setBusy] = useState(false)
@@ -29,7 +29,6 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
       setRows(d.rows); setTotal(d.meta.total)
     } catch (e) { setMsg('加载失败：' + (e as Error).message) }
   }, [q, from, to, sales, pur, src])
-  useEffect(() => { if (initialQuery !== undefined) setQ(initialQuery) }, [initialQuery])
   useEffect(() => { void load() }, [load])
   const doDelete = async (id: string) => {
     if (!window.confirm('确认删除这条询报价？将连同产品明细一起删除，不可恢复。')) return
@@ -63,7 +62,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
       </div>
       <div className="tablewrap" style={{ overflow: 'auto', maxHeight: '62vh' }}>
         <table className="grid" style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12.5 }}>
-          <thead><tr>{['询价号', '日期', '客户', '标签', '国别/使用地', '行数', '报价合计', '总金额', '销售', '采购', '来源', '备注', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+          <thead><tr>{['询价号', '日期', '客户', '标签', '报价合计', '销售', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} style={{ borderBottom: '1px solid var(--line2)' }}>
@@ -71,23 +70,16 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.date}</td>
                 <td style={{ padding: '6px 8px' }}>{r.customer_name}</td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><TagBlocks r={r} /></td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.country || '—'}{r.use_location && r.use_location !== r.country ? ` / ${r.use_location}` : ''}</td>
-                <td style={{ padding: '6px 8px' }}>{r.itemCount}</td>
-                <td style={{ padding: '6px 8px' }} title={fmtT(r)}>{fmtT(r)}<div className="hint">≈USD {money(r.usdApprox)}</div></td>
-                <td style={{ padding: '6px 8px' }} className="mono">{money(r.hand_total)}</td>
+                <td style={{ padding: '6px 8px' }} title={fmtT(r)}>≈USD {money(r.usdApprox)}<div className="hint">{fmtT(r)}</div></td>
                 <td style={{ padding: '6px 8px' }}>{r.sales}</td>
-                <td style={{ padding: '6px 8px' }}>{r.purchaser}</td>
-                <td style={{ padding: '6px 8px' }}>{r.source}</td>
-                <td style={{ padding: '6px 8px', maxWidth: 180 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.note || ''}>{r.note || '—'}</div></td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
                   <button className="btn sm" onClick={() => setViewId(r.id)}>查看</button>
-                  <button className="btn sm" onClick={() => onOpenCustomer?.(r.customer_name)} title="查看该客户档案">客户档案</button>
                   <button className="btn sm" onClick={() => setEditId(r.id)}>编辑</button>
                   <button className="btn sm danger" disabled={busy} onClick={() => void doDelete(r.id)}>删除</button>
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无询报价记录（先到「询报价录入」录一单）</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无询报价记录（先到「询报价录入」录一单）</td></tr>}
           </tbody>
         </table>
       </div>
@@ -124,6 +116,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
             <div className="meta" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', margin: '10px 0', fontSize: 13 }}>
               <span>日期 <b>{d.date}</b></span><span>标签 <b><TagBlocks r={d} /></b></span><span>国别 <b>{d.country || '—'}</b></span><span>使用地 <b>{d.use_location || '—'}</b></span>
               <span>销售 <b>{d.sales}</b></span><span>采购 <b>{d.purchaser}</b></span><span>来源 <b>{d.source}</b></span>
+              <span>行数 <b>{d.itemCount ?? (d.items || []).length}</b></span>
               <span>报价合计 <b>{(d.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ')}</b></span>
               <span>总金额 <b>{money(d.hand_total)}</b></span><span>录入时间 <b className="mono">{d.created_at?.slice(0, 16)}</b></span>
             </div>

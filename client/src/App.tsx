@@ -83,8 +83,6 @@ export default function App() {
   const [cusList, setCusList] = useState<{ id: string; name: string; country: string | null }[]>([])
   const [cusFocus, setCusFocus] = useState(false)
   const [page, setPage] = useState<PageKey>('entry')
-  const [mgrQuery, setMgrQuery] = useState<string | undefined>(undefined)
-  const [custQuery, setCustQuery] = useState<string | undefined>(undefined)
   const noT = useRef<HTMLInputElement>(null)
 
   useEffect(() => { get<Bootstrap>('/meta/bootstrap').then(setMeta).catch(() => { /* 使用内置默认，保存时会再报后端错误 */ }) }, [])
@@ -147,8 +145,8 @@ export default function App() {
 
   if (page !== 'entry') return (
     <Shell page={page} onNav={setPage}>
-      {page === 'manage' && <InquiryManager meta={meta} initialQuery={mgrQuery} onOpenCustomer={(name) => { setCustQuery(name); setPage('customers') }} />}
-      {page === 'customers' && <CustomerArchive initialQuery={custQuery} onOpenInquiries={(name) => { setMgrQuery(name); setPage('manage') }} />}
+      {page === 'manage' && <InquiryManager meta={meta} />}
+      {page === 'customers' && <CustomerArchive />}
       {page === 'settings' && <SettingsView />}
     </Shell>
   )
