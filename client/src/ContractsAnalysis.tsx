@@ -456,14 +456,15 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         </>)}
 
         {tab === 'all' && (
-        <Panel title="按产品" hint={`${product ? `已筛「${product}」· ` : ''}${productRows.length} 个产品 · 合计 ${productRows.reduce((a, b) => a + b.count, 0)} 次`}>
+        <Panel title="按产品" hint={`${product ? `已筛「${product}」· ` : ''}${productRows.length} 个产品 · 合计 ${productRows.reduce((a, b) => a + b.count, 0)} 次 · ${money(sumUsd)} USD`}>
           <DataTable
-            cols={['产品', '成单次数', '金额（折USD）', '平均周期']}
-            widths={['40%', '18%', '24%', '18%']}
+            cols={['产品', '成单次数', '金额（折USD）', '金额占比', '平均周期']}
+            widths={['34%', '15%', '20%', '15%', '16%']}
             topCol={2} topLabel="最高"
             empty="暂无成单产品"
             rows={productRows.slice(0, 15).map((p) => [
-              p.name, `${p.count} 次`, money(p.usd), p.avgCycle == null ? '—' : `${p.avgCycle} 天`,
+              p.name, `${p.count} 次`, money(p.usd), `${sumUsd ? Math.round((p.usd / sumUsd) * 1000) / 10 : 0}%`,
+              p.avgCycle == null ? '—' : `${p.avgCycle} 天`,
             ])}
           />
           {productRows.length > 15 && <div className="hint" style={{ fontSize: 11 }}>仅显示前 15 个产品</div>}
@@ -531,13 +532,16 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         </>)}
 
         {tab === 'all' && (<>
-        <Panel title="按销售" hint="成单次数 · 金额 · 平均周期">
+        <Panel title="按销售" hint={`成单次数 · 金额 · 金额占比 · 平均周期 · 合计 ${money(sumUsd)} USD`}>
           <DataTable
-            cols={['销售', '成单次数', '金额（折USD）', '平均周期']}
-            widths={['40%', '18%', '24%', '18%']}
+            cols={['销售', '成单次数', '金额（折USD）', '金额占比', '平均周期']}
+            widths={['34%', '15%', '20%', '15%', '16%']}
             topCol={2} topLabel="第一"
             empty="暂无成单销售"
-            rows={salesRows.map((p) => [p.name, `${p.n} 单`, money(p.usd), p.avgCycle == null ? '—' : `${p.avgCycle} 天`])}
+            rows={salesRows.map((p) => [
+              p.name, `${p.n} 单`, money(p.usd), `${sumUsd ? Math.round((p.usd / sumUsd) * 1000) / 10 : 0}%`,
+              p.avgCycle == null ? '—' : `${p.avgCycle} 天`,
+            ])}
           />
         </Panel>
 
