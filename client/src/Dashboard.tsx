@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { get } from './api'
 import { StatusChip } from './StatusChip'
 import GuidanceNote from './Guidance'
+import GuidanceModal from './GuidanceModal'
 
 interface Brief {
   id: string; inquiry_no: string; date: string; sales: string; purchaser: string; customer_name: string
   customer_stars: number | null; last_followup_at: string | null; next_followup_at: string | null; usd: number
   kind?: 'overdue' | 'dueSoon' | 'stale'; kindLabel?: string
+  lastFollowupId?: string | null
   commentCount?: number
   comments?: { id: string; content: string; by_name: string | null; created_at: string }[]
 }
@@ -27,8 +29,10 @@ interface Dash {
 const money = (n: number | null | undefined) => (n == null ? '—' : Math.round(Number(n)).toLocaleString('zh-CN'))
 const fmt = (v: string | null) => (v ? String(v).slice(0, 16).replace('T', ' ') : '—')
 
-export default function Dashboard({ onGoFollow }: { onGoFollow?: (t: { sales: string; no: string }) => void }) {
+export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t: { sales: string; no: string }) => void; people?: string[] }) {
   const [d, setD] = useState<Dash | null>(null)
+  // 管理端：为某条提醒的最近跟进记录写指导
+  const [guideOf, setGuideOf] = useState<{ id: string; inquiry_no: string; customer_name: string; sales: string } | null>(null)
   const [err, setErr] = useState('')
   const [group, setGroup] = useState<'all' | 'overdue' | 'dueSoon' | 'stale'>('all')
   const load = useCallback(() => {
@@ -70,6 +74,15 @@ export default function Dashboard({ onGoFollow }: { onGoFollow?: (t: { sales: st
           <div className="kpi-chip" style={{ borderTopColor: 'var(--danger)' }}><span className="kpi-label">待跟进询价</span><b className="kpi-value" style={{ color: 'var(--danger)' }}>{d?.kpi.openCount ?? 0}<small style={{ fontSize: 13, fontWeight: 600, color: 'var(--sub)' }}> 条</small></b><span className="kpi-note">跟进中的询价（未成交未丢单）</span></div>
         </div>
       </section>
+
+      {guideOf && (
+        <GuidanceModal
+          record={{ id: guideOf.id, inquiry_no: guideOf.inquiry_no, customer_name: guideOf.customer_name, sales: guideOf.sales, date: '' }}
+          people={people}
+          onClose={() => setGuideOf(null)}
+          onSaved={() => { void load() }}
+        />
+      )}
 
       <section className="card panel-tight" style={{ marginTop: 12 }}>
         <div className="panel-head">
@@ -127,8 +140,11 @@ export default function Dashboard({ onGoFollow }: { onGoFollow?: (t: { sales: st
                       {/* 没有跟进指导时留空，不显示占位文字 */}
                       {r.comments && r.comments.length ? <GuidanceNote all comments={r.comments} /> : null}
                     </td>
-                    <td style={{ padding: '0 8px', textAlign: 'center' }}>
+                    <td style={{ padding: '0 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <button className="btn xs pri" onClick={() => onGoFollow?.({ sales: r.sales, no: r.inquiry_no })}>去跟进</button>
+                      <button className="btn xs" style={{ marginLeft: 4 }} disabled={!r.lastFollowupId}
+                        title={r.lastFollowupId ? '为这条提醒写跟进指导（管理端）' : '该询价还没有跟进记录，无法写指导'}
+                        onClick={() => { if (r.lastFollowupId) setGuideOf({ id: r.lastFollowupId, inquiry_no: r.inquiry_no, customer_name: r.customer_name, sales: r.sales }) }}>＋指导</button>
                     </td>
                   </tr>
                 )

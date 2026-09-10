@@ -608,10 +608,18 @@ app.get('/api/dashboard', (_req, res) => {
     content: text(c.content), by_name: str(c.by_name) || null, created_at: text(c.created_at),
   }))
 
+  // 每条询价最近一条跟进记录 id（指导评论挂在该记录上）
+  const lastFollowupOf = new Map<string, string>()
+  rowsOf('SELECT id, inquiry_id FROM followups ORDER BY date DESC, created_at DESC').forEach((f) => {
+    const k = text(f.inquiry_id)
+    if (!lastFollowupOf.has(k)) lastFollowupOf.set(k, text(f.id))
+  })
+
   const brief = (r: Record<string, unknown>) => ({
     id: text(r.id), inquiry_no: text(r.inquiry_no), date: text(r.date), sales: text(r.sales), purchaser: text(r.purchaser),
     customer_name: text(r.customer_name), customer_stars: num(r.customer_stars), last_followup_at: str(r.last_followup_at) || null,
     next_followup_at: str(r.next_followup_at) || null, usd: Math.round(usdOf(text(r.id))),
+    lastFollowupId: lastFollowupOf.get(text(r.id)) ?? null,
     commentCount: guidanceByInquiry.get(text(r.id))?.count ?? 0,
     comments: guidanceByInquiry.get(text(r.id))?.list ?? [],
   })

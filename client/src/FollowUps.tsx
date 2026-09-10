@@ -3,6 +3,7 @@ import { get, post } from './api'
 import { StatusChip } from './StatusChip'
 import { KeyTags } from './KeyTags'
 import GuidanceNote from './Guidance'
+import GuidanceModal from './GuidanceModal'
 
 interface MetaLite { sales: { name: string; team: string }[]; methods?: string[] }
 interface Lookup {
@@ -272,12 +273,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
       )}
 
       {commentOf && (
-        <CommentModal
-          record={commentOf}
-          people={meta.sales.map((x) => x.name)}
-          onClose={() => setCommentOf(null)}
-          onSaved={() => { void loadList() }}
-        />
+        <GuidanceModal record={commentOf} people={meta.sales.map((x) => x.name)} readOnly onClose={() => setCommentOf(null)} />
       )}
 
       <div style={{ marginTop: 14 }}>
@@ -331,7 +327,8 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                         return (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
                             <GuidanceNote compact comments={cs} />
-                            <button className="btn xs" onClick={() => setCommentOf(r)} title={cs.length ? '查看全部指导 / 继续追加' : '添加跟进指导'}>{cs.length ? '查看/追加指导' : '＋ 添加指导'}</button>
+                            {/* 跟进记录里的指导只查看，不支持在此新增 */}
+                            {cs.length > 0 && <button className="btn xs" onClick={() => setCommentOf(r)} title="查看全部跟进指导">查看指导</button>}
                           </div>
                         )
                       })()}
@@ -364,70 +361,6 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
               {list.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 20, color: 'var(--sub)' }}>暂无跟进记录</td></tr>}
             </tbody>
           </table>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/** 跟进指导评论：对某条跟进记录做批注/指导，方便管理者留言并留痕 */
-function CommentModal({ record, people, onClose, onSaved }: { record: Fu; people: string[]; onClose: () => void; onSaved: () => void }) {
-  const [list, setList] = useState<Comment[]>(record.comments ?? [])
-  const [content, setContent] = useState('')
-  const [byName, setByName] = useState(record.by_name || '')
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState('')
-  const submit = async () => {
-    if (!content.trim()) return setErr('请填写指导内容')
-    setBusy(true); setErr('')
-    try {
-      const r = await post<{ id: string; content: string; byName: string | null; createdAt: string }>(`/followups/${record.id}/comments`, { content: content.trim(), byName: byName.trim() || undefined })
-      setList((a) => [...a, { id: r.id, content: r.content, by_name: r.byName, created_at: r.createdAt }])
-      setContent('')
-      onSaved()
-    } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
-  }
-  return (
-    <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 'min(720px, 96vw)', maxHeight: '88vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="跟进指导">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>跟进指导 · {record.inquiry_no}</h3>
-          <button className="btn sm" onClick={onClose}>关闭</button>
-        </div>
-        <div className="hint" style={{ marginTop: 6 }}>
-          {record.date} · {record.method || '—'} · {record.customer_name} · 跟进人 {record.by_name || record.sales}
-          {record.summary ? ` ｜ ${record.summary}` : ''}
-        </div>
-        {record.detail && <div className="ro" style={{ marginTop: 6, maxHeight: 120, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{record.detail}</div>}
-
-        <h4 className="sec-title" style={{ marginTop: 12 }}>指导意见（{list.length} 条）</h4>
-        {list.length === 0 && <div className="hint">暂无评论，可在下方写下跟进建议（如：先确认技术规格、下周约客户现场演示）。</div>}
-        {list.map((c) => (
-          <div key={c.id} style={{ border: '1px solid var(--line)', borderLeft: '3px solid var(--brand)', borderRadius: 8, padding: '8px 10px', marginTop: 6 }}>
-            <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{c.content}</div>
-            <div className="hint" style={{ marginTop: 4, fontSize: 11.5 }}>{c.by_name || '—'} · {String(c.created_at).slice(0, 16).replace('T', ' ')}</div>
-          </div>
-        ))}
-
-        <h4 className="sec-title" style={{ marginTop: 14 }}>新增指导</h4>
-        <div className="row">
-          <div className="col w2">
-            <label>评论人</label>
-            <select className="sa" style={{ width: 180 }} value={byName} onChange={(e) => setByName(e.target.value)}>
-              <option value="">— 请选择 —</option>
-              {people.map((p) => <option key={p} value={p}>{p}</option>)}
-              {byName && !people.includes(byName) && <option value={byName}>{byName}</option>}
-            </select>
-          </div>
-        </div>
-        <div className="col">
-          <label>指导内容</label>
-          <textarea className="sa" rows={3} value={content} onChange={(e) => setContent(e.target.value)} placeholder="例如：这个卡点先找技术支持确认参数；报价可申请 5% 折扣；下周务必约客户现场演示。" />
-        </div>
-        {err && <div className="msg err">{err}</div>}
-        <div className="modal-foot">
-          <button className="btn" onClick={onClose}>取消</button>
-          <button className="btn pri" disabled={busy} onClick={() => void submit()}>{busy ? '提交中…' : '提交指导'}</button>
         </div>
       </div>
     </div>

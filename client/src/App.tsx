@@ -242,7 +242,7 @@ export default function App() {
           : undefined)
     ) : undefined}>
       {page === 'manage' && <InquiryManager meta={meta} />}
-      {page === 'dashboard' && <Dashboard onGoFollow={(t) => { setFollowTarget(t); navTo('followups') }} />}
+      {page === 'dashboard' && <Dashboard people={meta.sales.map((x) => x.name)} onGoFollow={(t) => { setFollowTarget(t); navTo('followups') }} />}
       {page === 'followups' && (
         <FollowUps meta={meta} target={followTarget} resetSignal={followReset} onDetailChange={setFollowDetailOpen} />
       )}
