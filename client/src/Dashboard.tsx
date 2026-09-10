@@ -140,9 +140,20 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
                     <td className="mono" style={{ padding: '0 8px' }} title={r.last_followup_at ? String(r.last_followup_at).replace('T', ' ') : '从未跟进'}>{fmt(r.last_followup_at)}</td>
                     <td className="mono" style={{ padding: '0 8px', fontWeight: r.kind === 'overdue' ? 700 : 400, color: r.kind === 'overdue' ? 'var(--danger)' : undefined }} title={r.next_followup_at ? String(r.next_followup_at).replace('T', ' ') : '未设置下次跟进'}>{fmt(r.next_followup_at)}</td>
                     <td className="mono cell-top" style={{ padding: '0 8px', textAlign: 'right' }} title={`报价合计折 USD ≈ ${money(r.usd)}`}>{money(r.usd)}</td>
-                    {/* 展示最新一条指导的完整内容（指导人 · 时间 + 全文），较早的指导在悬停提示与「＋指导」弹窗里 */}
-                    <td className="cell-guidance" title={(r.comments ?? []).map((c) => `${c.by_name || '—'}：${c.content}`).join('\n') || '暂无跟进指导'}>
-                      {r.comments && r.comments.length ? <GuidanceNote comments={r.comments} /> : <span className="hint">—</span>}
+                    {/* 展示最新一条指导的完整内容；点击该列就在本页弹窗查看/追加全部指导（不跳转页面） */}
+                    <td className="cell-guidance" style={{ cursor: r.lastFollowupId ? 'pointer' : 'default' }}
+                      title={(r.comments ?? []).map((c) => `${c.by_name || '—'}：${c.content}`).join('\n') || '暂无跟进指导'}
+                      onClick={(e) => {
+                        e.stopPropagation()   // 不触发行点击（避免跳到询报价跟进页）
+                        if (r.lastFollowupId) setGuideOf({ id: r.lastFollowupId, inquiry_no: r.inquiry_no, customer_name: r.customer_name, sales: r.sales })
+                      }}>
+                      {r.comments && r.comments.length
+                        ? <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 8, maxWidth: '100%' }}>
+                            <GuidanceNote comments={r.comments} />
+                            <button className="btn xs" style={{ flex: '0 0 auto' }} title="在本页弹窗查看全部指导 / 继续追加（不跳转页面）"
+                              onClick={(e) => { e.stopPropagation(); if (r.lastFollowupId) setGuideOf({ id: r.lastFollowupId, inquiry_no: r.inquiry_no, customer_name: r.customer_name, sales: r.sales }) }}>查看指导</button>
+                          </span>
+                        : <span className="hint">—</span>}
                     </td>
                     <td style={{ padding: '0 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <button className="btn xs pri" onClick={() => onGoFollow?.({ sales: r.sales, no: r.inquiry_no })}>去跟进</button>
