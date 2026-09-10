@@ -292,14 +292,13 @@ export default function App() {
             <div className="col" style={{ flex: 1, minWidth: 240 }}><label>备注</label><textarea className="sa" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="客户要求、交期等补充说明（选填）" /></div>
           </div>
         </div>
-      </div>
 
-      <div className="actions" style={{ marginTop: 12 }}>
-        <button className="btn pri" disabled={busy || !valid} onClick={() => void save(false)}>保存询价{busy ? '…' : ''}</button>
-        <button className="btn" disabled={busy || !valid} onClick={() => void save(true)}>保存并继续录下一条</button>
-        {!valid && <span className="hint">请补齐必填项（询价号唯一 / 销售 / 客户 / 采购 / 来源 / 重点客户 / 重点项目 / ≥1行明细金额大于0）</span>}
+        <div className="actions" style={{ marginTop: 12 }}>
+          <button className="btn pri" disabled={busy || !valid} onClick={() => void save(false)}>保存询价{busy ? '…' : ''}</button>
+          <button className="btn" disabled={busy || !valid} onClick={() => void save(true)}>保存并继续录下一条</button>
+          {!valid && <span className="hint">请补齐必填项（询价号唯一 / 销售 / 客户 / 采购 / 来源 / 重点客户 / 重点项目 / ≥1行明细金额大于0）</span>}
+        </div>
       </div>
-
     </Shell>
   )
 }
