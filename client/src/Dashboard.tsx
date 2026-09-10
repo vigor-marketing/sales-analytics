@@ -5,6 +5,7 @@ import { StatusChip } from './StatusChip'
 interface Brief {
   id: string; inquiry_no: string; date: string; sales: string; purchaser: string; customer_name: string
   customer_stars: number | null; last_followup_at: string | null; next_followup_at: string | null; usd: number
+  kind?: 'overdue' | 'dueSoon' | 'stale'; kindLabel?: string
 }
 interface Kpi {
   inqCount: number; inqUsd: number; wonCount: number; wonUsd: number; lostCount: number; lostUsd: number
@@ -24,24 +25,26 @@ const fmt = (v: string | null) => (v ? String(v).slice(0, 16).replace('T', ' ') 
 export default function Dashboard({ onGoFollow }: { onGoFollow?: (t: { sales: string; no: string }) => void }) {
   const [d, setD] = useState<Dash | null>(null)
   const [err, setErr] = useState('')
-  const [group, setGroup] = useState<'overdue' | 'dueSoon' | 'stale'>('overdue')
+  const [group, setGroup] = useState<'all' | 'overdue' | 'dueSoon' | 'stale'>('all')
   const load = useCallback(() => {
     get<Dash>('/dashboard').then((x) => {
       setD(x)
-      // 默认展示有内容的提醒分组：逾期 → 本周 → 超期
-      const c = x.reminders.counts
-      setGroup(c.overdue > 0 ? 'overdue' : c.dueSoon > 0 ? 'dueSoon' : 'stale')
+      setGroup('all')
     }).catch((e) => setErr((e as Error).message))
   }, [])
   useEffect(() => { load() }, [load])
 
   const groupMeta = [
-    { key: 'overdue' as const, label: '逾期未跟进', tone: '#dc2626', note: '计划跟进时间已过，仍未跟进' },
+    { key: 'all' as const, label: '全部提醒', tone: 'var(--brand)', note: '三类提醒合并查看，可按类型筛选' },
+    { key: 'overdue' as const, label: '逾期未跟进', tone: '#dc2626', note: '计划跟进时间已过且尚未跟进' },
     { key: 'dueSoon' as const, label: '本周待跟进', tone: '#a35c00', note: `今天 ~ 本周末（${d?.weekEnd ?? ''}）计划跟进` },
-    { key: 'stale' as const, label: '超期未跟进', tone: 'var(--brand)', note: `距上次跟进超过 ${d?.reminders.staleDays ?? 7} 天（或从未跟进）` },
+    { key: 'stale' as const, label: '超期未跟进', tone: '#7c3aed', note: `距上次跟进超过 ${d?.reminders.staleDays ?? 7} 天（或从未跟进）` },
   ]
   const cur = groupMeta.find((g) => g.key === group)!
-  const list = d?.reminders[group] ?? []
+  const list = group === 'all'
+    ? [...(d?.reminders.overdue ?? []), ...(d?.reminders.dueSoon ?? []), ...(d?.reminders.stale ?? [])]
+    : (d?.reminders[group] ?? [])
+  const kindTone = (k?: string) => (k === 'overdue' ? { bg: '#fee2e2', color: '#b91c1c' } : k === 'dueSoon' ? { bg: '#fef3c7', color: '#92400e' } : { bg: '#ede9fe', color: '#5b21b6' })
 
   return (
     <>
@@ -66,39 +69,65 @@ export default function Dashboard({ onGoFollow }: { onGoFollow?: (t: { sales: st
       <section className="card panel-tight" style={{ marginTop: 12 }}>
         <div className="panel-head">
           <h4 className="panel-title">跟进提醒</h4>
-          <span className="ana-tabs-l" style={{ marginLeft: 4 }}>
-            {groupMeta.map((g) => (
-              <button key={g.key} className={group === g.key ? 'on' : ''} onClick={() => setGroup(g.key)}>
-                {g.label}<span className="badge" style={{ marginLeft: 6, background: g.key === group ? 'rgba(255,255,255,.25)' : '#eef1f6', color: group === g.key ? '#fff' : 'var(--sub)' }}>{d?.reminders.counts[g.key] ?? 0}</span>
-              </button>
-            ))}
+          <span className="hint panel-hint">
+            {d ? `共 ${list.length} 条需要处理 · 已跟进的会自动从提醒中移除` : '加载中…'}
           </span>
           <span style={{ flex: 1 }} />
-          <span className="hint">{cur.note}</span>
+          <span className="rem-tabs">
+            {groupMeta.map((g) => {
+              const n = g.key === 'all'
+                ? (d?.reminders.overdue.length ?? 0) + (d?.reminders.dueSoon.length ?? 0) + (d?.reminders.stale.length ?? 0)
+                : (d?.reminders.counts[g.key] ?? 0)
+              return (
+                <button key={g.key} className={group === g.key ? 'on' : ''} onClick={() => setGroup(g.key)} title={g.note}
+                  style={group === g.key ? { background: g.tone, borderColor: g.tone } : undefined}>
+                  <span className="rem-dot" style={{ background: g.tone }} />{g.label}
+                  <span className="rem-count">{n}</span>
+                </button>
+              )
+            })}
+          </span>
         </div>
-        <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 10 }}>
-          <table className="grid data-table fixed-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-            <colgroup><col style={{ width: '12%' }} /><col style={{ width: '22%' }} /><col style={{ width: '10%' }} /><col style={{ width: '10%' }} /><col style={{ width: '14%' }} /><col style={{ width: '14%' }} /><col style={{ width: '12%' }} /><col style={{ width: '6%' }} /></colgroup>
+        <div className="hint" style={{ marginTop: 6 }}>{cur.note}</div>
+
+        <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 8 }}>
+          <table className="grid data-table fixed-table rem-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <colgroup>
+              <col style={{ width: '7%' }} /><col style={{ width: '15%' }} /><col style={{ width: '19%' }} /><col style={{ width: '9%' }} />
+              <col style={{ width: '9%' }} /><col style={{ width: '13%' }} /><col style={{ width: '13%' }} /><col style={{ width: '10%' }} /><col style={{ width: '5%' }} />
+            </colgroup>
             <thead><tr>
-              <th style={{ textAlign: 'left' }}>询价号</th><th style={{ textAlign: 'left' }}>客户</th><th style={{ textAlign: 'left' }}>销售</th><th style={{ textAlign: 'left' }}>采购</th>
-              <th style={{ textAlign: 'left' }}>上次跟进</th><th style={{ textAlign: 'left' }}>下次跟进</th><th style={{ textAlign: 'right' }}>报价(USD)</th><th style={{ textAlign: 'center' }}>操作</th>
+              <th style={{ textAlign: 'left' }}>类型</th><th style={{ textAlign: 'left' }}>询价号</th><th style={{ textAlign: 'left' }}>客户</th>
+              <th style={{ textAlign: 'left' }}>销售</th><th style={{ textAlign: 'left' }}>采购</th><th style={{ textAlign: 'left' }}>上次跟进</th>
+              <th style={{ textAlign: 'left' }}>下次跟进</th><th style={{ textAlign: 'right' }}>报价(USD)</th><th style={{ textAlign: 'center' }}>操作</th>
             </tr></thead>
             <tbody>
-              {list.map((r) => (
-                <tr key={r.id} className={group === 'overdue' ? 'row-top' : undefined}>
-                  <td className="mono ellip" style={{ padding: '0 10px' }} title={r.inquiry_no}>{r.inquiry_no}</td>
-                  <td className="ellip" style={{ padding: '0 10px' }} title={r.customer_name}>{r.customer_name || '—'}</td>
-                  <td className="ellip" style={{ padding: '0 10px' }}>{r.sales || '—'}</td>
-                  <td className="ellip" style={{ padding: '0 10px' }}>{r.purchaser || '—'}</td>
-                  <td className="mono" style={{ padding: '0 10px' }}>{fmt(r.last_followup_at)}</td>
-                  <td className="mono" style={{ padding: '0 10px', color: group === 'overdue' ? 'var(--danger)' : undefined, fontWeight: group === 'overdue' ? 700 : undefined }}>{fmt(r.next_followup_at)}</td>
-                  <td className="mono cell-top" style={{ padding: '0 10px', textAlign: 'right' }}>{money(r.usd)}</td>
-                  <td style={{ padding: '0 10px', textAlign: 'center' }}>
-                    <button className="btn xs" onClick={() => onGoFollow?.({ sales: r.sales, no: r.inquiry_no })}>去跟进</button>
-                  </td>
-                </tr>
-              ))}
-              {list.length === 0 && <tr><td colSpan={8} className="hint" style={{ padding: 16, textAlign: 'center' }}>{cur.label}：暂无（很好，暂无需要提醒的询价）</td></tr>}
+              {list.map((r) => {
+                const t = kindTone(r.kind)
+                return (
+                  <tr key={r.id + (r.kind ?? '')}>
+                    <td style={{ padding: '0 8px' }}>
+                      <span className="rem-kind" style={{ background: t.bg, color: t.color }}>{r.kindLabel ?? '—'}</span>
+                    </td>
+                    <td className="mono ellip" style={{ padding: '0 8px' }} title={r.inquiry_no}>{r.inquiry_no}</td>
+                    <td className="ellip" style={{ padding: '0 8px' }} title={r.customer_name}>{r.customer_name || '—'}</td>
+                    <td className="ellip" style={{ padding: '0 8px' }}>{r.sales || '—'}</td>
+                    <td className="ellip" style={{ padding: '0 8px' }}>{r.purchaser || '—'}</td>
+                    <td className="mono" style={{ padding: '0 8px' }}>{fmt(r.last_followup_at)}</td>
+                    <td className="mono" style={{ padding: '0 8px', fontWeight: r.kind === 'overdue' ? 700 : 400, color: r.kind === 'overdue' ? 'var(--danger)' : undefined }}>{fmt(r.next_followup_at)}</td>
+                    <td className="mono cell-top" style={{ padding: '0 8px', textAlign: 'right' }}>{money(r.usd)}</td>
+                    <td style={{ padding: '0 8px', textAlign: 'center' }}>
+                      <button className="btn xs pri" onClick={() => onGoFollow?.({ sales: r.sales, no: r.inquiry_no })}>去跟进</button>
+                    </td>
+                  </tr>
+                )
+              })}
+              {list.length === 0 && (
+                <tr><td colSpan={9} style={{ padding: 22, textAlign: 'center', color: 'var(--sub)' }}>
+                  <div style={{ fontSize: 20 }}>✅</div>
+                  <div style={{ marginTop: 4 }}>{cur.label}：暂无需要提醒的询价（已跟进的会自动移除）</div>
+                </td></tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -112,7 +141,7 @@ export default function Dashboard({ onGoFollow }: { onGoFollow?: (t: { sales: st
           </div>
           <div style={{ marginTop: 8 }}>
             <table className="grid data-table fixed-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-              <colgroup><col style={{ width: '34%' }} /><col style={{ width: '16%' }} /><col style={{ width: '26%' }} /><col style={{ width: '24%' }} /></colgroup>
+              <colgroup><col style={{ width: '34%' }} /><col style={{ width: '18%' }} /><col style={{ width: '26%' }} /><col style={{ width: '22%' }} /></colgroup>
               <thead><tr><th style={{ textAlign: 'left' }}>销售</th><th style={{ textAlign: 'right' }}>单数</th><th style={{ textAlign: 'right' }}>金额(USD)</th><th style={{ textAlign: 'right' }}>占比</th></tr></thead>
               <tbody>
                 {(d?.monthBySales ?? []).map((x, i) => (
@@ -136,7 +165,7 @@ export default function Dashboard({ onGoFollow }: { onGoFollow?: (t: { sales: st
           </div>
           <div style={{ marginTop: 8 }}>
             <table className="grid data-table fixed-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-              <colgroup><col style={{ width: '40%' }} /><col style={{ width: '16%' }} /><col style={{ width: '24%' }} /><col style={{ width: '20%' }} /></colgroup>
+              <colgroup><col style={{ width: '34%' }} /><col style={{ width: '18%' }} /><col style={{ width: '26%' }} /><col style={{ width: '22%' }} /></colgroup>
               <thead><tr><th style={{ textAlign: 'left' }}>产品</th><th style={{ textAlign: 'right' }}>次数</th><th style={{ textAlign: 'right' }}>金额(USD)</th><th style={{ textAlign: 'right' }}>占比</th></tr></thead>
               <tbody>
                 {(d?.monthByProduct ?? []).map((x, i) => (

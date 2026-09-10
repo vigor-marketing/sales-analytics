@@ -593,17 +593,25 @@ app.get('/api/dashboard', (_req, res) => {
     next_followup_at: str(r.next_followup_at) || null, usd: Math.round(usdOf(text(r.id))),
   })
   const open = openRows.filter((r) => Number(r.has_order) === 0)
-  const overdue = open.filter((r) => str(r.next_followup_at) && String(r.next_followup_at).slice(0, 10) < today).map(brief)
-  const dueSoon = open.filter((r) => {
-    const nx = String(str(r.next_followup_at) || '').slice(0, 10)
-    return nx && nx >= today && nx <= weekEnd
-  }).map(brief)
-  const stale = open.filter((r) => {
-    const nx = String(str(r.next_followup_at) || '').slice(0, 10)
-    if (nx) return false
-    const last = str(r.last_followup_at)
-    return !last || last < staleBefore
-  }).map(brief)
+  const dateOf = (v: unknown) => String(str(v) || '').slice(0, 10)
+  // 已经跟进过（最近跟进 >= 计划跟进日期）就不再提醒
+  const doneAfterPlan = (r: Record<string, unknown>) => {
+    const nx = dateOf(r.next_followup_at); const last = dateOf(r.last_followup_at)
+    return Boolean(nx && last && last >= nx)
+  }
+  const overdue = open
+    .filter((r) => { const nx = dateOf(r.next_followup_at); return nx && nx < today && !doneAfterPlan(r) })
+    .map((r) => ({ ...brief(r), kind: 'overdue' as const, kindLabel: '逾期未跟进' }))
+  const dueSoon = open
+    .filter((r) => { const nx = dateOf(r.next_followup_at); return nx && nx >= today && nx <= weekEnd && !doneAfterPlan(r) })
+    .map((r) => ({ ...brief(r), kind: 'dueSoon' as const, kindLabel: '本周待跟进' }))
+  const stale = open
+    .filter((r) => {
+      if (dateOf(r.next_followup_at)) return false
+      const last = dateOf(r.last_followup_at)
+      return !last || last < staleBefore
+    })
+    .map((r) => ({ ...brief(r), kind: 'stale' as const, kindLabel: '超期未跟进' }))
 
   ok(res, {
     month, today, weekEnd,

@@ -133,6 +133,18 @@ ul.sugs li:hover, ul.sugs li.on { background: var(--brand-light) }
 .ana-sum{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
 .ana-sum-i{display:inline-flex;align-items:center;gap:5px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:12.5px;color:var(--sub)}
 .ana-sum-i b{color:var(--text);font-size:13.5px}
+/* 仪表盘：跟进提醒 */
+.rem-tabs{display:inline-flex;align-items:center;gap:6px;background:#f3f5fa;border-radius:10px;padding:3px;flex-wrap:wrap}
+.rem-tabs button{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;background:transparent;padding:5px 12px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--sub);cursor:pointer;transition:background .15s,color .15s}
+.rem-tabs button:hover{background:#fff;color:var(--brand)}
+.rem-tabs button.on{color:#fff;box-shadow:0 1px 6px rgba(16,32,64,.18)}
+.rem-tabs button.on .rem-dot{background:#fff !important;opacity:.9}
+.rem-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.rem-count{background:rgba(0,0,0,.06);border-radius:999px;padding:0 7px;font-size:11px;line-height:1.7}
+.rem-tabs button.on .rem-count{background:rgba(255,255,255,.28);color:#fff}
+.rem-table th,.rem-table td{height:38px}
+.rem-kind{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700;white-space:nowrap}
+.rem-table tbody tr:hover>td{background:#f7faff}
 .dash-sec{grid-column:1/-1;display:flex;align-items:center;gap:8px;margin:10px 0 0}
 .dash-sec-t{font-size:13px;font-weight:800;color:var(--text);letter-spacing:.5px}
 .dash-sec-line{flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
