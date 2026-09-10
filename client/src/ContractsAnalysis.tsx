@@ -15,6 +15,9 @@ const cycleTone = (d: number | null) => (d == null ? 'var(--sub)' : d <= 30 ? '#
 
 export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   const [sales, setSales] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [product, setProduct] = useState('')
+  // 看板口径：默认「年度」；切到「月度」时可再按年份看 12 个月的走势
+  const [trendMode, setTrendMode] = useState<'year' | 'month'>('year')
+  const [year, setYear] = useState('')
   const [rows, setRows] = useState<OrderRow[]>([]); const [stats, setStats] = useState<Stats | null>(null); const [msg, setMsg] = useState('')
   const load = useCallback(async () => {
     try {
@@ -26,13 +29,41 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   }, [sales, from, to, product])
   useEffect(() => { void load() }, [load])
 
-  // 月度订单金额趋势
-  const trend = useMemo(() => {
-    const m = new Map<string, number>()
-    rows.forEach((r) => { const k = String(r.won_date).slice(0, 7); if (k) m.set(k, (m.get(k) ?? 0) + (r.usdApprox || 0)) })
-    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([month, usd]) => ({ month, usd }))
+  // 有数据的年份（降序），用于「月度」口径选年
+  const years = useMemo(() => {
+    const s2 = new Set<string>()
+    rows.forEach((r) => { const y = String(r.won_date).slice(0, 4); if (/^\d{4}$/.test(y)) s2.add(y) })
+    return Array.from(s2).sort((a, b) => b.localeCompare(a))
   }, [rows])
+  const curYear = String(new Date().getFullYear())
+  const activeYear = year || (years.includes(curYear) ? curYear : (years[0] ?? curYear))
+
+  // 金额趋势：年度看板（每年一根）或月度看板（选定年份的 1–12 月），均跟随上方筛选
+  const trend = useMemo(() => {
+    if (trendMode === 'year') {
+      const m = new Map<string, { usd: number; n: number }>()
+      rows.forEach((r) => {
+        const k = String(r.won_date).slice(0, 4)
+        if (!/^\d{4}$/.test(k)) return
+        const a = m.get(k) ?? { usd: 0, n: 0 }
+        a.usd += r.usdApprox || 0; a.n += 1
+        m.set(k, a)
+      })
+      return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([key, v]) => ({ key, label: `${key}年`, ...v }))
+    }
+    const arr = Array.from({ length: 12 }, (_, i) => ({ key: `${activeYear}-${String(i + 1).padStart(2, '0')}`, label: `${i + 1}月`, usd: 0, n: 0 }))
+    rows.forEach((r) => {
+      const d = String(r.won_date)
+      if (!d.startsWith(activeYear + '-')) return
+      const i = Number(d.slice(5, 7)) - 1
+      if (i < 0 || i > 11) return
+      arr[i].usd += r.usdApprox || 0; arr[i].n += 1
+    })
+    return arr
+  }, [rows, trendMode, activeYear])
   const maxTrend = Math.max(1, ...trend.map((t) => t.usd))
+  const trendSum = trend.reduce((a, b) => a + b.usd, 0)
+  const trendN = trend.reduce((a, b) => a + b.n, 0)
   // 客户 Top10
   const topCustomers = useMemo(() => {
     const m = new Map<string, { usd: number; n: number }>()
@@ -66,13 +97,29 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         </div>
       )}
 
-      <h4 style={{ margin: '12px 0 6px' }}>月度订单金额趋势（折USD）</h4>
-      {trend.length ? (
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 170, padding: '0 2px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '12px 0 6px' }}>
+        <h4 style={{ margin: 0 }}>订单金额趋势（折USD）</h4>
+        <span className="seg">
+          <button className={trendMode === 'year' ? 'on' : ''} onClick={() => setTrendMode('year')}>年度看板</button>
+          <button className={trendMode === 'month' ? 'on' : ''} onClick={() => setTrendMode('month')}>月度看板</button>
+        </span>
+        {trendMode === 'month' && (
+          <select className="sa" style={{ width: 120 }} value={activeYear} onChange={(e) => setYear(e.target.value)}>
+            {(years.length ? years : [curYear]).map((y) => <option key={y} value={y}>{y} 年</option>)}
+          </select>
+        )}
+        <span className="hint">
+          {trendMode === 'year'
+            ? `按年汇总（跟随上方筛选）：合计 ≈USD ${money(trendSum)} · ${trendN} 单`
+            : `${activeYear} 年各月（跟随上方筛选）：合计 ≈USD ${money(trendSum)} · ${trendN} 单`}
+        </span>
+      </div>
+      {trend.length && trendN > 0 ? (
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: trendMode === 'month' ? 4 : 6, height: 170, padding: '0 2px' }}>
           {trend.map((t) => (
-            <div key={t.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }} title={`${t.month}：${money(t.usd)} USD`}>
-              <div style={{ height: `${Math.round((t.usd / maxTrend) * 100)}%`, minHeight: 3, background: 'linear-gradient(180deg,#4f8cff,#1d4ed8)', borderRadius: '4px 4px 0 0' }} />
-              <div className="hint" style={{ textAlign: 'center', fontSize: 11 }}>{t.month.slice(5)}月</div>
+            <div key={t.key} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }} title={`${t.label}：${money(t.usd)} USD · ${t.n} 单`}>
+              <div style={{ height: `${Math.round((t.usd / maxTrend) * 100)}%`, minHeight: 3, background: t.usd > 0 ? 'linear-gradient(180deg,#4f8cff,#1d4ed8)' : 'transparent', borderRadius: '4px 4px 0 0' }} />
+              <div className="hint" style={{ textAlign: 'center', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden' }}>{t.label}</div>
             </div>
           ))}
         </div>
