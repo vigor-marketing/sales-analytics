@@ -123,6 +123,11 @@ ul.sugs li:hover, ul.sugs li.on { background: var(--brand-light) }
 .panel-title::before{content:'';position:absolute;left:0;top:2px;bottom:2px;width:3px;border-radius:2px;background:var(--brand)}
 .panel-hint{font-size:11.5px}
 /* 分区标题 */
+/* 分析子页面切换条 */
+.ana-tabs{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:12px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px 8px}
+.ana-tabs button{border:0;background:transparent;padding:6px 14px;border-radius:7px;font-size:13px;color:var(--sub);cursor:pointer;font-weight:600}
+.ana-tabs button:hover{background:var(--brand-light);color:var(--brand)}
+.ana-tabs button.on{background:var(--brand);color:#fff;box-shadow:0 1px 4px rgba(0,82,217,.3)}
 .dash-sec{grid-column:1/-1;display:flex;align-items:center;gap:8px;margin:10px 0 0}
 .dash-sec-t{font-size:13px;font-weight:800;color:var(--text);letter-spacing:.5px}
 .dash-sec-line{flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}

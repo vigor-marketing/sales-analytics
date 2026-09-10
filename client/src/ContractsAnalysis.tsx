@@ -161,6 +161,18 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   const [products, setProducts] = useState<{ id: string; name: string; use_count: number }[]>([])
   useEffect(() => { get<{ id: string; name: string; use_count: number }[]>('/products').then((l) => setProducts(Array.isArray(l) ? l : [])).catch(() => { /* */ }) }, [])
   const [trendMode, setTrendMode] = useState<'year' | 'month'>('year')
+  // 分析子页面：拆分查看，避免一屏堆叠混乱；选择记在本地，刷新后保持
+  type TabKey = 'all' | 'team' | 'group'
+  const TABS: { key: TabKey; label: string; note: string }[] = [
+    { key: 'all', label: '整体数据', note: '关键指标、金额趋势、按产品/按销售、成交与丢单原因、客户排行' },
+    { key: 'team', label: '小组', note: '小组汇总与月度小组拆解' },
+    { key: 'group', label: '组内', note: '小组内部各成员的成单明细与排名' },
+  ]
+  const [tab, setTab] = useState<TabKey>(() => {
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('sa:anaTab') : null
+    return (TABS.some((t) => t.key === saved) ? saved : 'all') as TabKey
+  })
+  useEffect(() => { try { localStorage.setItem('sa:anaTab', tab) } catch { /* */ } }, [tab])
   const [year, setYear] = useState('')
 
   const load = useCallback(async () => {
@@ -350,9 +362,16 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         {msg && <div className="msg err">{msg}</div>}
       </section>
 
-      {/* 概览 + 趋势：同一行，紧凑 */}
+      {/* 子页面切换：每个分析维度单独一页查看，避免堆叠混乱 */}
+      <div className="ana-tabs">
+        {TABS.map((t) => (
+          <button key={t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)} title={t.note}>{t.label}</button>
+        ))}
+        <span className="hint" style={{ marginLeft: 4 }}>{TABS.find((t) => t.key === tab)?.note}</span>
+      </div>
+
       <div className="dash-grid" style={{ marginTop: 10 }}>
-        <Section title="总体概览" note="当前筛选范围内的成交规模与周期" />
+        {tab === 'all' && (<>
         <div className="dash-span2" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {stats && (<>
             <Kpi label="销售订单数" value={`${stats.contractCount} 单`} note={stats.contractCount ? `平均单值 ${money(stats.usdTotal / stats.contractCount)} USD` : ''} />
@@ -361,8 +380,6 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
             <Kpi label="丢单金额（折USD）" value={money(lostSum?.usdTotal ?? 0)} tone="var(--danger)" note={winSum && winSum.usdTotal > 0 && lostSum ? `占成交 ${Math.round((lostSum.usdTotal / winSum.usdTotal) * 100)}%` : ''} />
           </>)}
         </div>
-
-        <Section title="趋势与总量" note="跟随上方筛选" />
 
         <Panel
           style={{ gridColumn: '1 / -1' }}
@@ -385,8 +402,9 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           {trend.length && trendN > 0 ? <TrendChart data={trend} /> : <div className="hint" style={{ fontSize: 12 }}>暂无数据</div>}
         </Panel>
 
-        <Section title="产品与小组" note="按产品、按小组，以及组内成员明细" />
+        </>)}
 
+        {tab === 'all' && (
         <Panel title="按产品" hint={`${product ? `已筛「${product}」· ` : ''}${productRows.length} 个产品 · 合计 ${productRows.reduce((a, b) => a + b.count, 0)} 次`}>
           <DataTable
             cols={['产品', '成单次数', '金额（折USD）', '平均转化周期']}
@@ -397,7 +415,9 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           />
           {productRows.length > 15 && <div className="hint" style={{ fontSize: 11 }}>仅显示前 15 个产品</div>}
         </Panel>
+        )}
 
+        {tab === 'team' && (<>
         <Panel title="按小组" hint="小组维度：单数 · 金额 · 占比 · 平均周期 · 组内人数">
           <DataTable
             cols={['小组', '订单数', '金额（折USD）', '金额占比', '平均转化周期', '组内人数']}
@@ -411,6 +431,9 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           )}
         </Panel>
 
+        </>)}
+
+        {tab === 'group' && (<>
         <Panel title="小组内成员分析" hint="每个小组下各成员的成单金额与占比（含本期无成单的成员）" style={{ gridColumn: '1 / -1' }}>
           {teamMembers.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
             <div className="tablewrap" style={{ overflowX: 'auto' }}>
@@ -448,8 +471,9 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           )}
         </Panel>
 
-        <Section title="销售与月度" note="按销售汇总，并按月份拆解小组表现" />
+        </>)}
 
+        {tab === 'all' && (<>
         <Panel title="按销售" hint="成单次数 · 金额 · 平均周期">
           <DataTable
             cols={['销售', '成单次数', '金额（折USD）', '平均转化周期']}
@@ -458,6 +482,9 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           />
         </Panel>
 
+        </>)}
+
+        {tab === 'team' && (<>
         {/* 月度小组分析：每月各组订单数与金额（跟随筛选） */}
         <Panel
           title="月度小组分析"
@@ -508,8 +535,9 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           )}
         </Panel>
 
-        <Section title="原因分析" note="成交原因与丢单原因分布" />
+        </>)}
 
+        {tab === 'all' && (<>
         <Panel title="成交原因分析" hint={`${winSum?.total ?? 0} 单 · ${money(winSum?.usdTotal ?? 0)} USD`}
           extra={winSum && winSum.missing > 0 ? <span className="hint" style={{ color: '#a35c00', fontSize: 11 }}>{winSum.missing} 笔未填</span> : undefined}>
           <DataTable
@@ -527,14 +555,16 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           />
         </Panel>
 
-        <Section title="客户排行" note="按订单金额折USD排序" />
+        </>)}
 
+        {tab === 'all' && (
         <Panel title="客户 Top10" hint={`合计 ${money(sumUsd)} USD`} style={{ gridColumn: '1 / -1' }}>
           <DataTable
             cols={['排名', '客户', '金额（折USD）', '订单数', '金额占比']}
             rows={topCustomers.map((c, i) => [`${i + 1}`, c.name, money(c.usd), `${c.n} 单`, `${sumUsd ? Math.round((c.usd / sumUsd) * 100) : 0}%`])}
           />
         </Panel>
+        )}
       </div>
     </>
   )
