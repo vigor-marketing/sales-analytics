@@ -227,7 +227,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
               <col style={{ width: '16%' }} /><col style={{ width: '14%' }} /><col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
               <col style={{ width: '11%' }} />
             </colgroup>
-            <thead><tr>{['跟进日期', '第几次跟进', '询价号 / 客户', '销售 / 跟进人', '方式', '跟进简述与内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '操作' ? '查看该条跟进详情（简述、详情、图片、附件、指导）；最新一条可编辑，较早的只读' : undefined}>{h}</th>)}</tr></thead>
+            <thead><tr>{['跟进日期', '第几次跟进', '询价号 / 客户', '销售 / 跟进人', '方式', '跟进简述与内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '操作' ? '查看该询价的全部跟进详情（简述、详情、图片、附件、指导）' : (h === '第几次跟进' ? '按跟进日期先后排序（同一天按录入先后）：第 1 次 = 该询价最早的一次跟进，最新一次标注「最新」' : undefined)}>{h === '第几次跟进' ? '第几次跟进（按日期）' : h}</th>)}</tr></thead>
             <tbody>
               {list.map((r) => {
                 const detail = r.detail || r.content || ''
@@ -246,9 +246,17 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                     }}>
                     <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.date}</td>
                     {/* 第几次跟进：按跟进日期先后自动编号（同日按录入先后） */}
-                    <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }} title={`本条是该合同的第 ${r.seq ?? '—'} 次跟进（共 ${r.seq_total ?? '—'} 次）`}>
-                      {r.seq ? <span className="badge new">第 {r.seq} 次</span> : <span className="hint">—</span>}
-                      {r.seq_total && r.seq_total > 1 ? <span className="hint" style={{ marginLeft: 6 }}>共 {r.seq_total} 次</span> : null}
+                    <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}
+                      title={r.seq
+                        ? `该询价共 ${r.seq_total} 次跟进，本条是第 ${r.seq} 次${Number(r.seq) === Number(r.seq_total) ? '（最新一次）' : '（较早的记录）'}；排序依据：跟进日期先后，同一天按录入先后`
+                        : '暂无跟进次数信息'}>
+                      {r.seq
+                        ? <>
+                            <span className="badge new">第 {r.seq} 次</span>
+                            {r.seq_total ? <span className="cell-note">共 {r.seq_total} 次</span> : null}
+                            {Number(r.seq) === Number(r.seq_total) ? <span className="badge" style={{ marginLeft: 4 }}>最新</span> : null}
+                          </>
+                        : <span className="hint">—</span>}
                     </td>
                     <td style={{ padding: '7px 8px' }}>
                       <div className="mono" style={{ fontWeight: 600 }}>{r.inquiry_no}</div>

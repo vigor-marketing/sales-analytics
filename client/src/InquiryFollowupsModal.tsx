@@ -43,7 +43,8 @@ export default function InquiryFollowupsModal({ inquiryId, inquiryNo, customerNa
         {(rows ?? []).map((f) => (
           <div key={f.id} className="fu-card">
             <div className="fu-card-head">
-              <span className="badge new">第 {f.seq ?? '—'} 次</span>
+              <span className="badge new" title={f.seq ? `该询价共 ${f.seq_total} 次跟进，本条是第 ${f.seq} 次` : undefined}>第 {f.seq ?? '—'} 次{f.seq_total ? ` / 共 ${f.seq_total} 次` : ''}</span>
+              {Number(f.seq) === Number(f.seq_total) && <span className="badge">最新</span>}
               <span className="mono" style={{ fontWeight: 600 }}>{f.date}</span>
               <span className="badge">{f.method || '—'}</span>
               <span className="hint">跟进人 {f.by_name || f.sales || '—'}</span>

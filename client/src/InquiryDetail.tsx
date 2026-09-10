@@ -234,9 +234,15 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                       {fus.map((f) => (
                         <tr key={f.id} style={{ borderBottom: '1px solid var(--line2)' }}>
                           <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.date}</td>
-                          <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }} title={`该询价第 ${f.seq ?? '—'} 次跟进（共 ${f.seq_total ?? '—'} 次）`}>
-                            {f.seq ? <span className="badge new">第 {f.seq} 次</span> : '—'}
-                            {f.seq_total && f.seq_total > 1 ? <span className="hint" style={{ marginLeft: 4 }}>/ 共 {f.seq_total}</span> : null}
+                          <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}
+                            title={f.seq ? `该询价共 ${f.seq_total} 次跟进，本条是第 ${f.seq} 次${Number(f.seq) === Number(f.seq_total) ? '（最新一次）' : '（较早的记录）'}` : '暂无跟进次数信息'}>
+                            {f.seq
+                              ? <>
+                                  <span className="badge new">第 {f.seq} 次</span>
+                                  {f.seq_total ? <span className="cell-note">共 {f.seq_total} 次</span> : null}
+                                  {Number(f.seq) === Number(f.seq_total) ? <span className="badge" style={{ marginLeft: 4 }}>最新</span> : null}
+                                </>
+                              : '—'}
                           </td>
                           <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.method || '—'}</td>
                           <td style={{ padding: '6px 8px' }}>{f.summary || '—'}</td>
