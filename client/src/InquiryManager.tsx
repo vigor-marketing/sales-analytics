@@ -121,10 +121,25 @@ function Field({ label, value, area, empty }: { label: string; value?: string | 
   )
 }
 
+interface FuRow {
+  id: string; date: string; method: string; summary: string | null; detail: string | null
+  photos: string[]; attachments: { url: string; name: string }[]; next_followup_at: string | null; by_name: string | null; created_at: string
+}
+
 function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   const [d, setD] = useState<Detail | null>(null)
   const [err, setErr] = useState('')
+  // 与「询报价跟进」联动：查看时一并带出该询价下的全部跟进记录
+  const [fus, setFus] = useState<FuRow[]>([])
+  const [fuLoaded, setFuLoaded] = useState(false)
   useEffect(() => { get<Detail>(`/inquiries/${id}`).then(setD).catch((e) => setErr((e as Error).message)) }, [id])
+  useEffect(() => {
+    setFuLoaded(false)
+    get<FuRow[]>(`/followups?inquiryId=${encodeURIComponent(id)}`)
+      .then((list) => setFus(Array.isArray(list) ? list : []))
+      .catch(() => setFus([]))
+      .finally(() => setFuLoaded(true))
+  }, [id])
   const money2 = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
   const cycle = d?.won_date && d?.date ? Math.round((Date.parse(d.won_date) - Date.parse(d.date)) / 86400000) : null
   return (
@@ -163,7 +178,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               <span className="hint">（自动判定：有销售订单即为已成单，标记未成单后为未成单，其余为跟进中）</span>
               {Number(d.is_won) === 1 && <span className="hint">订单号 {d.orderNo || '—'} · 成单日期 {d.won_date || '—'}{cycle != null ? ` · 转化 ${cycle} 天` : ''}</span>}
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)', marginLeft: 10 }}>跟进</span>
-              <span className="hint">最近跟进 {d.last_followup_at || '—'} · 下次跟进 {d.next_followup_at || '—'}（记录见「询报价跟进」页）</span>
+              <span className="hint">最近跟进 {d.last_followup_at || '—'} · 下次跟进 {d.next_followup_at || '—'}（下方为「询报价跟进」里录入的记录，实时联动）</span>
             </div>
 
             {d.status === 'lost' && (
@@ -211,6 +226,53 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               <div className="grid-1" style={{ marginTop: 10 }}>
                 <Field label="备注" value={d.note} area />
               </div>
+            </div>
+
+            {/* 跟进记录（与「询报价跟进」联动） */}
+            <div style={{ marginTop: 12, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 700 }}>跟进记录</span>
+                <span className="badge">{fuLoaded ? `${fus.length} 条` : '加载中…'}</span>
+                <span className="hint">来自「询报价跟进」页：按销售 + 询价号录入的记录会实时显示在这里</span>
+              </div>
+              {fus.length > 0 ? (
+                <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 8 }}>
+                  <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                    <thead><tr>{['跟进日期', '方式', '简述', '具体内容', '图片', '附件', '下次跟进', '跟进人', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {fus.map((f) => (
+                        <tr key={f.id} style={{ borderBottom: '1px solid var(--line2)' }}>
+                          <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.date}</td>
+                          <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.method || '—'}</td>
+                          <td style={{ padding: '6px 8px', minWidth: 150 }}>{f.summary || '—'}</td>
+                          <td style={{ padding: '6px 8px', minWidth: 220, whiteSpace: 'pre-wrap' }}>{f.detail || '—'}</td>
+                          <td style={{ padding: '6px 8px' }}>
+                            {(f.photos || []).length === 0 ? '—' : (
+                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                {f.photos.map((u) => (
+                                  <a key={u} href={u} target="_blank" rel="noreferrer" title="点击查看原图">
+                                    <img src={u} alt="跟进图片" style={{ width: 46, height: 34, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line)' }} />
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ padding: '6px 8px' }}>
+                            {(f.attachments || []).length === 0 ? '—' : f.attachments.map((a) => (
+                              <div key={a.url}><a className="mono" href={a.url} target="_blank" rel="noreferrer">{a.name || '附件'}</a></div>
+                            ))}
+                          </td>
+                          <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.next_followup_at || '—'}</td>
+                          <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.by_name || '—'}</td>
+                          <td className="mono hint" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{String(f.created_at || '').slice(0, 16).replace('T', ' ')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="hint" style={{ marginTop: 6 }}>{fuLoaded ? '该询价暂无跟进记录（可到「询报价跟进」页按销售 + 询价号录入）' : '加载中…'}</div>
+              )}
             </div>
           </>
         )}
