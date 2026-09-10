@@ -23,41 +23,40 @@ const niceMax = (v: number) => {
 const compact = (v: number) => (v >= 10000 ? `${Math.round(v / 1000)}k` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)))
 
 /** 每个分析板块统一外壳：标题 + 说明 + 图示 + 明细 */
-function Panel({ title, hint, children, extra }: { title: string; hint?: string; children: React.ReactNode; extra?: React.ReactNode }) {
+function Panel({ title, hint, children, extra, style }: { title: string; hint?: string; children: React.ReactNode; extra?: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <section className="card" style={{ marginTop: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <h4 style={{ margin: 0 }}>{title}</h4>
-        {hint && <span className="hint">{hint}</span>}
+    <section className="card panel-tight" style={style}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <h4 style={{ margin: 0, fontSize: 14 }}>{title}</h4>
+        {hint && <span className="hint" style={{ fontSize: 11.5 }}>{hint}</span>}
         <span style={{ flex: 1 }} />
         {extra}
       </div>
-      <div style={{ marginTop: 10 }}>{children}</div>
+      <div style={{ marginTop: 8 }}>{children}</div>
     </section>
   )
 }
 
 /** 图文结合：左边名称、中间条形、右边数值与备注 */
 function BarList({
-  items, tone = 'blue', empty = '暂无数据',
+  items, tone = 'blue', empty = '暂无数据', labelW = 132,
 }: {
   items: { key: string; label: string; value: number; text: string; note?: string; tone?: 'blue' | 'green' | 'red' }[]
   tone?: 'blue' | 'green' | 'red'
   empty?: string
+  labelW?: number
 }) {
   const max = Math.max(1, ...items.map((x) => x.value))
   const color = (t: string) => (t === 'green' ? 'linear-gradient(90deg,#059669,#34d399)' : t === 'red' ? 'linear-gradient(90deg,#dc2626,#f87171)' : 'linear-gradient(90deg,#0052d9,#5b92f5)')
-  if (!items.length) return <div className="hint">{empty}</div>
+  if (!items.length) return <div className="hint" style={{ fontSize: 12 }}>{empty}</div>
   return (
     <div>
       {items.map((x) => (
-        <div key={x.key} style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '6px 0' }}>
-          <span style={{ width: 190, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }} title={x.label}>{x.label}</span>
-          <div style={{ flex: 1, background: '#eef1f6', borderRadius: 5, height: 14, overflow: 'hidden', minWidth: 80 }}>
-            <div style={{ width: `${Math.max(2, Math.round((x.value / max) * 100))}%`, height: '100%', background: color(x.tone ?? tone), borderRadius: 5 }} />
-          </div>
-          <span className="mono" style={{ width: 120, textAlign: 'right', fontWeight: 700 }}>{x.text}</span>
-          <span className="hint" style={{ width: 150 }}>{x.note ?? ''}</span>
+        <div key={x.key} className="bar-row">
+          <span className="bl" style={{ width: labelW }} title={x.label}>{x.label}</span>
+          <div className="bt"><div style={{ width: `${Math.max(2, Math.round((x.value / max) * 100))}%`, background: color(x.tone ?? tone) }} /></div>
+          <span className="bv mono">{x.text}</span>
+          <span className="bn hint" title={x.note}>{x.note ?? ''}</span>
         </div>
       ))}
     </div>
@@ -66,10 +65,10 @@ function BarList({
 
 function Kpi({ label, value, tone, note }: { label: string; value: string; tone?: string; note?: string }) {
   return (
-    <div style={{ flex: '1 1 170px', minWidth: 170, background: '#fff', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px' }}>
-      <div className="hint">{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: tone ?? 'var(--text)' }}>{value}</div>
-      {note && <div className="hint">{note}</div>}
+    <div className="kpi-chip">
+      <span className="hint" style={{ fontSize: 11.5 }}>{label}</span>
+      <b style={{ fontSize: 17, color: tone ?? 'var(--text)' }}>{value}</b>
+      {note && <span className="hint" style={{ fontSize: 11 }}>{note}</span>}
     </div>
   )
 }
@@ -86,7 +85,7 @@ function TrendChart({ data }: { data: { key: string; label: string; usd: number;
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-  const H = 230, padL = 58, padR = 18, padT = 26, padB = 36
+  const H = 172, padL = 54, padR = 16, padT = 20, padB = 30
   const innerW = Math.max(60, w - padL - padR)
   const innerH = H - padT - padB
   const top = niceMax(Math.max(...data.map((d) => d.usd), 0))
@@ -227,123 +226,102 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
 
   return (
     <>
-      <section className="card">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <h3 style={{ margin: 0 }}>销售订单分析</h3>
-          <span className="hint">基于已成交销售订单：金额、转化周期、产品/销售/客户与成交·丢单原因</span>
-          <span style={{ flex: 1 }} />
+      {/* 筛选条 */}
+      <section className="card panel-tight">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <h3 style={{ margin: 0, fontSize: 16 }}>销售订单分析</h3>
+          <span className="hint" style={{ flex: 1, minWidth: 180 }}>成交金额、转化周期、产品/销售/客户与成交·丢单原因（全部跟随下方筛选）</span>
           <select className="sa" value={sales} onChange={(e) => setSales(e.target.value)}><option value="">全部销售</option>{meta.sales.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}</select>
-          <input className="sa" style={{ width: 150 }} value={product} onChange={(e) => setProduct(e.target.value)} placeholder="产品名称" />
+          <input className="sa" style={{ width: 130 }} value={product} onChange={(e) => setProduct(e.target.value)} placeholder="产品名称" />
           <input className="sa" type="date" value={from} onChange={(e) => setFrom(e.target.value)} title="成单/丢单日期起" />
           <input className="sa" type="date" value={to} onChange={(e) => setTo(e.target.value)} title="成单/丢单日期止" />
-          <button className="btn" onClick={() => void load()}>查询</button>
-          <button className="btn" onClick={() => { setSales(''); setFrom(''); setTo(''); setProduct('') }}>重置</button>
+          <button className="btn sm" onClick={() => void load()}>查询</button>
+          <button className="btn sm" onClick={() => { setSales(''); setFrom(''); setTo(''); setProduct('') }}>重置</button>
         </div>
         {msg && <div className="msg err">{msg}</div>}
       </section>
 
-      {/* 板块 1：总体概览 */}
-      {stats && (
-        <Panel title="总体概览" hint="当前筛选范围内的成交情况">
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <Kpi label="销售订单数" value={`${stats.contractCount} 单`} />
-            <Kpi label="订单金额（折USD）" value={money(stats.usdTotal)} tone="var(--brand)" note={`平均单值 ${stats.contractCount ? money(stats.usdTotal / stats.contractCount) : '—'} USD`} />
-            <Kpi label="平均转化周期" value={stats.avgCycle == null ? '—' : `${stats.avgCycle} 天`} tone={cycleTone(stats.avgCycle)} note="询价日期 → 成单日期" />
-            <Kpi label="中位转化周期" value={stats.medianCycle == null ? '—' : `${stats.medianCycle} 天`} note={stats.minCycle == null ? '' : `最短 ${stats.minCycle} 天 / 最长 ${stats.maxCycle} 天`} />
-            <Kpi label="成交原因已填" value={winSum ? `${winSum.total - winSum.missing} / ${winSum.total}` : '—'} tone={winSum && winSum.missing > 0 ? '#a35c00' : '#059669'} note="用于成交原因分析" />
+      {/* 概览 + 趋势：同一行，紧凑 */}
+      <div className="dash-grid" style={{ marginTop: 10 }}>
+        <div className="dash-span2" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {stats && (<>
+            <Kpi label="销售订单数" value={`${stats.contractCount} 单`} note={stats.contractCount ? `平均单值 ${money(stats.usdTotal / stats.contractCount)} USD` : ''} />
+            <Kpi label="订单金额（折USD）" value={money(stats.usdTotal)} tone="var(--brand)" note={`成交 ${winSum?.total ?? 0} · 丢单 ${lostSum?.total ?? 0}`} />
+            <Kpi label="平均转化周期" value={stats.avgCycle == null ? '—' : `${stats.avgCycle} 天`} tone={cycleTone(stats.avgCycle)} note={stats.minCycle == null ? '' : `${stats.minCycle} ~ ${stats.maxCycle} 天`} />
+            <Kpi label="丢单金额（折USD）" value={money(lostSum?.usdTotal ?? 0)} tone="var(--danger)" note={winSum && winSum.usdTotal > 0 && lostSum ? `占成交 ${Math.round((lostSum.usdTotal / winSum.usdTotal) * 100)}%` : ''} />
+          </>)}
+        </div>
+
+        <Panel
+          style={{ gridColumn: '1 / -1' }}
+          title="订单金额趋势（折USD）"
+          hint={trendMode === 'year' ? `按年 · 合计 ≈USD ${money(trend.reduce((a, b) => a + b.usd, 0))} · ${trendN} 单` : `${activeYear} 年各月 · 合计 ≈USD ${money(trend.reduce((a, b) => a + b.usd, 0))} · ${trendN} 单`}
+          extra={(
+            <>
+              <span className="seg">
+                <button className={trendMode === 'year' ? 'on' : ''} onClick={() => setTrendMode('year')}>年度</button>
+                <button className={trendMode === 'month' ? 'on' : ''} onClick={() => setTrendMode('month')}>月度</button>
+              </span>
+              {trendMode === 'month' && (
+                <select className="sa" style={{ width: 100 }} value={activeYear} onChange={(e) => setYear(e.target.value)}>
+                  {(years.length ? years : [curYear]).map((y) => <option key={y} value={y}>{y} 年</option>)}
+                </select>
+              )}
+            </>
+          )}
+        >
+          {trend.length && trendN > 0 ? <TrendChart data={trend} /> : <div className="hint" style={{ fontSize: 12 }}>暂无数据</div>}
+        </Panel>
+
+        <Panel title="按产品" hint={`${productRows.length} 个产品 · 合计 ${productRows.reduce((a, b) => a + b.count, 0)} 次`}>
+          <BarList
+            labelW={118}
+            items={productRows.slice(0, 6).map((p) => ({
+              key: p.name, label: p.name, value: p.count, text: `${p.count} 次`, note: `${money(p.usd)} USD · ${p.avgCycle == null ? '—' : `${p.avgCycle} 天`}`,
+            }))}
+            empty="暂无成单产品"
+          />
+          {productRows.length > 6 && <div className="hint" style={{ fontSize: 11 }}>仅显示前 6 个产品</div>}
+        </Panel>
+
+        <Panel title="按销售" hint="成单次数 · 平均周期">
+          <BarList
+            labelW={118}
+            items={(stats?.bySales ?? []).map((p) => ({ key: p.name || '—', label: p.name || '未指定', value: p.count, text: `${p.count} 单`, note: `平均 ${p.avgCycle} 天` }))}
+            empty="暂无成单销售"
+          />
+        </Panel>
+
+        <Panel title="成交原因分析" hint={`${winSum?.total ?? 0} 单 · ${money(winSum?.usdTotal ?? 0)} USD`}
+          extra={winSum && winSum.missing > 0 ? <span className="hint" style={{ color: '#a35c00', fontSize: 11 }}>{winSum.missing} 笔未填</span> : undefined}>
+          <BarList
+            labelW={118}
+            items={(winSum?.items ?? []).slice(0, 6).map((x) => ({
+              key: x.reason, label: x.reason, value: x.count, tone: x.reason === '未填写' ? 'blue' : 'green',
+              text: `${x.count} 单 · ${x.share}%`, note: `${money(x.usd)} USD · ${x.avgCycle == null ? '—' : `${x.avgCycle} 天`}`,
+            }))}
+            empty="暂无成交原因（生成/编辑销售订单时填写）"
+          />
+        </Panel>
+
+        <Panel title="丢单原因分析" hint={`${lostSum?.total ?? 0} 单 · ${money(lostSum?.usdTotal ?? 0)} USD`}>
+          <BarList
+            labelW={118}
+            items={(lostSum?.items ?? []).slice(0, 6).map((x) => ({
+              key: x.reason, label: x.reason, value: x.count, tone: 'red',
+              text: `${x.count} 单 · ${x.share}%`, note: `${money(x.usd)} USD · ${x.avgCycle == null ? '—' : `${x.avgCycle} 天`}`,
+            }))}
+            empty="暂无丢单记录（在询报价管理里标记未成单）"
+          />
+        </Panel>
+
+        <Panel title="客户 Top10" hint={`合计 ${money(sumUsd)} USD`} style={{ gridColumn: '1 / -1' }}>
+          <div className="two-col">
+            <BarList labelW={150} items={topCustomers.slice(0, 5).map((c) => ({ key: c.name, label: c.name, value: c.usd, text: `${money(c.usd)}`, note: `${c.n} 单 · ${sumUsd ? Math.round((c.usd / sumUsd) * 100) : 0}%` }))} empty="暂无数据" />
+            <BarList labelW={150} items={topCustomers.slice(5, 10).map((c) => ({ key: c.name, label: c.name, value: c.usd, text: `${money(c.usd)}`, note: `${c.n} 单 · ${sumUsd ? Math.round((c.usd / sumUsd) * 100) : 0}%` }))} empty="" />
           </div>
         </Panel>
-      )}
-
-      {/* 板块 2：金额趋势 */}
-      <Panel
-        title="订单金额趋势（折USD）"
-        hint={trendMode === 'year' ? `按年汇总：合计 ≈USD ${money(trend.reduce((a, b) => a + b.usd, 0))} · ${trendN} 单` : `${activeYear} 年各月：合计 ≈USD ${money(trend.reduce((a, b) => a + b.usd, 0))} · ${trendN} 单`}
-        extra={(
-          <>
-            <span className="seg">
-              <button className={trendMode === 'year' ? 'on' : ''} onClick={() => setTrendMode('year')}>年度看板</button>
-              <button className={trendMode === 'month' ? 'on' : ''} onClick={() => setTrendMode('month')}>月度看板</button>
-            </span>
-            {trendMode === 'month' && (
-              <select className="sa" style={{ width: 110 }} value={activeYear} onChange={(e) => setYear(e.target.value)}>
-                {(years.length ? years : [curYear]).map((y) => <option key={y} value={y}>{y} 年</option>)}
-              </select>
-            )}
-          </>
-        )}
-      >
-        {trend.length && trendN > 0 ? <TrendChart data={trend} /> : <div className="hint">暂无数据</div>}
-      </Panel>
-
-      {/* 板块 3：按产品 */}
-      <Panel title="按产品" hint={`共 ${productRows.length} 个产品 · 合计成单 ${productRows.reduce((a, b) => a + b.count, 0)} 次`}>
-        <BarList
-          items={productRows.slice(0, 12).map((p) => ({
-            key: p.name, label: p.name, value: p.count, text: `${p.count} 次`, note: `${money(p.usd)} USD · 平均 ${p.avgCycle == null ? '—' : `${p.avgCycle} 天`}`,
-          }))}
-          tone="blue"
-          empty="暂无成单产品"
-        />
-        {productRows.length > 12 && <div className="hint" style={{ marginTop: 4 }}>仅显示前 12 个产品</div>}
-      </Panel>
-
-      {/* 板块 4：按销售 */}
-      <Panel title="按销售" hint="成单次数与平均转化周期">
-        <BarList
-          items={(stats?.bySales ?? []).map((p) => ({
-            key: p.name || '—', label: p.name || '未指定', value: p.count, text: `${p.count} 单`, note: `平均 ${p.avgCycle} 天`,
-          }))}
-          tone="blue"
-          empty="暂无成单销售"
-        />
-      </Panel>
-
-      {/* 板块 5：成交原因分析 */}
-      <Panel
-        title="成交原因分析"
-        hint="来源：销售订单里填写的「成交原因」（按成单日期，跟随上方筛选）"
-        extra={winSum && winSum.missing > 0 ? <span className="hint" style={{ color: '#a35c00' }}>有 {winSum.missing} 笔订单未填写成交原因</span> : undefined}
-      >
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-          <Kpi label="成交单数" value={`${winSum?.total ?? 0} 单`} tone="#059669" />
-          <Kpi label="成交金额（折USD）" value={money(winSum?.usdTotal ?? 0)} tone="#059669" />
-          <Kpi label="原因种类" value={`${winSum?.items.filter((x) => x.reason !== '未填写').length ?? 0} 类`} />
-        </div>
-        <BarList
-          items={(winSum?.items ?? []).map((x) => ({
-            key: x.reason, label: x.reason, value: x.count, tone: x.reason === '未填写' ? 'blue' : 'green',
-            text: `${x.count} 单 · ${x.share}%`, note: `${money(x.usd)} USD（${x.usdShare}%）· 平均 ${x.avgCycle == null ? '—' : `${x.avgCycle} 天`}`,
-          }))}
-          empty="暂无成交原因数据（生成或编辑销售订单时填写成交原因即可）"
-        />
-      </Panel>
-
-      {/* 板块 6：丢单原因分析 */}
-      <Panel title="丢单原因分析" hint="来源：标记「未成单」时填写的丢单原因（按丢单日期，跟随上方筛选）">
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-          <Kpi label="丢单单数" value={`${lostSum?.total ?? 0} 单`} tone="var(--danger)" />
-          <Kpi label="丢单金额（折USD）" value={money(lostSum?.usdTotal ?? 0)} tone="var(--danger)" note="按询价报价合计折算" />
-          <Kpi label="原因种类" value={`${lostSum?.items.filter((x) => x.reason !== '未填写').length ?? 0} 类`} />
-          <Kpi label="丢单 / 成交 金额比" value={winSum && winSum.usdTotal > 0 && lostSum ? `${Math.round((lostSum.usdTotal / winSum.usdTotal) * 100)}%` : '—'} note="丢单金额 ÷ 成交金额" />
-        </div>
-        <BarList
-          items={(lostSum?.items ?? []).map((x) => ({
-            key: x.reason, label: x.reason, value: x.count, tone: 'red',
-            text: `${x.count} 单 · ${x.share}%`, note: `${money(x.usd)} USD（${x.usdShare}%）· 平均 ${x.avgCycle == null ? '—' : `${x.avgCycle} 天`}`,
-          }))}
-          empty="暂无丢单记录（在「询报价管理 → 编辑」里勾选「标记为未成单（丢单）」并选择原因）"
-        />
-      </Panel>
-
-      {/* 板块 7：客户 Top10 */}
-      <Panel title="客户 Top10" hint={`按订单金额折USD排序 · 合计 ${money(sumUsd)} USD`}>
-        <BarList
-          items={topCustomers.map((c) => ({ key: c.name, label: c.name, value: c.usd, text: `${money(c.usd)} USD`, note: `${c.n} 单 · 占 ${sumUsd ? Math.round((c.usd / sumUsd) * 100) : 0}%` }))}
-          tone="blue"
-          empty="暂无数据"
-        />
-      </Panel>
+      </div>
     </>
   )
 }
