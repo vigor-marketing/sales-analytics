@@ -281,7 +281,7 @@ export default function App() {
           ? <button className="btn sm" onClick={goBack} title="返回上一级页面">← 返回 {TITLES[pageHist[pageHist.length - 1]]}</button>
           : undefined)
     ) : undefined}>
-      {page === 'manage' && <InquiryManager meta={meta} />}
+      {page === 'manage' && <InquiryManager meta={meta} onGoFollow={(t) => { setFollowTarget(t); navTo('followups') }} />}
       {page === 'dashboard' && <Dashboard people={meta.sales.map((x) => x.name)} onGoFollow={(t) => { setFollowTarget(t); navTo('followups') }} />}
       {page === 'followups' && (
         <FollowUps meta={meta} target={followTarget} resetSignal={followReset} onDetailChange={setFollowDetailOpen} />

@@ -23,7 +23,11 @@ const LOST_REASONS = ['价格无优势', '交期太长', '技术方案不满足'
 // 状态标签统一尺寸（见 StatusChip），三种状态大小一致
 const StatusTag = StatusChip
 
-export default function InquiryManager({ meta = { sales: [], purchasers: [], sources: [] } }: { meta?: MetaLite }) {
+export default function InquiryManager({ meta = { sales: [], purchasers: [], sources: [] }, onGoFollow }: {
+  meta?: MetaLite
+  /** 「跟进」按钮：跳转到「询报价跟进」页并带出该询价（销售 + 询价号） */
+  onGoFollow?: (t: { sales: string; no: string }) => void
+}) {
   const [followOf, setFollowOf] = useState<{ id: string; no: string; customer?: string } | null>(null)
   const [q, setQ] = useState(''); const [range, setRange] = useState<RangeKey>('')
   const [sales, setSales] = useState(''); const [pur, setPur] = useState(''); const [src, setSrc] = useState(''); const [st, setSt] = useState('')
@@ -141,7 +145,8 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
                   <button className="btn sm" onClick={() => setViewId(r.id)}>查看</button>
                   <button className="btn sm" onClick={() => setEditId(r.id)}>编辑</button>
-                  <button className="btn sm" onClick={() => setFollowOf({ id: r.id, no: r.inquiry_no, customer: r.customer_name })}>跟进</button>
+                  <button className="btn sm" title="跳转到「询报价跟进」页面对该询价做跟进"
+                    onClick={() => onGoFollow ? onGoFollow({ sales: r.sales, no: r.inquiry_no }) : setFollowOf({ id: r.id, no: r.inquiry_no, customer: r.customer_name })}>跟进</button>
                 </td>
               </tr>
             ))}
