@@ -264,7 +264,11 @@ export default function App() {
             <div className="col w1"><label>币种</label>
               <select className="sa" value={it.currency} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, currency: e.target.value } : x))}>{CURRENCIES.map((c) => <option key={c}>{c}</option>)}</select>
             </div>
-            {items.length > 1 && <button className="btn sm danger" onClick={() => setItems((a) => a.filter((_, j) => j !== i))}>删除</button>}
+            <span className="row-act">
+              {items.length > 1 && (
+                <button className="icon-del" title="删除该行" aria-label={`删除第 ${i + 1} 行`} onClick={() => setItems((a) => a.filter((_, j) => j !== i))}>×</button>
+              )}
+            </span>
           </div>
         ))}
         <button className="add-row" onClick={() => setItems((a) => [...a, emptyRow()])}>

@@ -102,3 +102,9 @@ ul.sugs li:hover, ul.sugs li.on { background: var(--brand-light) }
 .add-row:hover{background:#e8f0ff;border-color:var(--brand);box-shadow:0 3px 10px rgba(0,82,217,.15);transform:translateY(-1px)}
 .add-row:active{transform:none;box-shadow:none}
 .add-row .plus{font-size:17px;line-height:1;font-weight:800}
+
+/* 产品行删除：固定预留动作位，避免出现/消失引发布局抖动 */
+.item-row{align-items:center}
+.row-act{flex:0 0 34px;width:34px;display:flex;align-items:center;justify-content:center}
+.icon-del{width:26px;height:26px;border-radius:50%;border:1px solid #f2b8b4;background:#fff;color:var(--danger);font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;padding:0}
+.icon-del:hover{background:var(--danger-soft);border-color:var(--danger);transform:scale(1.06)}
