@@ -125,6 +125,18 @@ export default function App() {
   const [followReset, setFollowReset] = useState(0)
   // 页面访问历史：让子页面能「返回上一页」
   const [pageHist, setPageHist] = useState<PageKey[]>([])
+  // Esc 键关闭最上层弹窗（所有弹窗都用 .modal-mask，点遮罩空白处即可关闭）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const masks = document.querySelectorAll<HTMLElement>('.modal-mask')
+      const last = masks[masks.length - 1]
+      if (last) last.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   const navTo = useCallback((k: PageKey) => {
     setFollowDetailOpen(false)
     setPage((cur) => { if (k !== cur) setPageHist((h) => [...h.slice(-9), cur]); return k })

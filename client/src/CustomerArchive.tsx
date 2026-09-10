@@ -21,7 +21,7 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
   const [detailId, setDetailId] = useState<string | null>(null)
   useEffect(() => { if (initialQuery !== undefined) setQ(initialQuery) }, [initialQuery])
   const load = useCallback(async () => {
-    try { setRows(await get<CustRow[]>(`/customers${q ? `?q=${encodeURIComponent(q)}` : ''}`)) }
+    try { setRows(await get<CustRow[]>(`/customers${q ? `?q=${encodeURIComponent(q)}` : ''}`)); setMsg('') }
     catch (e) { setMsg((e as Error).message) }
   }, [q])
   useEffect(() => { void load() }, [load])

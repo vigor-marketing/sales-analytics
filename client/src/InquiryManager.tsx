@@ -44,7 +44,8 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
       void get<ProductLite[]>('/products').then((l) => setProducts(Array.isArray(l) ? l : [])).catch(() => { /* */ })
       if (!d || !d.rows) throw new Error(`接口 ${url} 返回异常：${JSON.stringify(d)}`)
       setRows(d.rows); setTotal(d.meta.total); setSum({ usdTotal: d.meta.usdTotal ?? 0, wonCount: d.meta.wonCount ?? 0, lostCount: d.meta.lostCount ?? 0, winRate: d.meta.winRate ?? 0, wonUsd: d.meta.wonUsd ?? 0 })
-    } catch (e) { setMsg('加载失败：' + (e as Error).message) }
+    } catch (e) { setMsg('加载失败：' + (e as Error).message); return }
+    setMsg('')
   }, [q, range, sales, pur, src, st])
   useEffect(() => { void load() }, [load])
   const fmtT = (r: Row) => (r.totals ?? []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'
@@ -55,7 +56,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
         <h3 style={{ margin: 0 }}>询报价管理</h3>
         <span className="hint">{RANGE_LABEL[range]} · 命中 {total} 条 · 累计金额 ≈USD {money(sum.usdTotal)} · 已成单 {sum.wonCount} 条（{money(sum.wonUsd)} USD）· 未成单 {sum.lostCount} 条 · 成交率 {sum.winRate}%（成交÷已出结果）</span>
       </header>
-      {msg && <div className="msg ok">{msg}</div>}
+      {msg && <div className="msg err">{msg}</div>}
       <div className="row" style={{ margin: '10px 0' }}>
         <div className="col grow1"><label>询价号/客户/备注</label><input className="sa" style={{ width: '100%' }} value={q} onChange={(e) => setQ(e.target.value)} /></div>
         <div className="col w1"><label>时间范围</label>

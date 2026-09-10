@@ -34,11 +34,15 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
   // 管理端：为某条提醒的最近跟进记录写指导
   const [guideOf, setGuideOf] = useState<{ id: string; inquiry_no: string; customer_name: string; sales: string } | null>(null)
   const [err, setErr] = useState('')
-  const [group, setGroup] = useState<'all' | 'overdue' | 'dueSoon' | 'stale'>('all')
+  // 分组选择记忆（与其它页面一致：刷新后保持）
+  const [group, setGroup] = useState<'all' | 'overdue' | 'dueSoon' | 'stale'>(() => {
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('sa:remGroup') : null
+    return saved === 'overdue' || saved === 'dueSoon' || saved === 'stale' ? saved : 'all'
+  })
   const load = useCallback(() => {
     get<Dash>('/dashboard').then((x) => {
       setD(x)
-      setGroup('all')
+      setErr('')
     }).catch((e) => setErr((e as Error).message))
   }, [])
   useEffect(() => { load() }, [load])
@@ -97,7 +101,7 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
                 ? (d?.reminders.overdue.length ?? 0) + (d?.reminders.dueSoon.length ?? 0) + (d?.reminders.stale.length ?? 0)
                 : (d?.reminders.counts[g.key] ?? 0)
               return (
-                <button key={g.key} className={group === g.key ? 'on' : ''} onClick={() => setGroup(g.key)} title={g.note}
+                <button key={g.key} className={group === g.key ? 'on' : ''} onClick={() => { setGroup(g.key); try { localStorage.setItem('sa:remGroup', g.key) } catch { /* 忽略 */ } }} title={g.note}
                   style={group === g.key ? { background: g.tone, borderColor: g.tone } : undefined}>
                   <span className="rem-dot" style={{ background: g.tone }} />{g.label}
                   <span className="rem-count">{n}</span>
@@ -109,10 +113,10 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
         <div className="hint" style={{ marginTop: 6 }}>{cur.note}</div>
 
         <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 8 }}>
-          <table className="grid data-table fixed-table rem-table rem-data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+          <table className="grid data-table fixed-table rem-table rem-data-table" style={{ width: '100%', minWidth: 940, borderCollapse: 'collapse', fontSize: 12.5 }}>
             <colgroup>
               <col style={{ width: '7%' }} /><col style={{ width: '10%' }} /><col style={{ width: '12%' }} /><col style={{ width: '7%' }} /><col style={{ width: '7%' }} />
-              <col style={{ width: '9%' }} /><col style={{ width: '9%' }} /><col style={{ width: '8%' }} /><col style={{ width: '26%' }} /><col style={{ width: '5%' }} />
+              <col style={{ width: '9%' }} /><col style={{ width: '9%' }} /><col style={{ width: '8%' }} /><col style={{ width: '24%' }} /><col style={{ width: 132 }} />
             </colgroup>
             <thead><tr>
               <th style={{ textAlign: 'left' }}>类型</th><th style={{ textAlign: 'left' }}>询价号</th><th style={{ textAlign: 'left' }}>客户</th>

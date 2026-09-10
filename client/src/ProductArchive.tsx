@@ -14,7 +14,8 @@ const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).t
 export default function ProductArchive() {
   const [q, setQ] = useState('')
   const [rows, setRows] = useState<Prod[]>([])
-  const [msg, setMsg] = useState('')
+  const [msg, setMsg] = useState(''); const [msgErr, setMsgErr] = useState(false)
+  const say = (text: string, isErr = false) => { setMsg(text); setMsgErr(isErr) }
   const [busy, setBusy] = useState(false)
   const [edit, setEdit] = useState<Prod | null>(null)
   const [histOf, setHistOf] = useState<Prod | null>(null)
@@ -26,11 +27,11 @@ export default function ProductArchive() {
   const doDelete = async (p: Prod) => {
     if (!window.confirm(`删除产品档案「${p.name}」？（历史询价中的名称不受影响）`)) return
     setBusy(true)
-    try { await del(`/products/${p.id}`); setMsg(`已删除：${p.name}`); await load() } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) }
+    try { await del(`/products/${p.id}`); say(`已删除：${p.name}`); await load() } catch (e) { say((e as Error).message, true) } finally { setBusy(false) }
   }
   const doAdd = async () => {
     if (!add.name.trim()) return
-    try { await post('/products', { name: add.name.trim(), currency: add.currency, lastAmount: add.lastAmount ? Number(add.lastAmount) : undefined }); setMsg(`已添加：${add.name.trim()}`); setAdd({ name: '', currency: 'USD', lastAmount: '' }); await load() } catch (e) { setMsg((e as Error).message) }
+    try { await post('/products', { name: add.name.trim(), currency: add.currency, lastAmount: add.lastAmount ? Number(add.lastAmount) : undefined }); say(`已添加：${add.name.trim()}`); setAdd({ name: '', currency: 'USD', lastAmount: '' }); await load() } catch (e) { say((e as Error).message, true) }
   }
   return (
     <div className="card">
@@ -41,7 +42,7 @@ export default function ProductArchive() {
         <input className="sa" style={{ width: 200 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索产品名称" />
         <button className="btn" onClick={() => void load()}>查询</button>
       </div>
-      {msg && <div className="msg ok">{msg}</div>}
+      {msg && <div className={`msg ${msgErr ? 'err' : 'ok'}`}>{msg}</div>}
       <div className="row" style={{ marginTop: 10, alignItems: 'flex-end' }}>
         <div className="col grow1"><label>新增产品（手动）</label><input className="sa" style={{ width: '100%' }} value={add.name} onChange={(e) => setAdd({ ...add, name: e.target.value })} placeholder="产品名称" /></div>
         <div className="col w1"><label>币种</label><select className="sa" value={add.currency} onChange={(e) => setAdd({ ...add, currency: e.target.value })}>{CURS.map((c) => <option key={c}>{c}</option>)}</select></div>

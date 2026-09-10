@@ -134,7 +134,9 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                       <span style={{ minWidth: 180, fontWeight: 600 }}>{it.product_name}</span>
                       {pr
                         ? <>
-                          <span className="badge new">当前 V{pr.version ?? 0}</span>
+                          {(pr.version ?? 0) > 0
+                            ? <span className="badge new">当前 V{pr.version}</span>
+                            : <span className="badge">暂无价格记录</span>}
                           <span className="hint">最近报价 {money2(pr.last_amount)} {pr.currency}{pr.last_qty != null ? ` · 数量 ${pr.last_qty}` : ''}</span>
                           {pr.prev_amount != null && <span className="hint">（上一版 {money2(pr.prev_amount)}）</span>}
                         </>

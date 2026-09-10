@@ -42,7 +42,11 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
       if (from) p.set('from', from); if (to) p.set('to', to)
       const d = await get<{ rows: OrderRow[] }>(`/orders?${p.toString()}`)
       setRows(d.rows)
-    } catch (e) { setMsg((e as Error).message) }
+      setMsg('')
+    } catch (e) {
+      // 失败时不清空表格，但要说明「当前显示的是上次结果」，避免误读
+      setMsg(`${(e as Error).message}（当前显示的是上次加载结果）`)
+    }
   }, [orderNo, customer, sales, purchaser, source, product, range])
   useEffect(() => { void load() }, [load])
   const card: React.CSSProperties = { flex: '1 1 150px', minWidth: 150, background: '#fff', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px' }
@@ -72,7 +76,7 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
         <button className="btn" onClick={() => void load()}>查询</button>
         <button className="btn" onClick={() => { setOrderNo(''); setCustomer(''); setSales(''); setPurchaser(''); setSource(''); setProduct(''); setRange('') }}>重置</button>
       </div>
-      {msg && <div className="msg ok">{msg}</div>}
+      {msg && <div className="msg err">{msg}</div>}
 
       <div className="tablewrap" style={{ overflow: 'auto', maxHeight: '56vh' }}>
         <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
