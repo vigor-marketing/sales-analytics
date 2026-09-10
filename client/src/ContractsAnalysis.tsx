@@ -217,6 +217,38 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
     })).sort((a, b) => b.count - a.count || b.usd - a.usd)
   }, [rows, fx])
 
+  // 小组（团队）维度：销售 → 组别；未匹配到的归入「未分组」
+  const teamOf = useMemo(() => {
+    const m = new Map<string, string>()
+    meta.sales.forEach((x) => m.set(x.name, x.team || '未分组'))
+    return m
+  }, [meta.sales])
+  const teamColors = ['#0052d9', '#059669', '#ef4f0b', '#7c3aed', '#0891b2', '#a35c00', '#dc2626', '#0f766e']
+
+  /** 月度 × 小组：每月各组的订单数与金额（折USD），以及月度合计 */
+  const monthTeams = useMemo(() => {
+    const m = new Map<string, { month: string; total: { usd: number; n: number }; teams: Map<string, { usd: number; n: number }> }>()
+    rows.forEach((r) => {
+      const month = String(r.won_date).slice(0, 7)
+      if (!/^\d{4}-\d{2}$/.test(month)) return
+      const team = teamOf.get(r.sales) ?? '未分组'
+      const cell = m.get(month) ?? { month, total: { usd: 0, n: 0 }, teams: new Map() }
+      const t = cell.teams.get(team) ?? { usd: 0, n: 0 }
+      t.usd += r.usdApprox || 0; t.n += 1
+      cell.teams.set(team, t)
+      cell.total.usd += r.usdApprox || 0; cell.total.n += 1
+      m.set(month, cell)
+    })
+    return Array.from(m.values()).sort((a, b) => b.month.localeCompare(a.month)).slice(0, 12)
+  }, [rows, teamOf])
+  const activeTeams = useMemo(() => {
+    const names = new Set<string>()
+    monthTeams.forEach((mo) => mo.teams.forEach((_v, k) => names.add(k)))
+    const ordered = meta.sales.map((x) => x.team || '未分组').filter((t, i, a) => a.indexOf(t) === i)
+    return ordered.filter((t) => names.has(t)).concat(Array.from(names).filter((n) => !ordered.includes(n)))
+  }, [monthTeams, meta.sales])
+  const monthTeamMax = Math.max(1, ...monthTeams.map((mo) => mo.total.usd))
+
   const topCustomers = useMemo(() => {
     const m = new Map<string, { usd: number; n: number }>()
     rows.forEach((r) => { const a = m.get(r.customer_name) ?? { usd: 0, n: 0 }; a.usd += r.usdApprox || 0; a.n += 1; m.set(r.customer_name, a) })
@@ -297,6 +329,80 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
             items={(stats?.bySales ?? []).map((p) => ({ key: p.name || '—', label: p.name || '未指定', value: p.count, text: `${p.count} 单`, note: `平均 ${p.avgCycle} 天` }))}
             empty="暂无成单销售"
           />
+        </Panel>
+
+        {/* 月度小组分析：每月各组订单数与金额（跟随筛选） */}
+        <Panel
+          title="月度小组分析"
+          hint={monthTeams.length ? `近 ${monthTeams.length} 个月 · 每月按小组拆解金额与单数（括号内为订单数）` : '按成单月份 × 销售人员所属小组'}
+          style={{ gridColumn: '1 / -1' }}
+        >
+          {monthTeams.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
+            <>
+              {/* 月度小组构成条：每行一个月，色块为该组当月金额占比 */}
+              <div style={{ marginBottom: 8 }}>
+                {monthTeams.map((mo) => (
+                  <div key={mo.month} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' }}>
+                    <span className="mono" style={{ width: 62, fontSize: 12, fontWeight: 700 }}>{mo.month}</span>
+                    <div style={{ flex: 1, display: 'flex', height: 14, borderRadius: 5, overflow: 'hidden', background: '#eef1f6', minWidth: 120 }}>
+                      {activeTeams.filter((t) => mo.teams.has(t)).map((t) => {
+                        const v = mo.teams.get(t)!
+                        return (
+                          <div key={t} title={`${t}：${money(v.usd)} USD · ${v.n} 单`}
+                            style={{ width: `${(v.usd / Math.max(1, mo.total.usd)) * 100}%`, background: teamColors[activeTeams.indexOf(t) % teamColors.length] }} />
+                        )
+                      })}
+                    </div>
+                    <span className="mono" style={{ width: 150, textAlign: 'right', fontSize: 12 }}>
+                      {money(mo.total.usd)} USD · {mo.total.n} 单
+                    </span>
+                    <span className="hint" style={{ width: 62, fontSize: 11 }}>{Math.round((mo.total.usd / monthTeamMax) * 100)}%</span>
+                  </div>
+                ))}
+              </div>
+              <div className="tablewrap" style={{ overflowX: 'auto' }}>
+                <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                  <thead><tr>{['月份', ...activeTeams, '合计'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {monthTeams.map((mo) => {
+                      const best = activeTeams.reduce((bi, t, i) => ((mo.teams.get(t)?.usd ?? 0) > (mo.teams.get(activeTeams[bi])?.usd ?? 0) ? i : bi), 0)
+                      return (
+                        <tr key={mo.month} style={{ borderBottom: '1px solid var(--line2)' }}>
+                          <td className="mono" style={{ padding: '6px 8px', fontWeight: 700 }}>{mo.month}</td>
+                          {activeTeams.map((t, i) => {
+                            const v = mo.teams.get(t)
+                            const isBest = i === best && !!v && activeTeams.filter((x) => mo.teams.has(x)).length > 1
+                            return (
+                              <td key={t} style={{ padding: '6px 8px', whiteSpace: 'nowrap', background: isBest ? '#f2f8ff' : undefined }}>
+                                {v ? <>
+                                  <span style={{ color: teamColors[activeTeams.indexOf(t) % teamColors.length], fontWeight: 700 }}>{money(v.usd)}</span>
+                                  <span className="hint" style={{ marginLeft: 4 }}>（{v.n} 单）</span>
+                                  {isBest && <span className="badge new" style={{ marginLeft: 4 }}>最高</span>}
+                                </> : <span className="hint">—</span>}
+                              </td>
+                            )
+                          })}
+                          <td className="mono" style={{ padding: '6px 8px', fontWeight: 700 }}>{money(mo.total.usd)} USD<span className="hint" style={{ marginLeft: 4 }}>（{mo.total.n} 单）</span></td>
+                        </tr>
+                      )
+                    })}
+                    <tr style={{ borderTop: '2px solid var(--line)' }}>
+                      <td style={{ padding: '6px 8px', fontWeight: 700 }}>合计</td>
+                      {activeTeams.map((t) => {
+                        const usd = monthTeams.reduce((a, mo) => a + (mo.teams.get(t)?.usd ?? 0), 0)
+                        const n = monthTeams.reduce((a, mo) => a + (mo.teams.get(t)?.n ?? 0), 0)
+                        return <td key={t} style={{ padding: '6px 8px', whiteSpace: 'nowrap', fontWeight: 700 }}>{money(usd)}<span className="hint" style={{ marginLeft: 4 }}>（{n} 单）</span></td>
+                      })}
+                      <td className="mono" style={{ padding: '6px 8px', fontWeight: 800 }}>{money(monthTeams.reduce((a, mo) => a + mo.total.usd, 0))} USD<span className="hint" style={{ marginLeft: 4 }}>（{monthTeams.reduce((a, mo) => a + mo.total.n, 0)} 单）</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
+                色块对应小组：{activeTeams.map((t, i) => <span key={t} style={{ marginRight: 10 }}><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: teamColors[i % teamColors.length], marginRight: 3 }} />{t}</span>)}
+              </div>
+            </>
+          )}
         </Panel>
 
         <Panel title="成交原因分析" hint={`${winSum?.total ?? 0} 单 · ${money(winSum?.usdTotal ?? 0)} USD`}
