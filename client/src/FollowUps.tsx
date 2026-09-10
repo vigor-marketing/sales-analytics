@@ -40,7 +40,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   // 项目行展开（多条跟进的项目：第一次点击先展开）
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   // 单条记录弹窗：最新一条可编辑，较早的只读
-  const [recModal, setRecModal] = useState<{ record: Fu; editable: boolean } | null>(null)
+  const [recModal, setRecModal] = useState<{ record: Fu; editable: boolean; create?: boolean } | null>(null)
   const [lookErr, setLookErr] = useState('')
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; text: string } | null>(null)
   const [f, setF] = useState({ date: today(), method: methods[0] ?? '电话', summary: '', detail: '', nextFollowupAt: '', byName: '' })
@@ -314,8 +314,12 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
       )}
 
       {recModal && (
-        <FollowupRecordModal record={recModal.record} editable={recModal.editable}
-          onClose={() => setRecModal(null)} onSaved={() => { void loadList() }} />
+        <FollowupRecordModal record={recModal.record} editable={recModal.editable} create={recModal.create}
+          onClose={() => setRecModal(null)}
+          onSaved={() => {
+            void loadList()
+            if (recModal.create) { setMsg({ t: 'ok', text: `已建立跟进（${recModal.record.inquiry_no}）` }); setRecModal(null) }
+          }} />
       )}
 
       {commentOf && (
@@ -334,10 +338,10 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
           <table className="grid data-table fixed-table follow-table" style={{ fontSize: 12.5, minWidth: 1180 }}>
             <colgroup>
               {hit
-                ? <><col style={{ width: '8%' }} /><col style={{ width: '11%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '21%' }} />
-                  <col style={{ width: '15%' }} /><col style={{ width: '9%' }} /><col style={{ width: '13%' }} /><col style={{ width: '9%' }} /></>
+                ? <><col style={{ width: '8%' }} /><col style={{ width: '11%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '17%' }} />
+                  <col style={{ width: '18%' }} /><col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '11%' }} /></>
                 : <><col style={{ width: '8%' }} /><col style={{ width: '12%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '7%' }} />
-                  <col style={{ width: '19%' }} /><col style={{ width: '17%' }} /><col style={{ width: '10%' }} /><col style={{ width: '13%' }} /></>}
+                  <col style={{ width: '17%' }} /><col style={{ width: '20%' }} /><col style={{ width: '9%' }} /><col style={{ width: '13%' }} /></>}
             </colgroup>
             <thead><tr>{(hit
               ? ['跟进日期', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间']
@@ -389,12 +393,12 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                       {detail && <span className={r.summary ? 'cell-note' : ''}>{detail}</span>}
                       {!r.summary && !detail && <span className="hint">—</span>}
                     </td>
-                    <td>
+                    <td className="cell-guidance">
                       {(() => {
                         const cs = hit ? (r.comments ?? []) : g.comments
                         return (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}>
-                            <GuidanceNote compact comments={cs} />
+                          <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 6, maxWidth: '100%' }}>
+                            <GuidanceNote all comments={cs} />
                             {/* 跟进列表里可查看并新增指导；进入某个询价的跟进详情后只查看 */}
                             <button className="btn xs" style={{ flex: '0 0 auto' }} onClick={() => setCommentOf(r)}
                               title={hit ? '查看全部跟进指导（详情内只读）' : cs.length ? '查看全部指导 / 继续追加' : '添加跟进指导'}>
@@ -440,10 +444,10 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                           {recDetail && <span className={rec.summary ? 'cell-note' : ''}>{recDetail}</span>}
                           {!rec.summary && !recDetail && <span className="hint">—</span>}
                         </td>
-                        <td>
+                        <td className="cell-guidance">
                           {(rec.comments ?? []).length === 0 ? <span className="hint">—</span> : (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}>
-                              <GuidanceNote compact comments={rec.comments} />
+                            <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 6, maxWidth: '100%' }}>
+                              <GuidanceNote all comments={rec.comments} />
                               <button className="btn xs" style={{ flex: '0 0 auto' }} title="查看全部指导 / 继续追加" onClick={() => setCommentOf(rec)}>{hit ? '查看指导' : '查看/追加指导'}</button>
                             </span>
                           )}
@@ -463,13 +467,9 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                   {open && (
                     <tr className="fu-child fu-child-add">
                       <td colSpan={9}>
-                        <button className="btn xs" title="带出该询价信息并填写新的跟进记录"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            keepNoRef.current = true
-                            setSales(r.sales); setNo(r.inquiry_no)
-                            window.scrollTo({ top: 0, behavior: 'smooth' })
-                          }}>＋ 为该项目建立新的跟进</button>
+                        {/* 直接弹窗建立跟进，不跳到页面顶部的建立跟进框 */}
+                        <button className="btn xs" title="在弹窗里为该项目建立一条新跟进，不离开本页列表"
+                          onClick={(e) => { e.stopPropagation(); setRecModal({ record: r, editable: false, create: true }) }}>＋ 为该项目建立新的跟进</button>
                         <span className="hint" style={{ marginLeft: 8 }}>最新一条可点击编辑，较早的记录只能查看</span>
                       </td>
                     </tr>

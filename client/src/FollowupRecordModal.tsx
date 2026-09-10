@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { put } from './api'
+import { post, put } from './api'
 import GuidanceNote, { type GuidanceItem } from './Guidance'
 
 export interface FuRecord {
@@ -19,16 +19,18 @@ const today = () => new Date().toISOString().slice(0, 10)
  * - editable=true（该项目最新一条）→ 可编辑并保存
  * - editable=false（较早的记录）→ 只能查看
  */
-export default function FollowupRecordModal({ record, editable, onClose, onSaved }: {
+export default function FollowupRecordModal({ record, editable, create, onClose, onSaved }: {
   record: FuRecord
   editable: boolean
+  /** 新建模式：直接为该项目建立一条新跟进（不再跳到页面顶部的建立跟进框） */
+  create?: boolean
   onClose: () => void
   onSaved?: () => void
 }) {
   const [f, setF] = useState<Form>({
-    date: record.date || today(), method: record.method || '电话',
-    summary: record.summary || '', detail: record.detail || record.content || '',
-    nextAt: record.next_followup_at ? String(record.next_followup_at).slice(0, 10) : '', byName: record.by_name || record.sales || '',
+    date: create ? today() : (record.date || today()), method: record.method || '电话',
+    summary: create ? '' : (record.summary || ''), detail: create ? '' : (record.detail || record.content || ''),
+    nextAt: create ? '' : (record.next_followup_at ? String(record.next_followup_at).slice(0, 10) : ''), byName: record.by_name || record.sales || '',
   })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -37,11 +39,20 @@ export default function FollowupRecordModal({ record, editable, onClose, onSaved
     if (!f.summary.trim() && !f.detail.trim()) return setErr('请填写跟进简述或具体内容')
     setBusy(true); setErr(''); setOkMsg('')
     try {
-      await put(`/followups/${record.id}`, {
-        date: f.date, method: f.method, summary: f.summary.trim() || undefined, detail: f.detail.trim() || undefined,
-        nextFollowupAt: f.nextAt || undefined, byName: f.byName.trim() || undefined,
-      })
-      setOkMsg('已保存修改')
+      if (create) {
+        await post('/followups', {
+          inquiryId: record.inquiry_id, date: f.date, method: f.method,
+          summary: f.summary.trim() || undefined, detail: f.detail.trim() || undefined,
+          nextFollowupAt: f.nextAt || undefined, byName: f.byName.trim() || undefined,
+        })
+        setOkMsg('已建立跟进')
+      } else {
+        await put(`/followups/${record.id}`, {
+          date: f.date, method: f.method, summary: f.summary.trim() || undefined, detail: f.detail.trim() || undefined,
+          nextFollowupAt: f.nextAt || undefined, byName: f.byName.trim() || undefined,
+        })
+        setOkMsg('已保存修改')
+      }
       onSaved?.()
     } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
@@ -50,15 +61,15 @@ export default function FollowupRecordModal({ record, editable, onClose, onSaved
     <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal fu-modal" style={{ maxHeight: '88vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label={editable ? '编辑跟进记录' : '查看跟进记录'}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>{editable ? '编辑跟进记录' : '查看跟进记录（只读）'} · {record.inquiry_no}</h3>
+          <h3 style={{ margin: 0 }}>{create ? '建立跟进' : editable ? '编辑跟进记录' : '查看跟进记录（只读）'} · {record.inquiry_no}</h3>
           <button className="btn sm" onClick={onClose}>关闭</button>
         </div>
         <div className="hint" style={{ marginTop: 6 }}>
-          {record.customer_name} · 销售 {record.sales} · 录入时间 {String(record.created_at).slice(0, 16).replace('T', ' ')}
-          {editable ? ' · 该项目最新一条，可修改' : ' · 较早的记录，只能查看'}
+          {record.customer_name} · 销售 {record.sales}
+          {create ? ' · 新建一条跟进（不离开本页列表）' : <> · 录入时间 {String(record.created_at).slice(0, 16).replace('T', ' ')}{editable ? ' · 该项目最新一条，可修改' : ' · 较早的记录，只能查看'}</>}
         </div>
 
-        {editable ? (
+        {editable || create ? (
           <>
             <div className="row" style={{ marginTop: 8 }}>
               <div className="col w1"><label>跟进日期 *</label><input className="sa" type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
@@ -87,7 +98,7 @@ export default function FollowupRecordModal({ record, editable, onClose, onSaved
           </>
         )}
 
-        {(record.photos || []).length > 0 || (record.attachments || []).length > 0 ? (
+        {!create && ((record.photos || []).length > 0 || (record.attachments || []).length > 0) ? (
           <div style={{ marginTop: 8 }}>
             <label>图片 / 附件（不可在弹窗内修改）</label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
@@ -101,18 +112,19 @@ export default function FollowupRecordModal({ record, editable, onClose, onSaved
           </div>
         ) : null}
 
-        <div style={{ marginTop: 10 }}>
+        {!create && <div style={{ marginTop: 10 }}>
           <label>跟进指导（{(record.comments ?? []).length} 条 · 只读）</label>
           <div style={{ marginTop: 4 }}>
-            {(record.comments ?? []).length === 0 ? <span className="hint">暂无跟进指导</span> : <GuidanceNote comments={record.comments} />}
+            {(record.comments ?? []).length === 0 ? <span className="hint">暂无跟进指导</span> : <GuidanceNote all comments={record.comments} />}
           </div>
-        </div>
+        </div>}
 
         {err && <div className="msg err" style={{ marginTop: 8 }}>{err}</div>}
         {okMsg && <div className="msg ok" style={{ marginTop: 8 }}>{okMsg}</div>}
         <div className="modal-foot">
-          <button className="btn" onClick={onClose}>{editable ? '取消' : '关闭'}</button>
-          {editable && <button className="btn pri" disabled={busy} onClick={() => void save()}>{busy ? '保存中…' : '保存修改'}</button>}
+          <button className="btn" onClick={onClose}>{editable || create ? '取消' : '关闭'}</button>
+          {editable && !create && <button className="btn pri" disabled={busy} onClick={() => void save()}>{busy ? '保存中…' : '保存修改'}</button>}
+          {create && <button className="btn pri" disabled={busy} onClick={() => void save()}>{busy ? '提交中…' : '建立跟进'}</button>}
         </div>
       </div>
     </div>

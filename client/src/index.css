@@ -188,6 +188,12 @@ tr.row-click:hover>td{background:#eef5ff !important}
 /* ===== 全部表格内容居中（表头 + 单元格，含徽标/按钮/金额，覆盖行内左右对齐设置） ===== */
 table.grid > thead > tr > th, table.grid > tbody > tr > td { text-align: center !important }
 table.grid > tbody > tr > td > .badge, table.grid > tbody > tr > td > .tag, table.grid > tbody > tr > td > .btn { margin-left: 3px; margin-right: 3px }
+/* 跟进指导列：完整显示全部指导（可换行、按内容撑高，不截断） */
+table.grid > thead > tr > th.cell-guidance { text-align: left !important }
+table.grid > tbody > tr > td.cell-guidance { text-align: left !important; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; height: auto !important; line-height: 1.45 !important; padding: 6px 10px !important; vertical-align: middle }
+table.grid > tbody > tr > td.cell-guidance .gd-all { display: block; width: 100% }
+table.grid > tbody > tr > td.cell-guidance .gd-item + .gd-item { margin-top: 4px }
+
 /* 通用左对齐列（询价号 / 客户 等需要逐行对齐的列） */
 table.grid > thead > tr > th.cell-left, table.grid > tbody > tr > td.cell-left { text-align: left !important }
 
