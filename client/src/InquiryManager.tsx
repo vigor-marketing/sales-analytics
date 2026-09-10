@@ -436,6 +436,44 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
               <span className="hint">（在询价基本信息中修改；成交状态由下方销售订单自动判定）</span>
             </div>
             <div style={{ margin: '6px 0', fontWeight: 600 }}>产品明细</div>
+            {/* 金额版本记录：改金额保存后会在产品档案生成新版本，这里即时预演 */}
+            <div style={{ marginTop: 10, background: '#f8fafd', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700 }}>金额版本记录</span>
+                <span className="hint">保存后自动同步到产品档案：为每个产品生成一个新版本（金额/数量/币种有变化时）</span>
+              </div>
+              {form.items.filter((it) => it.productName.trim()).map((it, i) => {
+                const pr = products.find((x) => x.name.toLowerCase() === it.productName.trim().toLowerCase())
+                const amt = Number(it.amount) || 0
+                const qty = it.qty === '' ? null : Number(it.qty)
+                const changed = !pr
+                  || Number(pr.last_amount ?? -1) !== amt
+                  || Number(pr.last_qty ?? -1) !== Number(qty ?? -1)
+                  || pr.currency !== it.currency
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap', fontSize: 12.5 }}>
+                    <span style={{ minWidth: 180, fontWeight: 600 }}>{it.productName}</span>
+                    {pr
+                      ? <>
+                        <span className="badge new">当前 V{pr.version ?? 0}</span>
+                        <span className="hint">最近报价 {money(pr.last_amount)} {pr.currency}{pr.last_qty != null ? ` · 数量 ${pr.last_qty}` : ''}</span>
+                        {pr.prev_amount != null && <span className="hint">（上一版 {money(pr.prev_amount)}）</span>}
+                        <span className="hint">→ 本次录入 <b className="mono">{money(amt)} {it.currency}</b>{qty != null ? ` · 数量 ${qty}` : ''}</span>
+                        {changed
+                          ? <span style={{ color: '#a35c00', fontWeight: 700 }}>保存后生成 V{(pr.version ?? 0) + 1}</span>
+                          : <span className="hint" style={{ color: '#059669' }}>与最近一致，保存后版本不变</span>}
+                      </>
+                      : <>
+                        <span className="badge">未建档</span>
+                        <span style={{ color: '#a35c00', fontWeight: 700 }}>保存后创建 V1</span>
+                      </>}
+                    <button className="btn xs" disabled={!pr} onClick={() => pr && setHistName(pr.name)}>查看记录</button>
+                  </div>
+                )
+              })}
+              {form.items.filter((it) => it.productName.trim()).length === 0 && <div className="hint" style={{ marginTop: 4 }}>先填写产品名称与金额</div>}
+            </div>
+
             {/* 产品明细：表头 + 数据行共用同一套网格列宽，保证逐列对齐 */}
             <div className="item-scroll">
               <div className="item-grid item-head">
@@ -478,44 +516,6 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
             <div className="row fixed-h" style={{ marginTop: 8 }}>
               <div className="col grow1 fixed-h"><label>备注</label><textarea className="sa fixed-h" value={form.note} onChange={(e) => set({ note: e.target.value })} /></div>
             </div>
-            {/* 金额版本记录：改金额保存后会在产品档案生成新版本，这里即时预演 */}
-            <div style={{ marginTop: 10, background: '#f8fafd', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12.5, fontWeight: 700 }}>金额版本记录</span>
-                <span className="hint">保存后自动同步到产品档案：为每个产品生成一个新版本（金额/数量/币种有变化时）</span>
-              </div>
-              {form.items.filter((it) => it.productName.trim()).map((it, i) => {
-                const pr = products.find((x) => x.name.toLowerCase() === it.productName.trim().toLowerCase())
-                const amt = Number(it.amount) || 0
-                const qty = it.qty === '' ? null : Number(it.qty)
-                const changed = !pr
-                  || Number(pr.last_amount ?? -1) !== amt
-                  || Number(pr.last_qty ?? -1) !== Number(qty ?? -1)
-                  || pr.currency !== it.currency
-                return (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap', fontSize: 12.5 }}>
-                    <span style={{ minWidth: 180, fontWeight: 600 }}>{it.productName}</span>
-                    {pr
-                      ? <>
-                        <span className="badge new">当前 V{pr.version ?? 0}</span>
-                        <span className="hint">最近报价 {money(pr.last_amount)} {pr.currency}{pr.last_qty != null ? ` · 数量 ${pr.last_qty}` : ''}</span>
-                        {pr.prev_amount != null && <span className="hint">（上一版 {money(pr.prev_amount)}）</span>}
-                        <span className="hint">→ 本次录入 <b className="mono">{money(amt)} {it.currency}</b>{qty != null ? ` · 数量 ${qty}` : ''}</span>
-                        {changed
-                          ? <span style={{ color: '#a35c00', fontWeight: 700 }}>保存后生成 V{(pr.version ?? 0) + 1}</span>
-                          : <span className="hint" style={{ color: '#059669' }}>与最近一致，保存后版本不变</span>}
-                      </>
-                      : <>
-                        <span className="badge">未建档</span>
-                        <span style={{ color: '#a35c00', fontWeight: 700 }}>保存后创建 V1</span>
-                      </>}
-                    <button className="btn xs" disabled={!pr} onClick={() => pr && setHistName(pr.name)}>查看记录</button>
-                  </div>
-                )
-              })}
-              {form.items.filter((it) => it.productName.trim()).length === 0 && <div className="hint" style={{ marginTop: 4 }}>先填写产品名称与金额</div>}
-            </div>
-
             {/* 跟进状态：自动判定，未成单需填原因 */}
             <div className={form.isLost && !order ? 'statuswrap-lost' : ''} style={{ marginTop: 14, borderTop: form.isLost && !order ? 'none' : '1px dashed var(--line)', paddingTop: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
