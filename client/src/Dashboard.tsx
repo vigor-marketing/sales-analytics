@@ -105,7 +105,7 @@ export default function Dashboard({ onGoFollow }: { onGoFollow?: (t: { sales: st
               <th style={{ textAlign: 'left' }}>类型</th><th style={{ textAlign: 'left' }}>询价号</th><th style={{ textAlign: 'left' }}>客户</th>
               <th style={{ textAlign: 'left' }}>销售</th><th style={{ textAlign: 'left' }}>采购</th><th style={{ textAlign: 'left' }}>上次跟进</th>
               <th style={{ textAlign: 'left' }}>下次跟进</th><th style={{ textAlign: 'right' }}>报价(USD)</th>
-              <th style={{ textAlign: 'left' }}>最新跟进指导</th><th style={{ textAlign: 'center' }}>操作</th>
+              <th style={{ textAlign: 'left' }}>跟进指导（全部）</th><th style={{ textAlign: 'center' }}>操作</th>
             </tr></thead>
             <tbody>
               {list.map((r) => {
