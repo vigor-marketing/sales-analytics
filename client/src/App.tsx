@@ -310,10 +310,10 @@ export default function App() {
 
         <div style={{ marginTop: 12, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
           <div className="grid-2">
-            <div className="col box-fixed"><label>卡点/问题</label><textarea className="sa" value={blockers} onChange={(e) => setBlockers(e.target.value)} placeholder="如：价格、交期、技术规格、竞品占位…" /></div>
-            <div className="col box-fixed"><label>行动计划</label><textarea className="sa" value={actionPlan} onChange={(e) => setActionPlan(e.target.value)} placeholder="下一步打算怎么做" /></div>
-            <div className="col box-fixed"><label>需要的支持</label><textarea className="sa" value={supportNeeded} onChange={(e) => setSupportNeeded(e.target.value)} placeholder="如：报价支持 / 技术选型 / 领导出面 / 样品寄送 / 资质文件" /></div>
-            <div className="col box-fixed"><label>备注</label><textarea className="sa" value={note} onChange={(e) => setNote(e.target.value)} placeholder="客户要求、交期等补充说明（选填）" /></div>
+            <div className="col box-fixed"><label>卡点/问题</label><textarea className="sa" rows={3} style={{ fieldSizing: 'content' } as React.CSSProperties} value={blockers} onChange={(e) => setBlockers(e.target.value)} placeholder="如：价格、交期、技术规格、竞品占位…" /></div>
+            <div className="col box-fixed"><label>行动计划</label><textarea className="sa" rows={3} style={{ fieldSizing: 'content' } as React.CSSProperties} value={actionPlan} onChange={(e) => setActionPlan(e.target.value)} placeholder="下一步打算怎么做" /></div>
+            <div className="col box-fixed"><label>需要的支持</label><textarea className="sa" rows={3} style={{ fieldSizing: 'content' } as React.CSSProperties} value={supportNeeded} onChange={(e) => setSupportNeeded(e.target.value)} placeholder="如：报价支持 / 技术选型 / 领导出面 / 样品寄送 / 资质文件" /></div>
+            <div className="col box-fixed"><label>备注</label><textarea className="sa" rows={3} style={{ fieldSizing: 'content' } as React.CSSProperties} value={note} onChange={(e) => setNote(e.target.value)} placeholder="客户要求、交期等补充说明（选填）" /></div>
           </div>
         </div>
 
