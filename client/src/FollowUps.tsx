@@ -287,7 +287,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
               <col style={{ width: '8%' }} /><col style={{ width: '11%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '22%' }} />
               <col style={{ width: '21%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} />
             </colgroup>
-            <thead><tr>{['跟进日期', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
+            <thead><tr>{['跟进日期', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间'].map((h) => <th key={h} style={{ textAlign: h === '方式' ? 'center' : 'left' }}>{h}</th>)}</tr></thead>
             <tbody>
               {list.map((r) => {
                 const detail = r.detail || r.content || ''
@@ -312,7 +312,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                       <span style={{ fontWeight: 600 }}>{r.sales || '—'}</span>
                       {r.by_name && r.by_name !== r.sales && <span className="cell-note">跟进人 {r.by_name}</span>}
                     </td>
-                    <td title={r.method || '—'}><span className="badge">{r.method || '—'}</span></td>
+                    <td title={r.method || '—'} style={{ textAlign: 'center' }}><span className="badge">{r.method || '—'}</span></td>
                     <td title={[r.summary, detail].filter(Boolean).join(' ｜ ') || '—'}>
                       {r.summary && <span style={{ fontWeight: 600 }}>{r.summary}</span>}
                       {detail && <span className={r.summary ? 'cell-note' : ''}>{detail}</span>}

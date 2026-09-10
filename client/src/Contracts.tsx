@@ -82,11 +82,11 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
       <div className="tablewrap">
         <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
           <colgroup>
-            <col style={{ width: '11%' }} /><col style={{ width: '9%' }} /><col style={{ width: '9%' }} /><col style={{ width: '8%' }} /><col style={{ width: '12%' }} />
-            <col style={{ width: '6%' }} /><col style={{ width: '6%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} />
+            <col style={{ width: '10%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: 196 }} /><col style={{ width: '11%' }} />
+            <col style={{ width: '6%' }} /><col style={{ width: 110 }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} />
             <col style={{ width: '6%' }} /><col style={{ width: '7%' }} /><col style={{ width: 124 }} />
           </colgroup>
-          <thead><tr>{['订单号', '询价号', '客户', '标签', '产品', '采购', '来源', '询价日期', '成单日期', '转化周期', '销售', '订单金额', '操作'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
+          <thead><tr>{['订单号', '询价号', '客户', '标签', '产品', '采购', '来源', '询价日期', '成单日期', '转化周期', '销售', '订单金额', '操作'].map((h) => <th key={h} style={{ textAlign: h === '来源' ? 'center' : 'left' }}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.order_id}>
@@ -96,7 +96,7 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
                 <td title={[Number(r.is_key_customer) === 1 ? '重点客户' : null, Number(r.is_key_project) === 1 ? '重点项目' : null].filter(Boolean).join('、') || '无标签'}><KeyTags kc={r.is_key_customer} kp={r.is_key_project} /></td>
                 <td title={r.productNames || '—'}>{r.productNames || '—'}</td>
                 <td title={r.purchaser || '—'}>{r.purchaser || '—'}</td>
-                <td title={r.source || '—'}><span className="badge">{r.source || '—'}</span></td>
+                <td title={r.source || '—'} style={{ textAlign: 'center' }}><span className="badge">{r.source || '—'}</span></td>
                 <td className="mono" title={r.date}>{r.date}</td>
                 <td className="mono" title={r.won_date}>{r.won_date}</td>
                 <td className="mono" style={{ fontWeight: 700, color: cycleTone(r.cycleDays) }} title={r.cycleDays == null ? '无转化周期' : `询价到成单 ${r.cycleDays} 天`}>{r.cycleDays == null ? '—' : r.cycleDays + ' 天'}</td>

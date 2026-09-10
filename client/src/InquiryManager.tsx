@@ -51,7 +51,6 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
   const fmtT = (r: Row) => (r.totals ?? []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'
   const sumUsd = rows.reduce((s, r) => s + (r.usdApprox || 0), 0)
   return (
-    <div className="page-fit">
     <div className="card">
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 style={{ margin: 0 }}>询报价管理</h3>
@@ -85,48 +84,39 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
         <button className="btn" onClick={() => void load()}>查询</button>
         <button className="btn" onClick={() => { setQ(''); setRange(''); setSales(''); setPur(''); setSrc(''); setSt(''); void load() }}>重置</button>
       </div>
-      <div className="tablewrap">
-        <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
-          {/* 列宽固定：变更列宽只改这里 */}
-          <colgroup>
-            <col style={{ width: '12%' }} /><col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '11%' }} /><col style={{ width: '9%' }} />
-            <col style={{ width: '13%' }} /><col style={{ width: '8%' }} /><col style={{ width: '7%' }} /><col style={{ width: '9%' }} /><col style={{ width: 130 }} />
-          </colgroup>
-          <thead><tr>{['询价号', '日期', '客户', '状态', '标签', '报价合计（含费用）', '销售', '采购', '来源', '操作'].map((h) => <th key={h} style={{ textAlign: 'left' }} title={h === '报价合计（含费用）' ? '产品明细合计 + 运费/税费/佣金/其他费用（悬停单元格看明细）' : undefined}>{h}</th>)}</tr></thead>
+      <div className="tablewrap" style={{ overflowX: 'auto' }}>
+        <table className="grid" style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12.5 }}>
+          <thead><tr>{['询价号', '日期', '客户', '状态', '标签', '报价合计（含费用）', '销售', '采购', '来源', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: h === '来源' ? 'center' : 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '报价合计（含费用）' ? '产品明细合计 ＋ 运费/税费/佣金/其他费用' : undefined}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className={r.status === 'lost' ? 'row-lost' : undefined}>
-                <td className="mono" title={r.inquiry_no}>{r.inquiry_no}</td>
-                <td className="mono" title={r.date}>{r.date}</td>
-                <td title={r.customer_name}>{r.customer_name}</td>
-                <td title={r.status === 'lost' ? `丢单原因：${r.lost_reason || '—'}${r.lost_date ? `（${r.lost_date}）` : ''}` : undefined}>
+              <tr key={r.id} className={r.status === 'lost' ? 'row-lost' : undefined} style={{ borderBottom: '1px solid var(--line2)' }}>
+                <td className="mono" style={{ padding: '6px 8px' }}>{r.inquiry_no}</td>
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.date}</td>
+                <td style={{ padding: '6px 8px' }}>{r.customer_name}</td>
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }} title={r.status === 'lost' ? `丢单原因：${r.lost_reason || '—'}${r.lost_date ? `（${r.lost_date}）` : ''}` : undefined}>
                   <StatusTag status={r.status} />
-                  {r.status === 'lost' && <span className="cell-note">丢单原因见悬停提示</span>}
+                  {r.status === 'lost' && <div className="lost-line">丢单原因：{r.lost_reason || '—'}{r.lost_date ? `（${r.lost_date}）` : ''}</div>}
                 </td>
-                <td title={[Number(r.is_key_customer) === 1 ? '重点客户' : null, Number(r.is_key_project) === 1 ? '重点项目' : null].filter(Boolean).join('、') || '无标签'}><TagBlocks r={r} /></td>
-                <td className="mono" title={(() => {
-                  const base = `产品合计 ${fmtT(r) || '—'}`
-                  const fee = (r.feeTotal ?? 0) > 0 ? ` ＋ 费用 ${money(r.feeTotal)} ${r.fee_currency || 'USD'}`
-                    : (['freight', 'tax', 'commission', 'other_fee'].some((k) => Number((r as unknown as Record<string, number>)[k]) > 0) ? '' : '')
-                  const grand = `总报价（含费用） ${(r.grandTotals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}（折 USD 约 ${money(r.usdApprox)}）`
-                  return `${base}${fee}\n${grand}`
-                })()}>≈USD {money(r.usdApprox)}{(r.grandTotals || []).length ? <span className="cell-note">（{(r.grandTotals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ')}）</span> : null}</td>
-                <td title={r.sales}>{r.sales}</td>
-                <td title={r.purchaser || '—'}>{r.purchaser || '—'}</td>
-                <td title={r.source || '—'}><span className="badge">{r.source || '—'}</span></td>
-                <td>
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><TagBlocks r={r} /></td>
+                <td style={{ padding: '6px 8px' }} title={`产品合计 ${fmtT(r) || '—'}${(r.feeTotal ?? 0) > 0 ? ` ＋ 费用 ${money(r.feeTotal)} ${r.fee_currency || 'USD'}` : ''}（折 USD 约 ${money(r.usdApprox)}）`}>
+                  ≈USD {money(r.usdApprox)}
+                  <div className="hint">{fmtT(r)}{(r.feeTotal ?? 0) > 0 ? ` ＋费用 ${money(r.feeTotal)} ${r.fee_currency || 'USD'}` : ''}</div>
+                </td>
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.sales}</td>
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.purchaser || '—'}</td>
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap', textAlign: 'center' }}><span className="badge">{r.source || '—'}</span></td>
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
                   <button className="btn sm" onClick={() => setViewId(r.id)}>查看</button>
                   <button className="btn sm" onClick={() => setEditId(r.id)}>编辑</button>
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={10} className="hint" style={{ textAlign: 'center' }}>暂无询报价记录（先到「询报价录入」录一单）</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无询报价记录（先到「询报价录入」录一单）</td></tr>}
           </tbody>
         </table>
       </div>
       {viewId && <InquiryDetailModal id={viewId} onClose={() => setViewId(null)} />}
       {editId && <EditModal id={editId} meta={meta} products={products} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); void load() }} />}
-    </div>
     </div>
   )
 }
@@ -178,13 +168,13 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
     ;(form?.items ?? []).forEach((it) => { const a = Number(it.amount) || 0; if (a > 0) m.set(it.currency, (m.get(it.currency) ?? 0) + a) })
     const list = Array.from(m.entries()).sort((a, b) => CURS.indexOf(a[0]) - CURS.indexOf(b[0])).map(([currency, total]) => ({ currency, total }))
     const fx = meta.fx ?? { USD: 1, CNY: 7.12, EUR: 0.92 }
+    const usd = list.reduce((sum, x) => sum + x.total / (fx[x.currency] || 1), 0)
     const feeTotal = ['freight', 'tax', 'commission', 'otherFee'].reduce((sum, k) => sum + (Number((form as unknown as Record<string, string>)?.[k]) || 0), 0)
     const feeCur = form?.feeCurrency || 'USD'
     const gm = new Map<string, number>(list.map((x) => [x.currency, x.total]))
     if (feeTotal) gm.set(feeCur, (gm.get(feeCur) ?? 0) + feeTotal)
     const grandList = Array.from(gm.entries()).filter(([, v]) => v > 0).sort((a, b) => CURS.indexOf(a[0]) - CURS.indexOf(b[0])).map(([currency, total]) => ({ currency, total }))
-    return { list, usd: list.reduce((sum, x) => sum + x.total / (fx[x.currency] || 1), 0), feeTotal, feeCur, grandList,
-      grandUsd: grandList.reduce((sum, x) => sum + x.total / (fx[x.currency] || 1), 0) }
+    return { list, usd, feeTotal, feeCur, grandList, grandUsd: grandList.reduce((sum, x) => sum + x.total / (fx[x.currency] || 1), 0) }
   }, [form, meta.fx])
 
   const save = async () => {
@@ -246,15 +236,10 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                 {liveTotals.grandList.some((t) => t.currency !== 'USD') && <span className="badge">折 USD 约 {money(Math.round(liveTotals.grandUsd))}</span>}
                 {liveTotals.grandList.length === 0 && <span className="hint">填一行金额后自动合计</span>}
               </div>
-              <div className="hint" style={{ display: 'block', marginBottom: 6 }}>
-                产品合计 {liveTotals.list.length ? liveTotals.list.map((t) => `${money(t.total)} ${t.currency}`).join(' + ') : '—'}
-                {liveTotals.feeTotal > 0 ? ` ＋ 费用 ${money(liveTotals.feeTotal)} ${liveTotals.feeCur}` : ' ＋ 费用 —'}
-                （折 USD 约 {money(Math.round(liveTotals.grandUsd))}）
-              </div>
               <div className="row" style={{ marginBottom: 0 }}>
                 <div className="col w2"><label>总金额（手填 · 选填）</label><input className="sa" type="number" value={form.handTotal} onChange={(e) => set({ handTotal: e.target.value })} placeholder="议价/最终金额" /></div>
               </div>
-              <div className="hint" style={{ display: 'block', marginTop: 4 }}>总报价（含费用）= 各行金额自动合计 + 运费 + 税费 + 佣金 + 其他费用；总金额可另行手填最终/成交金额，与报价一致可留空。</div>
+              <div className="hint" style={{ display: 'block', marginTop: 4 }}>总报价（含费用）= 各行金额自动合计 ＋ 运费/税费/佣金/其他费用；总金额可另行手填最终/成交金额，与报价一致可留空。</div>
             </div>
             <div className="row" style={{ alignItems: 'center', gap: 18 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>客户星级</span>

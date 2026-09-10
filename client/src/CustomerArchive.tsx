@@ -41,7 +41,7 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
       <div className="tablewrap">
         <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
           <colgroup>
-            <col style={{ width: '16%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '11%' }} /><col style={{ width: '8%' }} />
+            <col style={{ width: '15%' }} /><col style={{ width: '7%' }} /><col style={{ width: '8%' }} /><col style={{ width: 196 }} /><col style={{ width: '7%' }} />
             <col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '8%' }} /><col style={{ width: 110 }} />
           </colgroup>
           <thead><tr>{['客户名称', '国别', '星级', '标签', '询价数', '已成单', '未成单', '累计金额(USD)', '成交率', '操作'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>

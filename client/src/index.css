@@ -197,11 +197,12 @@ tr.row-click:hover>td{background:#eef5ff !important}
 
 /* ===== 主页面固定宽高：整页高度不随数据增减跳动，表格在卡片内部滚动 ===== */
 .sa-main:has(> .page-fit){height:100vh;overflow:hidden;padding-bottom:22px;display:flex;flex-direction:column}
-.page-fit{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:12px;overflow:hidden}
-.page-fit>.card{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;margin-bottom:0}
-.page-fit>.card.auto{flex:0 0 auto}
+.page-fit{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:12px;overflow:auto}
+.page-fit>.card{flex:1 1 auto;min-height:220px;display:flex;flex-direction:column;margin-bottom:0}
+.page-fit>.card>table,.page-fit>.card>.tablewrap{flex:1 1 auto}
+.page-fit>.card.auto{flex:0 0 auto;min-height:0}
 .page-fit.scroll{overflow:auto}
-.page-fit .tablewrap{flex:1 1 auto;min-height:0;overflow:auto}
+.page-fit .tablewrap{flex:1 1 auto;min-height:150px;overflow:auto}
 .page-fit .tablewrap.auto{flex:0 0 auto}
 /* 表格容器：固定高度版本（用于一页内多块表格的场景） */
 .tablewrap.h180{height:180px;overflow:auto}

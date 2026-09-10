@@ -40,13 +40,13 @@ export default function PriceHistoryModal({ name, info, onClose }: {
               <col style={{ width: '9%' }} /><col style={{ width: '13%' }} /><col style={{ width: '10%' }} /><col style={{ width: '25%' }} /><col style={{ width: '11%' }} />
               <col style={{ width: '8%' }} /><col style={{ width: '9%' }} /><col style={{ width: '10%' }} /><col style={{ width: '5%' }} />
             </colgroup>
-            <thead><tr>{['版本', '记录时间', '业务日期', '金额变化', '数量变化', '来源', '询价号', '客户', '销售'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
+            <thead><tr>{['版本', '记录时间', '业务日期', '金额变化', '数量变化', '来源', '询价号', '客户', '销售'].map((h) => <th key={h} style={{ textAlign: h === '版本' ? 'center' : 'left' }}>{h}</th>)}</tr></thead>
             <tbody>
               {(rows ?? []).map((h) => {
                 const delta = (h.prev_amount == null || h.amount == null) ? null : Math.round((h.amount - h.prev_amount) * 100) / 100
                 return (
                   <tr key={h.id}>
-                    <td>
+                    <td style={{ textAlign: 'center' }}>
                       <span className={'badge' + (h.is_latest ? ' new' : '')} title={h.is_latest ? '当前版本' : `第 ${h.version} 版`}>V{h.version ?? '—'}{h.is_latest ? ' 当前' : ''}</span>
                     </td>
                     <td className="mono" title={String(h.created_at).slice(0, 19).replace('T', ' ')}>{String(h.created_at).slice(0, 16).replace('T', ' ')}</td>
