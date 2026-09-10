@@ -98,7 +98,6 @@ ul.sugs li:hover, ul.sugs li.on { background: var(--brand-light) }
 tr.row-lost>td{background:#fff5f5}
 tr.row-lost>td:first-child{box-shadow:inset 3px 0 0 #dc2626}
 tr.row-lost:hover>td{background:#ffecec}
-.lost-line{margin-top:2px;font-size:11.5px;color:#b91c1c;font-weight:600;white-space:normal}
 .lostbox{margin-top:10px;background:#fff1f1;border:1px solid #fca5a5;border-left:4px solid #dc2626;border-radius:6px;padding:8px 12px;font-size:13px;color:#b91c1c}
 .statuswrap-lost{background:#fff5f5;border:1px solid #fca5a5;border-left:4px solid #dc2626;border-radius:8px;padding:10px 12px;margin-top:14px}
 .tag.lost::before{content:'✖';margin-right:3px;font-size:11px}
