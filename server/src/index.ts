@@ -315,7 +315,12 @@ schema(); ensurePeople(); backfillProducts()
 // 生产托管前端产物（可选）
 const clientDist = path.resolve(__dirname, '../../client/dist')
 if (existsSync(clientDist)) {
-  app.use(express.static(clientDist))
+  app.use(express.static(clientDist, {
+    setHeaders(res, filePath) {
+      // 页面壳不缓存（避免刷新到旧版本）；带 hash 的静态资源可长缓存
+      if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-store, must-revalidate')
+    },
+  }))
   app.get('*', (req, res, next) => { if (req.path.startsWith('/api/')) return next(); res.sendFile(path.join(clientDist, 'index.html')) })
 }
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

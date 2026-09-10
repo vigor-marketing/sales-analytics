@@ -51,12 +51,12 @@ function Shell({ page, onNav, children }: { page: PageKey; onNav: (p: PageKey) =
             </button>
           ))}
         </nav>
-        <div className="sa-foot">v3-61058b3</div>
+        <div className="sa-foot">v{__BUILD_ID__}</div>
       </aside>
       <main className="sa-main">
         <div className="sa-page-head">
           <h1>{TITLES[page]}</h1>
-          <span className="badge new" title="页面构建版本">v3-61058b3</span>
+          <span className="badge new" title="页面构建版本">v{__BUILD_ID__}</span>
         </div>
         {children}
       </main>
