@@ -140,9 +140,14 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // 当前页引用：navTo 里需要读到最新页码（在 setState 更新函数里写另一个 state 会被 React 丢弃，故用 ref）
+  const pageRef = useRef<PageKey>(page)
+  useEffect(() => { pageRef.current = page }, [page])
   const navTo = useCallback((k: PageKey) => {
     setFollowDetailOpen(false)
-    setPage((cur) => { if (k !== cur) setPageHist((h) => [...h.slice(-9), cur]); return k })
+    const cur = pageRef.current
+    if (k !== cur) setPageHist((h) => [...h.slice(-9), cur])
+    setPage(k)
   }, [])
   const goBack = useCallback(() => {
     setPageHist((h) => {
@@ -273,14 +278,26 @@ export default function App() {
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) } finally { setBusy(false) }
   }
 
+  // 页头右侧：所有页面都提供「返回上一级」（从哪个页面来的就返回哪个页面）
+  const headRight = (() => {
+    const prev = pageHist[pageHist.length - 1]
+    const inDetail = page === 'followups' && followDetailOpen
+    if (!prev && !inDetail) return undefined
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+        {prev && <button className="btn sm" onClick={goBack} title={`返回上一级：${TITLES[prev]}`}>← 返回 {TITLES[prev]}</button>}
+        {/* 在某个询价的跟进详情里：额外提供「退出详情」，回到跟进列表 */}
+        {inDetail && (
+          <button className="btn sm" onClick={() => setFollowReset((n) => n + 1)} title="退出当前询价详情，回到跟进列表">
+            {prev ? '退出详情' : '← 返回询报价跟进'}
+          </button>
+        )}
+      </span>
+    )
+  })()
+
   if (page !== 'entry') return (
-    <Shell page={page} onNav={navTo} headRight={page === 'followups' ? (
-      followDetailOpen
-        ? <button className="btn sm" onClick={() => setFollowReset((n) => n + 1)} title="退出当前询价详情，返回跟进列表">← 返回询报价跟进</button>
-        : (pageHist.length
-          ? <button className="btn sm" onClick={goBack} title="返回上一级页面">← 返回 {TITLES[pageHist[pageHist.length - 1]]}</button>
-          : undefined)
-    ) : undefined}>
+    <Shell page={page} onNav={navTo} headRight={headRight}>
       {page === 'manage' && <InquiryManager meta={meta} onGoFollow={(t) => { setFollowTarget(t); navTo('followups') }} />}
       {page === 'dashboard' && <Dashboard people={meta.sales.map((x) => x.name)} onGoFollow={(t) => { setFollowTarget(t); navTo('followups') }} />}
       {page === 'followups' && (
@@ -294,7 +311,7 @@ export default function App() {
     </Shell>
   )
   return (
-    <Shell page={page} onNav={navTo}>
+    <Shell page={page} onNav={navTo} headRight={headRight}>
       {msg && <div className={`msg ${msg.t}`} role="status">{msg.t === 'ok' ? '✔' : '✖'} {msg.text}</div>}
 
       {/* 基本信息（含归属与来源） */}
