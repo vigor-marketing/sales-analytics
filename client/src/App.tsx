@@ -93,6 +93,8 @@ export default function App() {
   const [cusFocus, setCusFocus] = useState(false)
   const [page, setPage] = useState<PageKey>('entry')
   const noT = useRef<HTMLInputElement>(null)
+  // 浏览器页签标题跟随当前页面
+  useEffect(() => { document.title = `${TITLES[page]} · 销售数据分析` }, [page])
 
   useEffect(() => { get<Bootstrap>('/meta/bootstrap').then(setMeta).catch(() => { /* 使用内置默认，保存时会再报后端错误 */ }) }, [])
   useEffect(() => { get<{ id: string; name: string; currency: string; last_amount: number | null; use_count: number }[]>('/products').then(setProducts).catch(() => { /* */ }) }, [])
