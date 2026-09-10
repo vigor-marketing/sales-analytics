@@ -153,7 +153,17 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHash)
   }, [page])
 
-  useEffect(() => { get<Bootstrap>('/meta/bootstrap').then(setMeta).catch(() => { /* 使用内置默认，保存时会再报后端错误 */ }) }, [])
+  // 字段字典（来源/跟进方式/丢单原因/成交原因/国别等）随页面切换与设置变更实时刷新
+  const loadMeta = useCallback(() => {
+    get<Bootstrap>('/meta/bootstrap').then(setMeta).catch(() => { /* 使用内置默认，保存时会再报后端错误 */ })
+  }, [])
+  useEffect(() => { loadMeta() }, [loadMeta])
+  useEffect(() => { loadMeta() }, [page, loadMeta])
+  useEffect(() => {
+    const onChanged = () => loadMeta()
+    window.addEventListener('sa:meta-changed', onChanged)
+    return () => window.removeEventListener('sa:meta-changed', onChanged)
+  }, [loadMeta])
   useEffect(() => { get<{ id: string; name: string; currency: string; last_amount: number | null; use_count: number }[]>('/products').then(setProducts).catch(() => { /* */ }) }, [])
   const checkNo = useCallback((v: string) => {
     if (!v.trim()) { setNoTaken(false); return }
@@ -320,7 +330,7 @@ export default function App() {
             <div className="col grow1"><label>新客户名称 *</label><input className="sa" style={{ width: '100%' }} value={customer} onChange={(e) => onCustomerChange(e.target.value)} placeholder="输入客户名称" /></div>
             <div className="col" style={{ flex: 1 }}>
               <label>国别</label>
-              <CountryPicker value={country} onChange={(v) => { setCountry(v); if (!locTouched) setUseLoc(v) }} placeholder="输入/选择国别" />
+              <CountryPicker value={country} extra={meta?.countries ?? []} onChange={(v) => { setCountry(v); if (!locTouched) setUseLoc(v) }} placeholder="输入/选择国别" />
             </div>
             <div className="col" style={{ flex: 1 }}>
               <label>使用地 <span className="hint">（默认同国别）</span></label>
@@ -425,14 +435,16 @@ export default function App() {
   )
 }
 
-function CountryPicker({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+function CountryPicker({ value, onChange, placeholder, extra = [] }: { value: string; onChange: (v: string) => void; placeholder?: string; extra?: string[] }) {
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
   const [focusI, setFocusI] = useState(-1)
   const box = useRef<HTMLDivElement>(null)
+  // 内置完整清单 + 设置页维护的自定义国别补充（联动「字段与选项设置」）
+  const all = [...extra, ...COUNTRIES].filter((c, i, a) => c && a.indexOf(c) === i)
   const shown = q.trim()
-    ? COUNTRIES.filter((c) => c.toLowerCase().includes(q.trim().toLowerCase()))
-    : COUNTRIES
+    ? all.filter((c) => c.toLowerCase().includes(q.trim().toLowerCase()))
+    : all
   useEffect(() => {
     const onDoc = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false) }
     document.addEventListener('mousedown', onDoc)
@@ -465,7 +477,7 @@ function CountryPicker({ value, onChange, placeholder }: { value: string; onChan
               <li onMouseDown={() => q.trim() && pick(q.trim())} title="按回车使用该手动输入值">“{q}”不在清单 → 手动使用（回车确认）</li>
             )}
           </ul>
-          <div className="hint" style={{ background: '#fff', padding: '3px 8px', border: '1px solid var(--line)', borderTop: 'none' }}>清单共 {COUNTRIES.length} 个国别 · 支持键盘 ↑↓ 回车选择</div>
+          <div className="hint" style={{ background: '#fff', padding: '3px 8px', border: '1px solid var(--line)', borderTop: 'none' }}>清单共 {all.length} 个国别 · 支持键盘 ↑↓ 回车选择</div>
         </div>
       )}
     </div>

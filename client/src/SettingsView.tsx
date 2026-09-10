@@ -20,6 +20,8 @@ export default function SettingsView() {
       const list = await post<string[]>(url, { action, value, newValue })
       setEditable((g) => g.map((x) => (x.code === code ? { ...x, values: list } : x)))
       setMsg(action === 'add' ? `已添加「${value}」` : action === 'remove' ? `已删除「${value}」` : `已改名为「${newValue}」`)
+      // 通知其它页面刷新字段字典，保证下拉选项即时联动
+      window.dispatchEvent(new Event('sa:meta-changed'))
     } catch (e) { setMsg((e as Error).message) }
   }
   return (
