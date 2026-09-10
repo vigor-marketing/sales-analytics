@@ -378,28 +378,28 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
               <span className="hint">（在询价基本信息中修改；成交状态由下方销售订单自动判定）</span>
             </div>
             <div style={{ margin: '6px 0', fontWeight: 600 }}>产品明细</div>
-            {/* 产品明细表头：与下方各输入框逐列对齐 */}
-            <div className="item-head">
-              <span style={{ flex: '1 1 240px', minWidth: 160 }}>产品名称</span>
-              <span style={{ flex: '0 0 100px' }}>数量</span>
-              <span style={{ flex: '0 0 130px' }}>金额 <i style={{ color: 'var(--danger)', fontStyle: 'normal' }}>*</i></span>
-              <span style={{ flex: '0 0 96px' }}>币种</span>
-              <span style={{ flex: '0 0 34px', textAlign: 'center' }}>操作</span>
-            </div>
-            {form.items.map((it, i) => (
-              <div key={i} className="row" style={{ marginBottom: 6, alignItems: 'center', flexWrap: 'nowrap' }}>
-                <div style={{ flex: '1 1 240px', minWidth: 160 }}>
+            {/* 产品明细：表头 + 数据行共用同一套网格列宽，保证逐列对齐 */}
+            <div className="item-scroll">
+              <div className="item-grid item-head">
+                <span>产品名称</span>
+                <span>数量</span>
+                <span>金额 <i style={{ color: 'var(--danger)', fontStyle: 'normal' }}>*</i></span>
+                <span>币种</span>
+                <span style={{ textAlign: 'center' }}>操作</span>
+              </div>
+              {form.items.map((it, i) => (
+                <div key={i} className="item-grid" style={{ marginBottom: 6 }}>
                   <ProductPicker value={it.productName} products={products} placeholder="产品名称（可手输，也可选择）"
                     onChange={(patch) => set({ items: form.items.map((x, j) => j === i ? { ...x, productName: patch.productName, currency: patch.currency ?? x.currency } : x) })} />
+                  <input className="sa" type="number" placeholder="数量" value={it.qty} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, qty: e.target.value } : x) })} />
+                  <input className="sa" type="number" placeholder="金额" value={it.amount} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, amount: e.target.value } : x) })} />
+                  <select className="sa" value={it.currency} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, currency: e.target.value } : x) })}>{CURS.map((c) => <option key={c}>{c}</option>)}</select>
+                  <span className="row-act">
+                    {form.items.length > 1 && <button className="icon-del" title="删除该行" aria-label={`删除第 ${i + 1} 行`} onClick={() => set({ items: form.items.filter((_, j) => j !== i) })}>×</button>}
+                  </span>
                 </div>
-                <input className="sa" style={{ flex: '0 0 100px', width: 100 }} type="number" placeholder="数量" value={it.qty} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, qty: e.target.value } : x) })} />
-                <input className="sa" style={{ flex: '0 0 130px', width: 130 }} type="number" placeholder="金额" value={it.amount} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, amount: e.target.value } : x) })} />
-                <select className="sa" style={{ flex: '0 0 96px', width: 96 }} value={it.currency} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, currency: e.target.value } : x) })}>{CURS.map((c) => <option key={c}>{c}</option>)}</select>
-                <span className="row-act">
-                  {form.items.length > 1 && <button className="icon-del" title="删除该行" aria-label={`删除第 ${i + 1} 行`} onClick={() => set({ items: form.items.filter((_, j) => j !== i) })}>×</button>}
-                </span>
-              </div>
-            ))}
+              ))}
+            </div>
             <button className="btn sm" onClick={() => set({ items: [...form.items, { productName: '', qty: '', amount: '', currency: 'USD' }] })}>＋ 添加产品</button>
             <div className="grid-eq3" style={{ marginTop: 8 }}>
               <div className="col fixed-h"><label>卡点/问题</label><textarea className="sa fixed-h" value={form.blockers} onChange={(e) => set({ blockers: e.target.value })} /></div>
