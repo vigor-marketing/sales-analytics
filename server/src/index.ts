@@ -60,7 +60,10 @@ app.get('/api/meta/bootstrap', (_req, res) => {
   const people = d.prepare('SELECT name, department, team_name, role FROM people ORDER BY team_name, name').all() as { name: string; department: string; team_name: string; role: string }[]
   const sales = people.filter((p) => p.role === 'sales').map((p) => ({ name: p.name, team: p.team_name }))
   const purchasers = people.filter((p) => ['采购部', '销售支持组'].includes(p.department)).map((p) => p.name)
-  ok(res, { sales, purchasers, sources: getSources(), methods: getFollowMethods(), lostReasons: getLostReasons(), winReasons: getWinReasons(), countries: getCountries(), fx: FX, month: todayStr().slice(0, 7) })
+  // 采购人员按小组（部门/组别）分组，供录入时逐级筛选
+  const purchaserTeams = people.filter((p) => ['采购部', '销售支持组'].includes(p.department))
+    .map((p) => ({ name: p.name, team: p.team_name || p.department }))
+  ok(res, { sales, purchasers, purchaserTeams, sources: getSources(), methods: getFollowMethods(), lostReasons: getLostReasons(), winReasons: getWinReasons(), countries: getCountries(), fx: FX, month: todayStr().slice(0, 7) })
 })
 
 // —— 产品档案：录入自动沉淀 + 查询/维护 ——

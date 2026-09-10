@@ -18,11 +18,12 @@ const emptyRow = (): ItemD => ({ productName: '', qty: '', amount: '', currency:
 const CURRENCIES = ['USD', 'CNY', 'EUR']
 const money = (n: number) => n.toLocaleString('zh-CN', { maximumFractionDigits: 2 })
 
-interface Bootstrap { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; methods?: string[]; lostReasons?: string[]; winReasons?: string[]; countries: string[]; fx: Record<string, number>; month: string }
+interface Bootstrap { sales: { name: string; team: string }[]; purchasers: string[]; purchaserTeams?: { name: string; team: string }[]; sources: string[]; methods?: string[]; lostReasons?: string[]; winReasons?: string[]; countries: string[]; fx: Record<string, number>; month: string }
 interface Saved { id: string; inquiryNo: string }
 const DEFAULTS: Bootstrap = {
   sales: [['Joey', '销售一组'], ['Vera', '销售一组'], ['Yolanda', '销售二组'], ['Jerric', '销售二组'], ['Loria', '销售三组']].map(([name, team]) => ({ name, team })),
   purchasers: ['Rita', 'Sunny'],
+  purchaserTeams: [{ name: 'Rita', team: '采购组' }, { name: 'Sunny', team: '采购组' }],
   sources: ['展会', '官网', '转介绍', '老客户复购', '平台询盘', '邮件直询', '其他'],
   methods: ['电话', '邮件', '微信', '拜访', '展会', '其他'],
   lostReasons: ['价格无优势', '交期太长', '技术方案不满足', '客户选择竞品', '客户预算取消', '项目暂停/延期', '联系不上客户'],
@@ -97,6 +98,8 @@ export default function App() {
   const [items, setItems] = useState<ItemD[]>([emptyRow()])
   const [handTotal, setHandTotal] = useState('')
   const [sales, setSales] = useState('')
+  const [salesTeam, setSalesTeam] = useState('')   // 销售人员：先选小组再选人
+  const [purTeam, setPurTeam] = useState('')       // 采购人员：先选小组再选人
   const [purchaser, setPurchaser] = useState('')
   const [source, setSource] = useState('')
   const [note, setNote] = useState('')
@@ -163,6 +166,15 @@ export default function App() {
   }, [quoteByCur, meta])
 
 
+  // 采购人员（含所属小组）：用于「采购小组 → 采购人员」逐级筛选
+  const purchaserList = useMemo(() => {
+    const list = meta?.purchaserTeams?.length
+      ? meta.purchaserTeams
+      : (meta?.purchasers ?? DEFAULTS.purchasers).map((n) => ({ name: n, team: '采购组' }))
+    return list
+  }, [meta])
+  const purchaserTeamList = useMemo(() => Array.from(new Set(purchaserList.map((x) => x.team))), [purchaserList])
+
   const salesTeams = useMemo(() => {
     const map = new Map<string, { name: string; team: string }[]>()
     ;(meta?.sales ?? []).forEach((s) => { const k = s.team || '未分组'; if (!map.has(k)) map.set(k, []); map.get(k)!.push(s) })
@@ -228,18 +240,30 @@ export default function App() {
         <div className="row">
           <div className="col w2"><label>询价号 *</label><input ref={noT} className="sa" value={no} onChange={(e) => { setNo(e.target.value); checkNo(e.target.value) }} onBlur={() => checkNo(no)} placeholder="手动录入，全库唯一" /></div>
           <div className="col w1"><label>日期 *</label><input className="sa" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+          <div className="col w1"><label>销售小组 <span className="hint">（先选组）</span></label>
+            <select className="sa" style={{ width: 140 }} value={salesTeam} onChange={(e) => { const v = e.target.value; setSalesTeam(v); if (sales && !(salesTeams.find(([t]) => t === v)?.[1] ?? []).some((x) => x.name === sales)) setSales('') }}>
+              <option value="">全部小组</option>
+              {salesTeams.map(([team]) => <option key={team} value={team}>{team}</option>)}
+            </select>
+          </div>
           <div className="col w2"><label>销售人员 *</label>
-            <select className="sa" style={{ width: 200 }} value={sales} onChange={(e) => setSales(e.target.value)}>
-              <option value="">— 请选择 —</option>
-              {salesTeams.map(([team, list]) => (
+            <select className="sa" style={{ width: 180 }} value={sales} onChange={(e) => setSales(e.target.value)}>
+              <option value="">{salesTeam ? `— 请选择${salesTeam}成员 —` : '— 请选择 —'}</option>
+              {salesTeams.filter(([team]) => !salesTeam || team === salesTeam).map(([team, list]) => (
                 <optgroup key={team} label={team}>{list.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}</optgroup>
               ))}
             </select>
           </div>
+          <div className="col w1"><label>采购小组 <span className="hint">（先选组）</span></label>
+            <select className="sa" style={{ width: 140 }} value={purTeam} onChange={(e) => { const v = e.target.value; setPurTeam(v); if (purchaser && !(purchaserList.filter((x) => !v || x.team === v)).some((x) => x.name === purchaser)) setPurchaser('') }}>
+              <option value="">全部小组</option>
+              {purchaserTeamList.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
           <div className="col w2"><label>采购人员 *</label>
-            <select className="sa" style={{ width: 200 }} value={purchaser} onChange={(e) => setPurchaser(e.target.value)}>
-              <option value="">— 请选择 —</option>
-              {(meta?.purchasers ?? DEFAULTS.purchasers).map((p) => <option key={p} value={p}>{p}</option>)}
+            <select className="sa" style={{ width: 180 }} value={purchaser} onChange={(e) => setPurchaser(e.target.value)}>
+              <option value="">{purTeam ? `— 请选择${purTeam}成员 —` : '— 请选择 —'}</option>
+              {purchaserList.filter((x) => !purTeam || x.team === purTeam).map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
             </select>
           </div>
           <div className="col w2"><label>询价来源 *</label>
