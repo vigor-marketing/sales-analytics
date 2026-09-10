@@ -51,6 +51,14 @@ ul.sugs li:hover, ul.sugs li.on { background: var(--brand-light) }
 .modal { background: #fff; border-radius: 12px; width: min(560px, 96vw); padding: 16px; box-shadow: 0 12px 32px rgba(0, 55, 112, .2) }
 /* 弹窗底部操作区：只是内容末尾的一行按钮（右下角），不做白底条/不做悬浮，绝不会遮挡上方内容 */
 .modal-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 12px; background: transparent; border: 0; border-top: 1px dashed var(--line) }
+/* 跟进指导弹窗：固定宽高（弹窗宽度、指导意见列表区、指导内容输入框都为固定尺寸，不随内容/窗口变化） */
+.gd-modal{width:720px;max-width:96vw}
+.gd-modal .gd-list{height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fbfcfe;margin-top:6px}
+.gd-modal .gd-list .gd-item-box{border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:8px;padding:8px 10px;margin-top:6px;background:#fff}
+.gd-modal .gd-list .gd-item-box:first-child{margin-top:0}
+.gd-modal .gd-input{width:100%;height:96px;min-height:96px;max-height:96px;resize:none;overflow:auto}
+.gd-modal .gd-meta-line{margin-top:6px}
+
 /* 弹窗首行（标题 + 关闭按钮）吸顶：内容再长也点得到关闭，不必滚回顶部 */
 .modal > div:first-child { position: sticky; top: 0; z-index: 3; background: #fff; padding-bottom: 8px; margin-top: -4px; padding-top: 4px; border-bottom: 1px solid var(--line2) }
 /* 弹窗打开时锁住背景滚动（滚动只发生在弹窗内部） */

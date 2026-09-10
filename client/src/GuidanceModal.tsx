@@ -33,7 +33,7 @@ export default function GuidanceModal({ record, people, readOnly, onClose, onSav
   }
   return (
     <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 'min(720px, 96vw)', maxHeight: '88vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="跟进指导">
+      <div className="modal gd-modal" style={{ maxHeight: '88vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="跟进指导">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 style={{ margin: 0 }}>跟进指导 · {record.inquiry_no}{readOnly ? '（只读）' : ''}</h3>
           <button className="btn sm" onClick={onClose}>关闭</button>
@@ -45,13 +45,16 @@ export default function GuidanceModal({ record, people, readOnly, onClose, onSav
         {record.detail && <div className="ro" style={{ marginTop: 6, maxHeight: 120, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{record.detail}</div>}
 
         <h4 className="sec-title" style={{ marginTop: 12 }}>指导意见（{list.length} 条）</h4>
-        {list.length === 0 && <div className="hint">暂无评论，可在下方写下跟进建议（如：先确认技术规格、下周约客户现场演示）。</div>}
-        {list.map((c) => (
-          <div key={c.id} style={{ border: '1px solid var(--line)', borderLeft: '3px solid var(--brand)', borderRadius: 8, padding: '8px 10px', marginTop: 6 }}>
-            <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{c.content}</div>
-            <div className="hint" style={{ marginTop: 4, fontSize: 11.5 }}>{c.by_name || '—'} · {String(c.created_at).slice(0, 16).replace('T', ' ')}</div>
-          </div>
-        ))}
+        {/* 固定高度 + 内部滚动：指导意见再多也不改变弹窗尺寸 */}
+        <div className="gd-list">
+          {list.length === 0 && <div className="hint">暂无评论，可在下方写下跟进建议（如：先确认技术规格、下周约客户现场演示）。</div>}
+          {list.map((c) => (
+            <div key={c.id} className="gd-item-box">
+              <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{c.content}</div>
+              <div className="hint" style={{ marginTop: 4, fontSize: 11.5 }}>{c.by_name || '—'} · {String(c.created_at).slice(0, 16).replace('T', ' ')}</div>
+            </div>
+          ))}
+        </div>
 
         {!readOnly && (<>
         <h4 className="sec-title" style={{ marginTop: 14 }}>新增指导</h4>
@@ -67,7 +70,8 @@ export default function GuidanceModal({ record, people, readOnly, onClose, onSav
         </div>
         <div className="col">
           <label>指导内容</label>
-          <textarea className="sa" rows={3} value={content} onChange={(e) => setContent(e.target.value)} placeholder="例如：这个卡点先找技术支持确认参数；报价可申请 5% 折扣；下周务必约客户现场演示。" />
+          {/* 固定长宽：宽 100%（弹窗固定 720px）、高 96px、禁止拖拽改变大小 */}
+          <textarea className="sa gd-input" value={content} onChange={(e) => setContent(e.target.value)} placeholder="例如：这个卡点先找技术支持确认参数；报价可申请 5% 折扣；下周务必约客户现场演示。" />
         </div>
         {err && <div className="msg err">{err}</div>}
         </>)}
