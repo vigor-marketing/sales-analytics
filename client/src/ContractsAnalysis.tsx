@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get } from './api'
+import { RANGE_LABEL, rangeDates, type RangeKey } from './dateRange'
 
 interface Item { product_name: string; amount: number; currency: string; qty: number | null }
 interface OrderRow {
@@ -142,7 +143,7 @@ function TrendChart({ data }: { data: { key: string; label: string; usd: number;
 }
 
 export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
-  const [sales, setSales] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [product, setProduct] = useState('')
+  const [sales, setSales] = useState(''); const [range, setRange] = useState<RangeKey>(''); const [product, setProduct] = useState('')
   const [rows, setRows] = useState<OrderRow[]>([]); const [stats, setStats] = useState<Stats | null>(null); const [msg, setMsg] = useState('')
   const [reasons, setReasons] = useState<ReasonData | null>(null)
   // 按产品分析：产品下拉（取自产品档案）
@@ -154,12 +155,13 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   const load = useCallback(async () => {
     try {
       const p = new URLSearchParams()
+      const { from, to } = rangeDates(range)
       if (sales) p.set('sales', sales); if (from) p.set('from', from); if (to) p.set('to', to); if (product) p.set('product', product)
       const d = await get<{ rows: OrderRow[]; stats: Stats }>(`/orders?${p.toString()}`)
       setRows(d.rows); setStats(d.stats)
       try { setReasons(await get<ReasonData>(`/analysis/reasons?${p.toString()}`)) } catch { setReasons(null) }
     } catch (e) { setMsg((e as Error).message) }
-  }, [sales, from, to, product])
+  }, [sales, range, product])
   useEffect(() => { void load() }, [load])
 
   const years = useMemo(() => {
@@ -247,6 +249,24 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
     return Array.from(m.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.usd - a.usd).slice(0, 10)
   }, [rows])
 
+  /** 按小组：成单次数、金额折USD、金额占比、平均转化周期、组内人数 */
+  const teamRows = useMemo(() => {
+    const m = new Map<string, { n: number; usd: number; cycles: number[]; people: Set<string> }>()
+    rows.forEach((r) => {
+      const team = teamOf.get(r.sales) ?? '未分组'
+      const a = m.get(team) ?? { n: 0, usd: 0, cycles: [], people: new Set<string>() }
+      a.n += 1; a.usd += r.usdApprox || 0; a.people.add(r.sales || '未指定')
+      if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
+      m.set(team, a)
+    })
+    const total = Array.from(m.values()).reduce((x, v) => x + v.usd, 0)
+    return Array.from(m.entries()).map(([name, v]) => ({
+      name, n: v.n, usd: Math.round(v.usd), people: v.people.size,
+      share: total ? Math.round((v.usd / total) * 1000) / 10 : 0,
+      avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
+    })).sort((a, b) => b.usd - a.usd)
+  }, [rows, teamOf])
+
   /** 按销售：成单次数、金额折USD、平均转化周期 */
   const salesRows = useMemo(() => {
     const m = new Map<string, { n: number; usd: number; cycles: number[] }>()
@@ -273,17 +293,18 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
       <section className="card panel-tight">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <h3 style={{ margin: 0, fontSize: 16 }}>销售订单分析</h3>
-          <span className="hint" style={{ flex: 1, minWidth: 180 }}>成交金额、转化周期、产品/销售/客户与成交·丢单原因（全部跟随下方筛选）</span>
+          <span className="hint" style={{ flex: 1, minWidth: 180 }}>{RANGE_LABEL[range]} · 成交金额、转化周期、小组/产品/销售/客户与成交·丢单原因（全部跟随筛选）</span>
           <select className="sa" value={sales} onChange={(e) => setSales(e.target.value)}><option value="">全部销售</option>{meta.sales.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}</select>
           <select className="sa" style={{ maxWidth: 220 }} value={product} onChange={(e) => setProduct(e.target.value)} title="按产品筛选（下拉可选）">
             <option value="">全部产品</option>
             {products.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
             {product && !products.some((p) => p.name === product) && <option value={product}>{product}</option>}
           </select>
-          <input className="sa" type="date" value={from} onChange={(e) => setFrom(e.target.value)} title="成单/丢单日期起" />
-          <input className="sa" type="date" value={to} onChange={(e) => setTo(e.target.value)} title="成单/丢单日期止" />
+          <select className="sa" value={range} onChange={(e) => setRange(e.target.value as RangeKey)} title="时间范围（成单日期 / 丢单日期口径）">
+            {(Object.keys(RANGE_LABEL) as RangeKey[]).map((k) => <option key={k} value={k}>{RANGE_LABEL[k]}</option>)}
+          </select>
           <button className="btn sm" onClick={() => void load()}>查询</button>
-          <button className="btn sm" onClick={() => { setSales(''); setFrom(''); setTo(''); setProduct('') }}>重置</button>
+          <button className="btn sm" onClick={() => { setSales(''); setRange(''); setProduct('') }}>重置</button>
         </div>
         {msg && <div className="msg err">{msg}</div>}
       </section>
@@ -329,6 +350,19 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
             ])}
           />
           {productRows.length > 15 && <div className="hint" style={{ fontSize: 11 }}>仅显示前 15 个产品</div>}
+        </Panel>
+
+        <Panel title="按小组" hint="小组维度：单数 · 金额 · 占比 · 平均周期 · 组内人数">
+          <DataTable
+            cols={['小组', '订单数', '金额（折USD）', '金额占比', '平均转化周期', '组内人数']}
+            empty="暂无成单小组"
+            rows={teamRows.map((t) => [t.name, `${t.n} 单`, money(t.usd), `${t.share}%`, t.avgCycle == null ? '—' : `${t.avgCycle} 天`, `${t.people} 人`])}
+          />
+          {teamRows.length > 0 && (
+            <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
+              合计 {money(teamRows.reduce((a, b) => a + b.usd, 0))} USD · {teamRows.reduce((a, b) => a + b.n, 0)} 单（小组归属按「销售人员 → 组别」，未匹配的归入未分组）
+            </div>
+          )}
         </Panel>
 
         <Panel title="按销售" hint="成单次数 · 金额 · 平均周期">
