@@ -264,7 +264,8 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                         const cs = r.comments ?? []
                         return (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
-                            <GuidanceNote all comments={cs} />
+                            {/* 表格内保持紧凑（悬停可看全部），完整展开在跟进详情弹窗里 */}
+                            <GuidanceNote compact comments={cs} />
                             {/* 跟进列表里可查看并新增指导；进入某个询价的跟进详情后只查看 */}
                             <button className="btn xs" onClick={() => setCommentOf(r)}
                               title={hit ? '查看全部跟进指导（详情内只读）' : cs.length ? '查看全部指导 / 继续追加' : '添加跟进指导'}>
