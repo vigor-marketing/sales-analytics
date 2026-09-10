@@ -262,9 +262,9 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
             </div>
             <div className="row" style={{ alignItems: 'center', gap: 18 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>客户星级</span>
-              <select className="sa" style={{ width: 130 }} value={form.stars} onChange={(e) => set({ stars: e.target.value })}>
+              <select className="sa" style={{ width: 150 }} value={form.stars} title={form.stars ? `${form.stars} 星` : ''} onChange={(e) => set({ stars: e.target.value })}>
                 <option value="">—</option>
-                {[1, 2, 3, 4, 5].map((n) => <option key={n} value={String(n)}>{'★'.repeat(n)}（{n} 星）</option>)}
+                {[1, 2, 3, 4, 5].map((n) => <option key={n} value={String(n)}>{`${n} 星 `}{'★'.repeat(n)}</option>)}
               </select>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>标签</span>
               <label className="chk"><input type="checkbox" checked={form.keyCust} onChange={(e) => set({ keyCust: e.target.checked })} /> <span className="tag kc">重点客户</span></label>

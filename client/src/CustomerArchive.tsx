@@ -43,7 +43,7 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
               <tr key={r.id} style={{ borderBottom: '1px solid var(--line2)' }}>
                 <td style={{ padding: '6px 8px', fontWeight: 600 }}>{r.name}</td>
                 <td style={{ padding: '6px 8px' }}>{r.country || '—'}</td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap', color: '#e3a008', fontWeight: 700 }}>{r.stars ? '★'.repeat(Number(r.stars)) : '—'}</td>
+                <td style={{ padding: '6px 8px', color: '#e3a008', fontWeight: 700, whiteSpace: 'nowrap' }} title={r.stars ? `${r.stars} 星` : ''}>{r.stars ? '★'.repeat(Number(r.stars)) : '—'}</td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><Tags kc={r.keyCustomer} kp={r.keyProjectCount} /></td>
                 <td style={{ padding: '6px 8px' }}>{r.inquiryCount}</td>
                 <td style={{ padding: '6px 8px' }} className="mono">{money(r.usdTotal)}</td>

@@ -241,12 +241,11 @@ export default function App() {
 
         <div className="row" style={{ alignItems: 'center', gap: 10, marginTop: 10 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>客户星级 *</span>
-          <select className="sa" style={{ width: 150 }} value={stars} onChange={(e) => setStars(e.target.value as '' | '1' | '2' | '3' | '4' | '5')}>
+          <select className="sa" style={{ width: 170 }} value={stars} title={stars ? `${stars} 星` : ''} onChange={(e) => setStars(e.target.value as '' | '1' | '2' | '3' | '4' | '5')}>
             <option value="">— 请选择 —</option>
-            {[1, 2, 3, 4, 5].map((n) => <option key={n} value={String(n)}>{'★'.repeat(n)}{'☆'.repeat(5 - n)}（{n} 星）</option>)}
+            {[1, 2, 3, 4, 5].map((n) => <option key={n} value={String(n)}>{`${n} 星 `}{'★'.repeat(n)}</option>)}
           </select>
-          {stars && <span className="hint" style={{ color: '#e3a008', fontWeight: 700 }}>{'★'.repeat(Number(stars))}{'☆'.repeat(5 - Number(stars))}</span>}
-          <span className="hint">必选；代表客户重要度/合作价值</span>
+          <span className="hint">必选；1–5 星代表客户重要度/合作价值</span>
         </div>
         <div className="row" style={{ alignItems: 'center', gap: 18 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>重点客户 *</span>
