@@ -35,6 +35,15 @@ const NAV: { key: PageKey; label: string; icon: JSX.Element }[] = [
   { key: 'products', label: '产品档案', icon: <CartIcon /> },
   { key: 'settings', label: '字段与选项设置', icon: <SettingIcon /> },
 ]
+const PAGES: PageKey[] = ['entry', 'manage', 'followups', 'contracts', 'customers', 'products', 'settings']
+/** 记忆当前页面：优先 URL hash，其次 localStorage，刷新后保持 */
+function initialPage(): PageKey {
+  const fromHash = location.hash.replace(/^#\/?/, '')
+  if (PAGES.includes(fromHash as PageKey)) return fromHash as PageKey
+  const saved = localStorage.getItem('sa:page') ?? ''
+  if (PAGES.includes(saved as PageKey)) return saved as PageKey
+  return 'entry'
+}
 const TITLES: Record<PageKey, string> = { entry: '询报价录入', manage: '询报价管理', followups: '询报价跟进', contracts: '销售订单管理', customers: '客户档案', products: '产品档案', settings: '字段与选项设置' }
 function Shell({ page, onNav, children }: { page: PageKey; onNav: (p: PageKey) => void; children: React.ReactNode }) {
   return (
@@ -96,7 +105,7 @@ export default function App() {
   const [cusList, setCusList] = useState<{ id: string; name: string; country: string | null; use_location: string | null }[]>([])
   const [custId, setCustId] = useState('')
   const [cusFocus, setCusFocus] = useState(false)
-  const [page, setPage] = useState<PageKey>('entry')
+  const [page, setPage] = useState<PageKey>(() => initialPage())
   const noT = useRef<HTMLInputElement>(null)
   useEffect(() => {
     const onDoc = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('.prod-pick')) setProdOpen(null) }
@@ -105,6 +114,17 @@ export default function App() {
   }, [])
   // 浏览器页签标题跟随当前页面
   useEffect(() => { document.title = `${TITLES[page]} · 销售数据分析` }, [page])
+  // 页面变化 → 写入 hash 与本地记忆（刷新后回到同一页，可分享链接）
+  useEffect(() => {
+    localStorage.setItem('sa:page', page)
+    if (location.hash !== `#${page}`) history.replaceState(null, '', `#${page}`)
+  }, [page])
+  // 支持浏览器前进/后退与手动改 hash
+  useEffect(() => {
+    const onHash = () => { const h = location.hash.replace(/^#\/?/, ''); if (PAGES.includes(h as PageKey) && h !== page) setPage(h as PageKey) }
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [page])
 
   useEffect(() => { get<Bootstrap>('/meta/bootstrap').then(setMeta).catch(() => { /* 使用内置默认，保存时会再报后端错误 */ }) }, [])
   useEffect(() => { get<{ id: string; name: string; currency: string; last_amount: number | null; use_count: number }[]>('/products').then(setProducts).catch(() => { /* */ }) }, [])
