@@ -15,13 +15,14 @@ const emptyRow = (): ItemD => ({ productName: '', qty: '', amount: '', currency:
 const CURRENCIES = ['USD', 'CNY', 'EUR']
 const money = (n: number) => n.toLocaleString('zh-CN', { maximumFractionDigits: 2 })
 
-interface Bootstrap { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; methods?: string[]; countries: string[]; fx: Record<string, number>; month: string }
+interface Bootstrap { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; methods?: string[]; lostReasons?: string[]; countries: string[]; fx: Record<string, number>; month: string }
 interface Saved { id: string; inquiryNo: string }
 const DEFAULTS: Bootstrap = {
   sales: [['Joey', '销售一组'], ['Vera', '销售一组'], ['Yolanda', '销售二组'], ['Jerric', '销售二组'], ['Loria', '销售三组']].map(([name, team]) => ({ name, team })),
   purchasers: ['Rita', 'Sunny'],
   sources: ['展会', '官网', '转介绍', '老客户复购', '平台询盘', '邮件直询', '其他'],
   methods: ['电话', '邮件', '微信', '拜访', '展会', '其他'],
+  lostReasons: ['价格无优势', '交期太长', '技术方案不满足', '客户选择竞品', '客户预算取消', '项目暂停/延期', '联系不上客户', '其他'],
   countries: ['中国', '美国', '加拿大', '阿联酋', '沙特', '印尼', '马来西亚', '俄罗斯', '英国', '德国', '其他'],
   fx: { USD: 1, CNY: 7.12, EUR: 0.92 },
   month: new Date().toISOString().slice(0, 7),
@@ -218,6 +219,11 @@ export default function App() {
       {/* 基本信息（含归属与来源） */}
       <div className="card">
         <h3 className="sec-title">基本信息 <small>必填：询价号 / 日期 / 销售人员 / 客户 / 采购人员 / 询价来源 / 重点客户</small></h3>
+        <div className="row" style={{ alignItems: 'center', gap: 10, marginBottom: 4 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>状态</span>
+          <span className="badge">跟进中</span>
+          <span className="hint">新录入的询价自动为「跟进中」；生成销售订单后自动变「已成单」，客户丢单时在「询报价管理 → 编辑」里标记「未成单」并填写原因</span>
+        </div>
         <div className="row">
           <div className="col w2"><label>询价号 *</label><input ref={noT} className="sa" value={no} onChange={(e) => { setNo(e.target.value); checkNo(e.target.value) }} onBlur={() => checkNo(no)} placeholder="手动录入，全库唯一" /></div>
           <div className="col w1"><label>日期 *</label><input className="sa" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>

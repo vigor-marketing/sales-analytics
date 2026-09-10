@@ -1,7 +1,7 @@
 /** sales-analytics v3 起步：询报价录入页 API */
 import cors from 'cors'
 import express from 'express'
-import { schema, ensurePeople, backfillProducts, migrateWonToOrders, getDb, getSources, getCountries, saveSources, getFollowMethods, saveFollowMethods, getSetting, setSetting, newId, nowIso, todayStr, text, num } from './db.js'
+import { schema, ensurePeople, backfillProducts, migrateWonToOrders, getDb, getSources, getCountries, saveSources, getFollowMethods, saveFollowMethods, getLostReasons, saveLostReasons, getSetting, setSetting, newId, nowIso, todayStr, text, num } from './db.js'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -31,7 +31,7 @@ app.get('/api/meta/bootstrap', (_req, res) => {
   const people = d.prepare('SELECT name, department, team_name, role FROM people ORDER BY team_name, name').all() as { name: string; department: string; team_name: string; role: string }[]
   const sales = people.filter((p) => p.role === 'sales').map((p) => ({ name: p.name, team: p.team_name }))
   const purchasers = people.filter((p) => ['采购部', '销售支持组'].includes(p.department)).map((p) => p.name)
-  ok(res, { sales, purchasers, sources: getSources(), methods: getFollowMethods(), countries: getCountries(), fx: FX, month: todayStr().slice(0, 7) })
+  ok(res, { sales, purchasers, sources: getSources(), methods: getFollowMethods(), lostReasons: getLostReasons(), countries: getCountries(), fx: FX, month: todayStr().slice(0, 7) })
 })
 
 // —— 产品档案：录入自动沉淀 + 查询/维护 ——
@@ -82,6 +82,17 @@ app.post('/api/follow-methods', (req, res) => {
 
 // —— 附件/图片上传（base64 JSON 方式，落盘 server/data/uploads） ——
 const UPLOAD_DIR = path.resolve(__dirname, '../data/uploads')
+// —— 丢单原因字典管理（设置页统一管理） ——
+app.get('/api/lost-reasons', (_req, res) => ok(res, getLostReasons()))
+app.post('/api/lost-reasons', (req, res) => {
+  const b = (req.body ?? {}) as { action?: string; value?: string; newValue?: string }
+  const list = getLostReasons()
+  if (b.action === 'add' && str(b.value)) { if (!list.includes(str(b.value))) list.push(str(b.value)); saveLostReasons(list); return ok(res, list) }
+  if (b.action === 'remove' && str(b.value)) { saveLostReasons(list.filter((x) => x !== str(b.value))); return ok(res, getLostReasons()) }
+  if (b.action === 'rename' && str(b.value) && str(b.newValue)) { saveLostReasons(list.map((x) => (x === str(b.value) ? str(b.newValue) : x))); return ok(res, getLostReasons()) }
+  fail(res, '未知操作')
+})
+
 app.post('/api/uploads', (req, res) => {
   const name = str(req.body?.name) || 'file'
   const dataUrl = str(req.body?.dataUrl)
@@ -108,11 +119,13 @@ app.get('/api/customers', (req, res) => {
   const where = parts.length ? `WHERE ${parts.join(' AND ')}` : ''
   const rows = d.prepare(`SELECT id, name, country, use_location, source, stars, created_at, updated_at FROM customers ${where} ORDER BY updated_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
   const out = rows.map((c) => {
-    const inqs = d.prepare('SELECT i.id, i.date, i.is_key_customer, i.is_key_project, (SELECT COUNT(*) FROM orders o WHERE o.inquiry_id = i.id) AS has_order, (SELECT COALESCE(SUM(amount),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw FROM inquiries i WHERE i.customer_id = ? ORDER BY i.date DESC').all(c.id) as { id: string; date: string; is_key_customer: number; is_key_project: number; has_order: number; raw: number }[]
+    const inqs = d.prepare('SELECT i.id, i.date, i.is_key_customer, i.is_key_project, i.is_lost, (SELECT COUNT(*) FROM orders o WHERE o.inquiry_id = i.id) AS has_order, (SELECT COALESCE(SUM(amount),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw FROM inquiries i WHERE i.customer_id = ? ORDER BY i.date DESC').all(c.id) as { id: string; date: string; is_key_customer: number; is_key_project: number; has_order: number; raw: number }[]
     let usd = 0
     inqs.forEach((i) => { const totals = d.prepare('SELECT currency, COALESCE(SUM(amount),0) AS t FROM inquiry_items WHERE inquiry_id = ? GROUP BY currency').all(i.id) as { currency: string; t: number }[]; totals.forEach((x) => { usd += (x.t || 0) / (FX2[x.currency] || 1) }) })
     const won = inqs.filter((i) => Number((i as Record<string, unknown>).has_order) > 0)
-    return { ...c, inquiryCount: inqs.length, lastDate: inqs[0]?.date ?? null, usdTotal: Math.round(usd), wonCount: won.length, winRate: inqs.length ? Math.round((won.length / inqs.length) * 1000) / 10 : 0, keyCustomer: inqs.some((i) => Number(i.is_key_customer) === 1) ? 1 : 0, keyProjectCount: inqs.filter((i) => Number(i.is_key_project) === 1).length }
+    const lost = inqs.filter((i) => Number((i as Record<string, unknown>).has_order) === 0 && Number((i as Record<string, unknown>).is_lost) === 1)
+    const decided = won.length + lost.length
+    return { ...c, inquiryCount: inqs.length, lastDate: inqs[0]?.date ?? null, usdTotal: Math.round(usd), wonCount: won.length, lostCount: lost.length, winRate: decided ? Math.round((won.length / decided) * 1000) / 10 : 0, keyCustomer: inqs.some((i) => Number(i.is_key_customer) === 1) ? 1 : 0, keyProjectCount: inqs.filter((i) => Number(i.is_key_project) === 1).length }
   })
   ok(res, out)
 })
@@ -128,10 +141,12 @@ app.get('/api/customers/:id', (req, res) => {
     const totals = fmtTotals(items)
     const usd = totals.reduce((s, x) => s + x.total / (FX2[x.currency] || 1), 0)
     const { won_flag, order_won_date, order_no, is_won: _w, won_date: _wd, ...ibase } = i
-    return { ...ibase, is_won: Number(won_flag) === 1 ? 1 : 0, won_date: str(order_won_date) || null, orderNo: str(order_no) || null, itemCount: items.length, totals, usdApprox: Math.round(usd) }
+    return { ...ibase, is_won: Number(won_flag) === 1 ? 1 : 0, status: inquiryStatus(Number(won_flag) === 1, (i as Record<string, unknown>).is_lost), won_date: str(order_won_date) || null, orderNo: str(order_no) || null, itemCount: items.length, totals, usdApprox: Math.round(usd) }
   })
   const wonList = list.filter((x) => Number((x as Record<string, unknown>).is_won) === 1)
-  ok(res, { ...c, inquiries: list, summary: { inquiryCount: list.length, usdTotal: Math.round(list.reduce((s, x) => s + (x.usdApprox || 0), 0)), wonCount: wonList.length, winRate: list.length ? Math.round((wonList.length / list.length) * 1000) / 10 : 0, wonUsd: Math.round(wonList.reduce((s, x) => s + (x.usdApprox || 0), 0)), keyProjectCount: list.filter((x) => Number((x as Record<string, unknown>).is_key_project) === 1).length } })
+  const lostList = list.filter((x) => (x as { status?: string }).status === 'lost')
+  const decided = wonList.length + lostList.length
+  ok(res, { ...c, inquiries: list, summary: { inquiryCount: list.length, usdTotal: Math.round(list.reduce((s, x) => s + (x.usdApprox || 0), 0)), wonCount: wonList.length, lostCount: lostList.length, winRate: decided ? Math.round((wonList.length / decided) * 1000) / 10 : 0, wonUsd: Math.round(wonList.reduce((s, x) => s + (x.usdApprox || 0), 0)), keyProjectCount: list.filter((x) => Number((x as Record<string, unknown>).is_key_project) === 1).length } })
 })
 
 // —— 询价号唯一性检查 ——
@@ -147,6 +162,7 @@ app.get('/api/options', (_req, res) => {
     editable: [
       { code: 'source', name: '询价来源', values: getSources() },
       { code: 'follow_method', name: '跟进方式', values: getFollowMethods() },
+      { code: 'lost_reason', name: '丢单原因（未成单原因）', values: getLostReasons() },
       { code: 'country_custom', name: '自定义国别补充（可选维护）', values: (() => { try { const a = JSON.parse(getSetting('countries', '')); return Array.isArray(a) ? a : [] } catch { return [] } })() },
     ],
     fixed: [
@@ -354,6 +370,7 @@ app.post('/api/orders', (req, res) => {
   const inq = d.prepare('SELECT * FROM inquiries WHERE id = ?').get(inquiryId) as Record<string, unknown> | undefined
   if (!inq) return fail(res, '询价不存在', 404)
   if (d.prepare('SELECT id FROM orders WHERE inquiry_id = ?').get(inquiryId)) return fail(res, '该询价已生成销售订单', 409)
+  if (Number(inq.is_lost) === 1) return fail(res, '该询价已标记「未成单」，请先撤销未成单后再生成销售订单', 409)
   const wonDate = str(req.body?.wonDate) || todayStr()
   if (!/^\d{4}-\d{2}-\d{2}$/.test(wonDate)) return fail(res, '成单日期格式应为 YYYY-MM-DD')
   if (wonDate < str(inq.date)) return fail(res, '成单日期不能早于询价日期')
@@ -432,6 +449,10 @@ app.get('/api/contracts', (req, res) => {
 
 // —— 询报价管理：列表（筛选/统计/详情/编辑/删除） ——
 const FX2: Record<string, number> = { USD: 1, CNY: 7.12, EUR: 0.92 }
+
+/** 询价状态自动判定：有销售订单 → 已成单；标记未成单 → 未成单（必填原因）；其余 → 跟进中 */
+export type InquiryStatus = 'won' | 'lost' | 'following'
+const inquiryStatus = (hasOrder: boolean, isLost: unknown): InquiryStatus => (hasOrder ? 'won' : Number(isLost) === 1 ? 'lost' : 'following')
 function fmtTotals(items: { currency: string; amount: number }[]): { currency: string; total: number }[] {
   const m = new Map<string, number>()
   items.forEach((it) => m.set(it.currency, (m.get(it.currency) ?? 0) + (num(it.amount) ?? 0)))
@@ -442,6 +463,7 @@ app.get('/api/inquiries', (req, res) => {
   const parts: string[] = []; const args: unknown[] = []
   const q = str(req.query.q), from = str(req.query.from), to = str(req.query.to)
   const sales = str(req.query.sales), purchaser = str(req.query.purchaser), source = str(req.query.source), country = str(req.query.country)
+  const statusQ = str(req.query.status)
   if (q) { parts.push('(i.inquiry_no LIKE ? OR c.name LIKE ? OR i.note LIKE ?)'); const l = `%${q}%`; args.push(l, l, l) }
   if (from) { parts.push('i.date >= ?'); args.push(from) }
   if (to) { parts.push('i.date <= ?'); args.push(to) }
@@ -449,9 +471,12 @@ app.get('/api/inquiries', (req, res) => {
   if (purchaser) { parts.push('i.purchaser = ?'); args.push(purchaser) }
   if (source) { parts.push('i.source = ?'); args.push(source) }
   if (country) { parts.push('(i.country = ? OR i.use_location = ?)'); args.push(country, country) }
+  if (statusQ === 'won') parts.push('o.id IS NOT NULL')
+  if (statusQ === 'lost') parts.push('o.id IS NULL AND COALESCE(i.is_lost, 0) = 1')
+  if (statusQ === 'following') parts.push('o.id IS NULL AND COALESCE(i.is_lost, 0) = 0')
   const where = parts.length ? `WHERE ${parts.join(' AND ')}` : ''
   const join = 'FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id'
-  const rows = d.prepare(`SELECT i.id, i.inquiry_no, i.date, i.country, i.use_location, i.sales, i.purchaser, i.source, i.hand_total, i.note, i.blockers, i.action_plan, i.support_needed, i.customer_stars, i.is_key_customer, i.is_key_project, i.created_at, c.name AS customer_name,
+  const rows = d.prepare(`SELECT i.id, i.inquiry_no, i.date, i.country, i.use_location, i.sales, i.purchaser, i.source, i.hand_total, i.note, i.blockers, i.action_plan, i.support_needed, i.customer_stars, i.is_key_customer, i.is_key_project, i.is_lost, i.lost_reason, i.lost_date, i.last_followup_at, i.next_followup_at, i.created_at, c.name AS customer_name,
       CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END AS _won, o.won_date AS _won_date, o.order_no AS _order_no, o.id AS _order_id
     ${join} LEFT JOIN orders o ON o.inquiry_id = i.id ${where} ORDER BY i.date DESC, i.created_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
   const ids = rows.map((r) => str(r.id))
@@ -465,15 +490,17 @@ app.get('/api/inquiries', (req, res) => {
     const t = fmtTotals(totalsOf.get(str(r.id)) ?? [])
     const usd = t.reduce((s, x) => s + x.total / (FX2[x.currency] || 1), 0)
     const { _won, _won_date, _order_no, _order_id, ...rest } = r
-    return { ...rest, is_won: Number(_won) === 1 ? 1 : 0, won_date: (str(_won_date) || null), orderNo: str(_order_no) || null, orderId: str(_order_id) || null, itemCount: (totalsOf.get(str(r.id)) ?? []).length, totals: t, usdApprox: Math.round(usd) }
+    return { ...rest, is_won: Number(_won) === 1 ? 1 : 0, status: inquiryStatus(Number(_won) === 1, r.is_lost), won_date: (str(_won_date) || null), orderNo: str(_order_no) || null, orderId: str(_order_id) || null, itemCount: (totalsOf.get(str(r.id)) ?? []).length, totals: t, usdApprox: Math.round(usd) }
   })
-  const totalN = (d.prepare(`SELECT COUNT(*) AS n FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id ${where}`).get(...args) as { n: number }).n
+  const totalN = (d.prepare(`SELECT COUNT(*) AS n FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id LEFT JOIN orders o ON o.inquiry_id = i.id ${where}`).get(...args) as { n: number }).n
   // 全量（当前筛选）累计金额 / 成单统计
   const allRows = out
   const usdTotal = Math.round(allRows.reduce((s, r) => s + (r.usdApprox || 0), 0))
   const wonCount = allRows.filter((r) => Number((r as Record<string, unknown>).is_won) === 1).length
   const wonUsd = Math.round(allRows.filter((r) => Number((r as Record<string, unknown>).is_won) === 1).reduce((s, r) => s + (r.usdApprox || 0), 0))
-  ok(res, { rows: out, meta: { total: totalN, shown: out.length, usdTotal, wonCount, winRate: allRows.length ? Math.round((wonCount / allRows.length) * 1000) / 10 : 0, wonUsd } })
+  const lostCount = allRows.filter((r) => (r as { status?: string }).status === 'lost').length
+  const decided = wonCount + lostCount
+  ok(res, { rows: out, meta: { total: totalN, shown: out.length, usdTotal, wonCount, lostCount, winRate: decided ? Math.round((wonCount / decided) * 1000) / 10 : 0, wonUsd } })
 })
 app.get('/api/inquiries/:id', (req, res) => {
   const d = getDb()
@@ -482,7 +509,7 @@ app.get('/api/inquiries/:id', (req, res) => {
   const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(req.params.id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
   const order = d.prepare('SELECT id, order_no, won_date, amount, currency, note FROM orders WHERE inquiry_id = ?').get(req.params.id) as Record<string, unknown> | undefined
   const { is_won: _legacyWon, won_date: _legacyWonDate, ...base } = r
-  ok(res, { ...base, is_won: order ? 1 : 0, won_date: order ? str(order.won_date) : null, order: order ?? null, items, totals: fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount }))) })
+  ok(res, { ...base, is_won: order ? 1 : 0, status: inquiryStatus(Boolean(order), r.is_lost), won_date: order ? str(order.won_date) : null, orderNo: order ? str(order.order_no) : null, order: order ?? null, items, totals: fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount }))) })
 })
 app.put('/api/inquiries/:id', (req, res) => {
   const d = getDb()
@@ -504,6 +531,20 @@ app.put('/api/inquiries/:id', (req, res) => {
   const supportNeeded = req.body?.supportNeeded !== undefined ? (text(req.body?.supportNeeded) || null) : (str(old.support_needed) || null)
   const starsIn = num(req.body?.customerStars)
   const customerStars = req.body?.customerStars !== undefined ? (starsIn && starsIn >= 1 && starsIn <= 5 ? Math.round(starsIn) : null) : (num(old.customer_stars) ?? null)
+  // 未成单（丢单）标记：有销售订单时不允许（需先删订单）
+  const hasOrder = Boolean(d.prepare('SELECT id FROM orders WHERE inquiry_id = ?').get(req.params.id))
+  const lostIn = req.body?.isLost
+  const isLost = lostIn !== undefined ? (lostIn ? 1 : 0) : (num(old.is_lost) ?? 0)
+  let lostReason = req.body?.lostReason !== undefined ? (text(req.body?.lostReason) || null) : (str(old.lost_reason) || null)
+  let lostDate = req.body?.lostDate !== undefined ? (str(req.body?.lostDate) || null) : (str(old.lost_date) || null)
+  if (isLost === 1) {
+    if (hasOrder) return fail(res, '该询价已生成销售订单，不能标记为未成单（如需作废请先删除销售订单）', 409)
+    if (!lostReason) return fail(res, '标记「未成单」必须填写丢单原因')
+    if (!lostDate) lostDate = todayStr()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(lostDate)) return fail(res, '丢单日期格式应为 YYYY-MM-DD')
+    if (lostDate < date) return fail(res, '丢单日期不能早于询价日期')
+  } else { lostReason = null; lostDate = null }
+
   const itemsProvided = Array.isArray(req.body?.items)
   const items = itemsProvided ? (req.body.items as unknown[]) : []
   const clean = items
@@ -512,7 +553,7 @@ app.put('/api/inquiries/:id', (req, res) => {
   if (itemsProvided && !clean.length) return fail(res, '至少一行产品（产品名称与金额>0）')
   const t = nowIso()
   d.transaction(() => {
-    d.prepare('UPDATE inquiries SET date = ?, country = ?, use_location = ?, sales = ?, purchaser = ?, source = ?, hand_total = ?, note = ?, is_key_customer = ?, is_key_project = ?, is_won = ?, blockers = ?, action_plan = ?, support_needed = ?, customer_stars = ?, updated_at = ? WHERE id = ?').run(date, country, useLocation, sales, purchaser, source, handTotal, note, keyCust, keyProj, isWon, blockers, actionPlan, supportNeeded, customerStars, t, req.params.id)
+    d.prepare('UPDATE inquiries SET date = ?, country = ?, use_location = ?, sales = ?, purchaser = ?, source = ?, hand_total = ?, note = ?, is_key_customer = ?, is_key_project = ?, is_won = ?, blockers = ?, action_plan = ?, support_needed = ?, customer_stars = ?, is_lost = ?, lost_reason = ?, lost_date = ?, updated_at = ? WHERE id = ?').run(date, country, useLocation, sales, purchaser, source, handTotal, note, keyCust, keyProj, isWon, blockers, actionPlan, supportNeeded, customerStars, isLost, lostReason, lostDate, t, req.params.id)
     if (itemsProvided) {
       d.prepare('DELETE FROM inquiry_items WHERE inquiry_id = ?').run(req.params.id)
       const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
@@ -526,7 +567,7 @@ app.put('/api/inquiries/:id', (req, res) => {
         .run(country || null, useLocation || null, source || null, customerStars, t, custId)
     }
   })()
-  ok(res, { id: req.params.id })
+  ok(res, { id: req.params.id, status: inquiryStatus(hasOrder, isLost) })
 })
 // 询报价不允许删除（如需作废请在编辑中处理；成交以订单为准）
 app.delete('/api/inquiries/:id', (_req, res) => fail(res, '询报价不允许删除', 403))

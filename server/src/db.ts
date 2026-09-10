@@ -88,6 +88,10 @@ export function schema(): void {
   try { db.exec('ALTER TABLE inquiries ADD COLUMN won_date TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN last_followup_at TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN next_followup_at TEXT') } catch { /* 已存在 */ }
+  // 未成单（丢单）：人工标记 + 必填原因；成交仍由销售订单自动判定
+  try { db.exec('ALTER TABLE inquiries ADD COLUMN is_lost INTEGER NOT NULL DEFAULT 0') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE inquiries ADD COLUMN lost_reason TEXT') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE inquiries ADD COLUMN lost_date TEXT') } catch { /* 已存在 */ }
 }
 export const getDb = () => db
 
@@ -110,6 +114,15 @@ export function getFollowMethods(): string[] {
   try { const arr = JSON.parse(getSetting('followMethods', '')); if (Array.isArray(arr) && arr.length) return arr.filter((x) => typeof x === 'string' && x.trim()) } catch { /* */ }
   return ['电话', '邮件', '微信', '拜访', '展会', '其他']
 }
+/** 丢单原因字典（设置中可管理；录入时下拉选 + 允许手填） */
+export function getLostReasons(): string[] {
+  try { const arr = JSON.parse(getSetting('lostReasons', '')); if (Array.isArray(arr) && arr.length) return arr.filter((x) => typeof x === 'string' && x.trim()) } catch { /* */ }
+  return ['价格无优势', '交期太长', '技术方案不满足', '客户选择竞品', '客户预算取消', '项目暂停/延期', '联系不上客户', '其他']
+}
+export function saveLostReasons(list: string[]): void {
+  setSetting('lostReasons', JSON.stringify(list.filter((x) => text(x)).slice(0, 100)))
+}
+
 export function saveFollowMethods(list: string[]): void {
   setSetting('followMethods', JSON.stringify(list.filter((x) => text(x)).slice(0, 100)))
 }

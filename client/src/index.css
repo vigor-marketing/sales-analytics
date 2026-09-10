@@ -87,6 +87,8 @@ ul.sugs li:hover, ul.sugs li.on { background: var(--brand-light) }
 .tag.kp::before{content:'◆';margin-right:3px;font-size:10px}
 .tag.won{background:linear-gradient(135deg,#34d399,#059669);color:#fff;box-shadow:0 1px 4px rgba(5,150,105,.4)}
 .tag.won::before{content:'✔';margin-right:3px;font-size:11px}
+.tag.lost{background:linear-gradient(135deg,#f87171,#dc2626);color:#fff;box-shadow:0 1px 4px rgba(220,38,38,.35)}
+.tag.lost::before{content:'✖';margin-right:3px;font-size:11px}
 .chk{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text);cursor:pointer}
 .chk input{cursor:pointer}
 
