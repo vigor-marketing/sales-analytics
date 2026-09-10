@@ -113,7 +113,7 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   )
 }
 
-interface InquiryDetail extends InqRow { country?: string | null; use_location?: string | null; hand_total?: number | null; note?: string | null; items?: { product_name: string; qty: number | null; amount: number; currency: string }[] }
+interface InquiryDetail extends InqRow { country?: string | null; use_location?: string | null; hand_total?: number | null; note?: string | null; blockers?: string | null; action_plan?: string | null; support_needed?: string | null; items?: { product_name: string; qty: number | null; amount: number; currency: string }[] }
 
 function InquiryDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   const [d, setD] = useState<InquiryDetail | null>(null)
@@ -148,6 +148,13 @@ function InquiryDetailModal({ id, onClose }: { id: string; onClose: () => void }
                 {(d.items || []).length === 0 && <tr><td colSpan={5} style={{ padding: 16, textAlign: 'center', color: 'var(--sub)' }}>暂无明细</td></tr>}
               </tbody>
             </table>
+            {(d.blockers || d.action_plan || d.support_needed) && (
+              <div style={{ marginTop: 8, fontSize: 13 }}>
+                {d.blockers && <div className="hint">卡点/问题：{d.blockers}</div>}
+                {d.action_plan && <div className="hint">行动计划：{d.action_plan}</div>}
+                {d.support_needed && <div className="hint">需要的支持：{d.support_needed}</div>}
+              </div>
+            )}
             {d.note && <div className="hint" style={{ marginTop: 8 }}>备注：{d.note}</div>}
           </>
         )}

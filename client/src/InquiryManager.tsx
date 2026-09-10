@@ -3,7 +3,7 @@ import { del, get, put } from './api'
 import { COUNTRIES } from './countries'
 
 interface TotalItem { currency: string; total: number }
-interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number }
+interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; blockers?: string | null; action_plan?: string | null; support_needed?: string | null }
 interface Detail extends Row { items: { product_name: string; qty: number | null; amount: number; currency: string }[] }
 interface MetaLite { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[] }
 
@@ -128,6 +128,13 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                 <tr key={i}><td style={{ padding: 6 }}>{i + 1}</td><td style={{ padding: 6 }}>{it.product_name}</td><td style={{ padding: 6 }}>{it.qty ?? '—'}</td><td style={{ padding: 6 }}>{money(it.amount)}</td><td style={{ padding: 6 }}>{it.currency}</td></tr>
               ))}</tbody>
             </table>
+            {(d.blockers || d.action_plan || d.support_needed) && (
+              <div style={{ marginTop: 8, fontSize: 13 }}>
+                {d.blockers && <div className="hint">卡点/问题：{d.blockers}</div>}
+                {d.action_plan && <div className="hint">行动计划：{d.action_plan}</div>}
+                {d.support_needed && <div className="hint">需要的支持：{d.support_needed}</div>}
+              </div>
+            )}
             {d.note && <div className="hint" style={{ marginTop: 8 }}>备注：{d.note}</div>}
           </>
         )}
@@ -138,9 +145,9 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
 
 function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onClose, onSaved }: { id: string; meta?: MetaLite; onClose: () => void; onSaved: () => void }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
-  const [form, setForm] = useState<{ inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; note: string; keyCust: boolean; keyProj: boolean; won: boolean; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
+  const [form, setForm] = useState<{ inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; note: string; blockers: string; actionPlan: string; supportNeeded: string; keyCust: boolean; keyProj: boolean; won: boolean; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
   const set = (patch: Partial<typeof form>) => setForm((f) => (f ? { ...f, ...patch } : f))
-  useEffect(() => { get<Detail>(`/inquiries/${id}`).then((d) => setForm({ inquiryNo: d.inquiry_no, customerName: d.customer_name, date: d.date, country: d.country || '', useLoc: d.use_location || '', sales: d.sales, purchaser: d.purchaser, source: d.source, handTotal: d.hand_total == null ? '' : String(d.hand_total), note: d.note || '', keyCust: Number(d.is_key_customer) === 1, keyProj: Number(d.is_key_project) === 1, won: Number(d.is_won) === 1, items: (d.items || []).map((it) => ({ productName: it.product_name, qty: it.qty == null ? '' : String(it.qty), amount: String(it.amount), currency: it.currency })) })).catch((e) => setErr((e as Error).message)) }, [id])
+  useEffect(() => { get<Detail>(`/inquiries/${id}`).then((d) => setForm({ inquiryNo: d.inquiry_no, customerName: d.customer_name, date: d.date, country: d.country || '', useLoc: d.use_location || '', sales: d.sales, purchaser: d.purchaser, source: d.source, handTotal: d.hand_total == null ? '' : String(d.hand_total), note: d.note || '', blockers: d.blockers || '', actionPlan: d.action_plan || '', supportNeeded: d.support_needed || '', keyCust: Number(d.is_key_customer) === 1, keyProj: Number(d.is_key_project) === 1, won: Number(d.is_won) === 1, items: (d.items || []).map((it) => ({ productName: it.product_name, qty: it.qty == null ? '' : String(it.qty), amount: String(it.amount), currency: it.currency })) })).catch((e) => setErr((e as Error).message)) }, [id])
   const save = async () => {
     if (!form) return
     if (!form.items.some((it) => it.productName.trim() && Number(it.amount) > 0)) return setErr('至少一行有效产品')
@@ -149,6 +156,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
       await put(`/inquiries/${id}`, {
         date: form.date, country: form.country, useLocation: form.useLoc || form.country, sales: form.sales, purchaser: form.purchaser, source: form.source,
         totalAmount: form.handTotal ? Number(form.handTotal) : undefined, note: form.note,
+        blockers: form.blockers, actionPlan: form.actionPlan, supportNeeded: form.supportNeeded,
         isKeyCustomer: form.keyCust, isKeyProject: form.keyProj, isWon: form.won,
         items: form.items.filter((it) => it.productName.trim() && Number(it.amount) > 0).map((it) => ({ productName: it.productName.trim(), qty: it.qty ? Number(it.qty) : undefined, amount: Number(it.amount), currency: it.currency })),
       })
@@ -195,6 +203,11 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
               <label className="chk"><input type="checkbox" checked={form.won} onChange={(e) => set({ won: e.target.checked })} /> <span className="tag won">已成单</span></label>
               <label className="chk"><input type="checkbox" checked={form.keyCust} onChange={(e) => set({ keyCust: e.target.checked })} /> <span className="tag kc">重点客户</span></label>
               <label className="chk"><input type="checkbox" checked={form.keyProj} onChange={(e) => set({ keyProj: e.target.checked })} /> <span className="tag kp">重点项目</span></label>
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <div className="col grow1"><label>卡点/问题</label><textarea className="sa" rows={2} value={form.blockers} onChange={(e) => set({ blockers: e.target.value })} /></div>
+              <div className="col grow1"><label>行动计划</label><textarea className="sa" rows={2} value={form.actionPlan} onChange={(e) => set({ actionPlan: e.target.value })} /></div>
+              <div className="col grow1"><label>需要的支持</label><textarea className="sa" rows={2} value={form.supportNeeded} onChange={(e) => set({ supportNeeded: e.target.value })} /></div>
             </div>
             <div className="row" style={{ marginTop: 8 }}>
               <div className="col grow1"><label>备注</label><textarea className="sa" rows={2} value={form.note} onChange={(e) => set({ note: e.target.value })} /></div>
