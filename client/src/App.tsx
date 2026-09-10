@@ -83,7 +83,8 @@ export default function App() {
   const [products, setProducts] = useState<{ id: string; name: string; currency: string; last_amount: number | null; use_count: number }[]>([])
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
-  const [cusList, setCusList] = useState<{ id: string; name: string; country: string | null }[]>([])
+  const [cusList, setCusList] = useState<{ id: string; name: string; country: string | null; use_location: string | null }[]>([])
+  const [custId, setCustId] = useState('')
   const [cusFocus, setCusFocus] = useState(false)
   const [page, setPage] = useState<PageKey>('entry')
   const noT = useRef<HTMLInputElement>(null)
@@ -94,14 +95,21 @@ export default function App() {
     if (!v.trim()) { setNoTaken(false); return }
     get<{ exists: boolean }>(`/inquiries/exists?no=${encodeURIComponent(v.trim())}`).then((r) => setNoTaken(r.exists)).catch(() => { /* */ })
   }, [])
-  const onCustomerChange = (v: string) => {
-    setCustomer(v)
-    if (!v.trim()) { setCusList([]); return }
-    get<{ id: string; name: string; country: string | null }[]>(`/customers?q=${encodeURIComponent(v.trim())}`).then((rows) => {
-      setCusList(rows.filter((r) => r.name !== v.trim()))
-    }).catch(() => { /* */ })
+  useEffect(() => {
+    if (!sales) { setCusList([]); setCustId(''); return }
+    get<{ id: string; name: string; country: string | null; use_location: string | null }[]>(`/customers?sales=${encodeURIComponent(sales)}`)
+      .then((list) => { setCusList(list); setCustId(''); setCustomer('') })
+      .catch(() => { /* */ })
+  }, [sales])
+  const selectCust = (id: string) => {
+    if (id === '__new__') { setCustId('__new__'); setCustomer(''); setCountry(''); setUseLoc(''); setLocTouched(false); return }
+    if (!id) { setCustId(''); setCustomer(''); return }
+    const c = cusList.find((x) => x.id === id)
+    if (!c) return
+    setCustId(id); setCustomer(c.name); setCountry(c.country || '')
+    setUseLoc(c.use_location || c.country || ''); setLocTouched(false)
   }
-  const pickCustomer = (name: string, c?: string | null) => { setCustomer(name); setCusList([]); if (c && !country) setCountry(c) }
+  const onCustomerChange = (v: string) => { setCustomer(v) }
 
   const quoteByCur = useMemo(() => {
     const m = new Map<string, number>()
@@ -120,13 +128,13 @@ export default function App() {
     return Array.from(map.entries())
   }, [meta])
 
-  const valid = Boolean(no.trim() && !noTaken && date && customer.trim() && sales && purchaser && source && keyCust !== '' && keyProj !== '') && items.some((it) => it.productName.trim() && (Number(it.amount) || 0) > 0)
+  const valid = Boolean(no.trim() && !noTaken && date && ((custId && custId !== '__new__') || customer.trim()) && sales && purchaser && source && keyCust !== '' && keyProj !== '') && items.some((it) => it.productName.trim() && (Number(it.amount) || 0) > 0)
 
   const save = async (again: boolean) => {
     setMsg(null)
     if (!no.trim() || noTaken) { setMsg({ t: 'err', text: noTaken ? `询价号 ${no} 已被占用` : '请填写询价号（手动必填，全库唯一）' }); noT.current?.focus(); return }
-    if (!customer.trim()) return setMsg({ t: 'err', text: '请填写客户名称' })
-    if (!sales) return setMsg({ t: 'err', text: '请选择销售人员' })
+    if (!sales) return setMsg({ t: 'err', text: '请先选择销售人员，再选择该销售名下的客户' })
+    if (custId === '__new__' ? !customer.trim() : !custId) return setMsg({ t: 'err', text: '请选择客户档案中的客户，或选择“＋ 新客户”并填写名称' })
     if (!purchaser) return setMsg({ t: 'err', text: '请选择采购人员' })
     if (!source) return setMsg({ t: 'err', text: '请选择询价来源（可在来源设置中维护）' })
     if (keyCust === '') return setMsg({ t: 'err', text: '请选择是否为重点客户（基本信息必填）' })
@@ -135,15 +143,15 @@ export default function App() {
     setBusy(true)
     try {
       const res = await post<Saved>('/inquiries', {
-        inquiryNo: no.trim(), date, customerName: customer.trim(), country: country.trim() || undefined,
+        inquiryNo: no.trim(), date, customerName: customer.trim(), country: country.trim() || undefined, clientId: custId && custId !== '__new__' ? custId : undefined,
         items: items.filter((it) => it.productName.trim() && Number(it.amount) > 0).map((it) => ({ productName: it.productName.trim(), qty: it.qty ? Number(it.qty) : undefined, amount: Number(it.amount), currency: it.currency })),
         sales, purchaser, source, totalAmount: handTotal ? Number(handTotal) : undefined, note: note.trim() || undefined,
         useLocation: useLoc.trim() || undefined, isKeyCustomer: keyCust === '1', isKeyProject: keyProj === '1',
       })
       setMsg({ t: 'ok', text: `已保存询价 ${res.inquiryNo}` })
       if (again) {
-        setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setKeyCust(''); setKeyProj(''); noT.current?.focus()
-      } else { setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setKeyCust(''); setKeyProj(''); setCustomer(''); setCountry(''); setUseLoc(''); setLocTouched(false); setSource('') }
+        setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setKeyCust(''); setKeyProj(''); setCustId(''); setCustomer(''); noT.current?.focus()
+      } else { setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setKeyCust(''); setKeyProj(''); setCustId(''); setCustomer(''); setCountry(''); setUseLoc(''); setLocTouched(false); setSource('') }
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) } finally { setBusy(false) }
   }
 
@@ -159,42 +167,79 @@ export default function App() {
     <Shell page={page} onNav={setPage}>
       {msg && <div className={`msg ${msg.t}`} role="status">{msg.t === 'ok' ? '✔' : '✖'} {msg.text}</div>}
 
-      {/* ① 基本信息 */}
+      {/* 基本信息（含归属与来源） */}
       <div className="card">
-        <h3 className="sec-title">基本信息 <small>必填：询价号 / 日期 / 客户名称</small></h3>
+        <h3 className="sec-title">基本信息 <small>必填：询价号 / 日期 / 销售人员 / 客户 / 采购人员 / 询价来源 / 重点客户</small></h3>
         <div className="row">
           <div className="col w2"><label>询价号 *</label><input ref={noT} className="sa" value={no} onChange={(e) => { setNo(e.target.value); checkNo(e.target.value) }} onBlur={() => checkNo(no)} placeholder="手动录入，全库唯一" /></div>
           <div className="col w1"><label>日期 *</label><input className="sa" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+          <div className="col w2"><label>销售人员 *</label>
+            <select className="sa" style={{ width: 200 }} value={sales} onChange={(e) => setSales(e.target.value)}>
+              <option value="">— 请选择 —</option>
+              {salesTeams.map(([team, list]) => (
+                <optgroup key={team} label={team}>{list.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}</optgroup>
+              ))}
+            </select>
+          </div>
+          <div className="col w2"><label>采购人员 *</label>
+            <select className="sa" style={{ width: 200 }} value={purchaser} onChange={(e) => setPurchaser(e.target.value)}>
+              <option value="">— 请选择 —</option>
+              {(meta?.purchasers ?? DEFAULTS.purchasers).map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+          <div className="col w2"><label>询价来源 *</label>
+            <select className="sa" style={{ width: 200 }} value={source} onChange={(e) => setSource(e.target.value)}>
+              <option value="">— 请选择 —</option>
+              {(meta?.sources ?? DEFAULTS.sources).map((x) => <option key={x} value={x}>{x}</option>)}
+            </select>
+          </div>
         </div>
         {noTaken && <div className="hint" style={{ color: 'var(--danger)' }}>该询价号已被占用，请换一个</div>}
-        <div className="row">
-          <div className="col grow1" style={{ position: 'relative' }}>
-            <label>客户名称 *</label>
-            <input className="sa" style={{ width: '100%' }} value={customer} onChange={(e) => onCustomerChange(e.target.value)} onFocus={() => customer.trim() && onCustomerChange(customer)} onBlur={() => setTimeout(() => setCusFocus(false), 150)} placeholder="输入名称；同名自动复用档案，新名称保存即建档" />
-            {cusFocus && cusList.length > 0 && (
-              <ul className="sugs" style={{ position: 'absolute', zIndex: 3, width: '100%', background: '#fff' }}>
-                {cusList.map((c) => <li key={c.id} onMouseDown={() => pickCustomer(c.name, c.country)}>{c.name}{c.country ? `（${c.country}）` : ''}</li>)}
-              </ul>
-            )}
-          </div>
-          <div className="col" style={{ flex: 1 }}>
-            <label>国别 <span className="hint">（可输入过滤或手动输入）</span></label>
-            <CountryPicker value={country} onChange={(v) => { setCountry(v); if (!locTouched) setUseLoc(v) }} placeholder="输入/选择国别" />
-          </div>
-          <div className="col" style={{ flex: 1 }}>
-            <label>使用地 <span className="hint">（默认同国别，可修改）</span></label>
-            <input className="sa" style={{ width: '100%' }} value={useLoc} onChange={(e) => { setUseLoc(e.target.value); setLocTouched(true) }} placeholder={country || '输入使用地，默认同国别'} />
+
+        <div className="row" style={{ marginTop: 6 }}>
+          <div className="col grow1">
+            <label>客户 * <span className="hint">（先选销售人员，再从该销售的客户档案中选择）</span></label>
+            <select className="sa" style={{ width: '100%' }} value={custId} disabled={!sales} onChange={(e) => selectCust(e.target.value)}>
+              <option value="">{sales ? '— 请选择客户 —' : '— 请先选择销售人员 —'}</option>
+              {cusList.map((c) => <option key={c.id} value={c.id}>{c.name}{c.country ? `（${c.country}）` : ''}</option>)}
+              <option value="__new__">＋ 新客户（输入新名称，保存即建档）</option>
+            </select>
+            {sales && cusList.length === 0 && <span className="hint">该销售名下暂无客户档案，可“＋ 新客户”新建，下次即可直接调用</span>}
           </div>
         </div>
+
+        {custId === '__new__' && (
+          <div className="row" style={{ marginTop: 6 }}>
+            <div className="col grow1"><label>新客户名称 *</label><input className="sa" style={{ width: '100%' }} value={customer} onChange={(e) => onCustomerChange(e.target.value)} placeholder="输入客户名称" /></div>
+            <div className="col" style={{ flex: 1 }}>
+              <label>国别</label>
+              <CountryPicker value={country} onChange={(v) => { setCountry(v); if (!locTouched) setUseLoc(v) }} placeholder="输入/选择国别" />
+            </div>
+            <div className="col" style={{ flex: 1 }}>
+              <label>使用地 <span className="hint">（默认同国别）</span></label>
+              <input className="sa" style={{ width: '100%' }} value={useLoc} onChange={(e) => { setUseLoc(e.target.value); setLocTouched(true) }} placeholder={country || '输入使用地'} />
+            </div>
+          </div>
+        )}
+        {custId && custId !== '__new__' && (
+          <div className="hint" style={{ marginTop: 6 }}>已选客户档案：<b>{customer}</b>{country ? ` · 国别 ${country}` : ''}{useLoc ? ` · 使用地 ${useLoc}` : ''}</div>
+        )}
+
         <div className="row" style={{ alignItems: 'center', gap: 18, marginTop: 10 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>重点客户 *</span>
           <label className="chk"><input type="radio" name="kc" checked={keyCust === '1'} onChange={() => setKeyCust('1')} /> <span className="tag kc">是</span></label>
           <label className="chk"><input type="radio" name="kc" checked={keyCust === '0'} onChange={() => setKeyCust('0')} /> 否</label>
           <span className="hint">必选；选“是”将在列表与详情以琥珀色块标注「重点客户」</span>
         </div>
+        <div className="col" style={{ marginTop: 8 }}><label>备注</label><textarea className="sa" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="客户要求、交期等补充说明（选填）" /></div>
+        <div className="actions">
+          <button className="btn pri" disabled={busy || !valid} onClick={() => void save(false)}>保存询价{busy ? '…' : ''}</button>
+          <button className="btn" disabled={busy || !valid} onClick={() => void save(true)}>保存并继续录下一条</button>
+          {!valid && <span className="hint">请补齐必填项（询价号唯一 / 销售 / 客户 / 采购 / 来源 / 重点客户 / 重点项目 / ≥1行明细金额大于0）</span>}
+        </div>
       </div>
 
-      {/* ② 产品明细 */}
+      {/* 询价明细 */}
       <div className="card">
         <h3 className="sec-title">询价明细 <small>可添加多个产品；总报价金额自动合计</small></h3>
         <div className="row" style={{ alignItems: 'center', gap: 18, marginBottom: 10 }}>
@@ -233,47 +278,13 @@ export default function App() {
             {quoteByCur.some(([c]) => c !== 'USD') && <span className="badge">折 USD 约 {money(Math.round(usdApprox))}</span>}
             {quoteByCur.length === 0 && <span className="hint">填一行金额后自动合计</span>}
           </div>
-          <div>
-            <div className="row" style={{ marginBottom: 0 }}>
-              <div className="col"><label>总金额（手填 · 选填）</label><input className="sa" style={{ width: 260 }} type="number" min="0" value={handTotal} onChange={(e) => setHandTotal(e.target.value)} placeholder="例如：12000" /></div>
-            </div>
-            <div className="hint" style={{ display: 'block', marginTop: 4 }}>总报价金额=各行金额自动合计（只读）；总金额可另行手填议价后的最终金额，如与报价一致可留空不填。</div>
+          <div className="row" style={{ marginBottom: 0 }}>
+            <div className="col w2"><label>总金额（手填 · 选填）</label><input className="sa" type="number" min="0" value={handTotal} onChange={(e) => setHandTotal(e.target.value)} placeholder="议价/最终金额" /></div>
           </div>
+          <div className="hint" style={{ display: 'block', marginTop: 4 }}>总报价金额=各行金额自动合计（只读）；总金额可另行手填最终/成交金额，与报价一致可留空。</div>
         </div>
       </div>
 
-      {/* ③ 归属与来源 */}
-      <div className="card">
-        <h3 className="sec-title">归属与来源 <small>人员名单自动取自工作台组织架构</small></h3>
-        <div className="row">
-          <div className="col w2"><label>销售人员 *</label>
-            <select className="sa" style={{ width: 220 }} value={sales} onChange={(e) => setSales(e.target.value)}>
-              <option value="">— 请选择 —</option>
-              {salesTeams.map(([team, list]) => (
-                <optgroup key={team} label={team}>{list.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}</optgroup>
-              ))}
-            </select>
-          </div>
-          <div className="col w2"><label>采购人员 *</label>
-            <select className="sa" style={{ width: 220 }} value={purchaser} onChange={(e) => setPurchaser(e.target.value)}>
-              <option value="">— 请选择 —</option>
-              {(meta?.purchasers ?? DEFAULTS.purchasers).map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </div>
-          <div className="col w2"><label>询价来源 *</label>
-            <select className="sa" style={{ width: 220 }} value={source} onChange={(e) => setSource(e.target.value)}>
-              <option value="">— 请选择 —</option>
-              {(meta?.sources ?? DEFAULTS.sources).map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="col"><label>备注</label><textarea className="sa" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="客户要求、交期等补充说明（选填）" /></div>
-        <div className="actions">
-          <button className="btn pri" disabled={busy || !valid} onClick={() => void save(false)}>保存询价{busy ? '…' : ''}</button>
-          <button className="btn" disabled={busy || !valid} onClick={() => void save(true)}>保存并继续录下一条</button>
-          {!valid && <span className="hint">请补齐必填项（询价号唯一、客户/销售/采购/来源、≥1行产品金额大于0）</span>}
-        </div>
-      </div>
     </Shell>
   )
 }

@@ -73,10 +73,13 @@ app.delete('/api/products/:id', (req, res) => {
 app.get('/api/customers', (req, res) => {
   const d = getDb()
   const q = str(req.query.q)
+  const salesQ = str(req.query.sales)
   const like = `%${q}%`
-  const rows = (q
-    ? d.prepare('SELECT id, name, country, use_location, source, created_at, updated_at FROM customers WHERE name LIKE ? OR country LIKE ? ORDER BY updated_at DESC LIMIT 500').all(like, like)
-    : d.prepare('SELECT id, name, country, use_location, source, created_at, updated_at FROM customers ORDER BY updated_at DESC LIMIT 500').all()) as Record<string, unknown>[]
+  const parts: string[] = []; const args: unknown[] = []
+  if (q) { parts.push('(name LIKE ? OR country LIKE ?)'); args.push(like, like) }
+  if (salesQ) { parts.push('EXISTS (SELECT 1 FROM inquiries i WHERE i.customer_id = customers.id AND i.sales = ?)'); args.push(salesQ) }
+  const where = parts.length ? `WHERE ${parts.join(' AND ')}` : ''
+  const rows = d.prepare(`SELECT id, name, country, use_location, source, created_at, updated_at FROM customers ${where} ORDER BY updated_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
   const out = rows.map((c) => {
     const inqs = d.prepare('SELECT id, date, is_key_customer, is_key_project, is_won, (SELECT COALESCE(SUM(amount),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw FROM inquiries i WHERE i.customer_id = ? ORDER BY date DESC').all(c.id) as { id: string; date: string; is_key_customer: number; is_key_project: number; is_won: number; raw: number }[]
     let usd = 0
@@ -146,7 +149,6 @@ app.post('/api/inquiries', (req, res) => {
   const d = getDb()
   const no = str(req.body?.inquiryNo)
   const date = str(req.body?.date) || todayStr()
-  const customerName = str(req.body?.customerName)
   const country = str(req.body?.country) || null
   const useLocation = str(req.body?.useLocation) || country
   const sales = str(req.body?.sales)
@@ -157,38 +159,60 @@ app.post('/api/inquiries', (req, res) => {
   const keyCust = req.body?.isKeyCustomer ? 1 : 0
   const keyProj = req.body?.isKeyProject ? 1 : 0
   const isWon = req.body?.isWon ? 1 : 0
+  const clientIdIn = str(req.body?.clientId)
+  const nc = (req.body?.newClient ?? null) as { name?: unknown; country?: unknown; useLocation?: unknown } | null
+  const newName = str(nc?.name)
   const items = (Array.isArray(req.body?.items) ? (req.body.items as unknown[]) : []) as { productName?: unknown; qty?: unknown; amount?: unknown; currency?: unknown }[]
+
   if (!no) return fail(res, '询价号必填')
   if (d.prepare('SELECT 1 FROM inquiries WHERE inquiry_no = ?').get(no)) return fail(res, `询价号 ${no} 已存在`, 409)
-  if (!customerName) return fail(res, '客户名称必填')
+  if (!clientIdIn && !newName) return fail(res, '请选择客户档案中的客户，或选择“新客户”并填写名称')
   if (!sales) return fail(res, '请选择销售人员')
   if (!purchaser) return fail(res, '请选择采购人员')
   if (!source) return fail(res, '请选择询价来源')
+
   const cleanItems = items
     .map((it, i) => ({ productName: str(it.productName), qty: num(it.qty), amount: num(it.amount) ?? 0, currency: ['USD', 'CNY', 'EUR'].includes(str(it.currency)) ? str(it.currency) : 'USD', sort: i + 1 }))
     .filter((it) => it.productName && it.amount > 0)
-  if (!cleanItems.length) return fail(res, '至少一行产品（产品名称与金额>0）')
+  if (!cleanItems.length) return fail(res, '至少一行询价明细（产品名称与金额大于 0）')
 
   const t = nowIso()
-  d.transaction(() => {
-    // 自动建档：同名客户复用，否则新建
-    let cus = d.prepare('SELECT * FROM customers WHERE name = ? COLLATE NOCASE').get(customerName) as { id: string; country: string | null } | undefined
-    if (!cus) {
+  let customer = clientIdIn ? (d.prepare('SELECT * FROM customers WHERE id = ?').get(clientIdIn) as Record<string, unknown> | undefined) : undefined
+  if (clientIdIn && !customer) return fail(res, '客户不存在', 404)
+  let createdCustomer = false
+  if (!customer) {
+    // 新客户：同名复用，否则建档
+    customer = d.prepare('SELECT * FROM customers WHERE name = ? COLLATE NOCASE').get(newName) as Record<string, unknown> | undefined
+    if (!customer) {
       const cid = newId()
-      d.prepare('INSERT INTO customers (id, name, country, use_location, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(cid, customerName, country, useLocation, source, t, t)
-      cus = { id: cid, country }
-    } else {
-      d.prepare('UPDATE customers SET country = COALESCE(?, country), use_location = COALESCE(?, use_location), source = COALESCE(?, source), updated_at = ? WHERE id = ?').run(country || null, useLocation || null, source || null, t, cus.id)
+      d.prepare('INSERT INTO customers (id, name, country, use_location, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(cid, newName, str(nc?.country) || country, str(nc?.useLocation) || useLocation, source, t, t)
+      customer = d.prepare('SELECT * FROM customers WHERE id = ?').get(cid) as Record<string, unknown>
+      createdCustomer = true
     }
-    const iid = newId()
+  }
+
+  // 组别推导（销售负责人 → 组织小组）
+  let teamName = str(req.body?.teamName) || text((customer as Record<string, unknown>).team_name)
+  if (!teamName && sales) {
+    const ppl = d.prepare('SELECT team_name FROM people WHERE name = ? OR name = ? LIMIT 1').get(sales, sales) as Record<string, unknown> | undefined
+    if (ppl) teamName = text(ppl.team_name)
+  }
+
+  if (!customer) return fail(res, '客户解析失败', 500)
+  const customerId = text(customer.id)
+  const customerCountry = text(customer.country)
+  const iid = newId()
+  d.transaction(() => {
+    d.prepare('UPDATE customers SET country = COALESCE(?, country), use_location = COALESCE(?, use_location), source = COALESCE(?, source), updated_at = ? WHERE id = ?')
+      .run(country || null, useLocation || null, source || null, t, customerId)
     d.prepare('INSERT INTO inquiries (id, inquiry_no, date, customer_id, country, use_location, sales, purchaser, source, hand_total, note, is_key_customer, is_key_project, is_won, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(iid, no, date, cus.id, country || cus.country, useLocation, sales, purchaser, source, handTotal, note, keyCust, keyProj, isWon, t, t)
+      .run(iid, no, date, customerId, country || customerCountry || null, useLocation || country, sales, purchaser, source, handTotal, note, keyCust, keyProj, isWon, t, t)
     const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
     cleanItems.forEach((it) => ins.run(newId(), iid, it.productName, it.qty, it.amount, it.currency, it.sort))
     upsertProducts(cleanItems, date, t)
   })()
-  const saved = d.prepare('SELECT id FROM inquiries WHERE inquiry_no = ?').get(no) as { id: string }
-  ok(res, { id: saved.id, inquiryNo: no }, 201)
+  ok(res, { id: iid, inquiryNo: no, customerId: customerId, createdCustomer, team: teamName || null }, 201)
 })
 
 // —— 询报价管理：列表（筛选/统计/详情/编辑/删除） ——
