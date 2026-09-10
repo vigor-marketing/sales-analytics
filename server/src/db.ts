@@ -28,6 +28,7 @@ export function schema(): void {
       id TEXT PRIMARY KEY, inquiry_no TEXT UNIQUE NOT NULL, date TEXT NOT NULL,
       customer_id TEXT NOT NULL REFERENCES customers(id), country TEXT, use_location TEXT,
       sales TEXT, purchaser TEXT, source TEXT, hand_total REAL, note TEXT,
+      is_key_customer INTEGER NOT NULL DEFAULT 0, is_key_project INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS inquiry_items (
       id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL REFERENCES inquiries(id) ON DELETE CASCADE,
@@ -40,6 +41,8 @@ export function schema(): void {
   `)
   // 老库补列（幂等）
   try { db.exec('ALTER TABLE inquiries ADD COLUMN use_location TEXT') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE inquiries ADD COLUMN is_key_customer INTEGER NOT NULL DEFAULT 0') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE inquiries ADD COLUMN is_key_project INTEGER NOT NULL DEFAULT 0') } catch { /* 已存在 */ }
 }
 export const getDb = () => db
 

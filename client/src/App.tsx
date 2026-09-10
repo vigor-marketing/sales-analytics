@@ -74,6 +74,8 @@ export default function App() {
   const [purchaser, setPurchaser] = useState('')
   const [source, setSource] = useState('')
   const [note, setNote] = useState('')
+  const [keyCust, setKeyCust] = useState(false)
+  const [keyProj, setKeyProj] = useState(false)
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [cusList, setCusList] = useState<{ id: string; name: string; country: string | null }[]>([])
@@ -128,12 +130,12 @@ export default function App() {
         inquiryNo: no.trim(), date, customerName: customer.trim(), country: country.trim() || undefined,
         items: items.filter((it) => it.productName.trim() && Number(it.amount) > 0).map((it) => ({ productName: it.productName.trim(), qty: it.qty ? Number(it.qty) : undefined, amount: Number(it.amount), currency: it.currency })),
         sales, purchaser, source, totalAmount: handTotal ? Number(handTotal) : undefined, note: note.trim() || undefined,
-        useLocation: useLoc.trim() || undefined,
+        useLocation: useLoc.trim() || undefined, isKeyCustomer: keyCust, isKeyProject: keyProj,
       })
       setMsg({ t: 'ok', text: `已保存询价 ${res.inquiryNo}` })
       if (again) {
-        setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); noT.current?.focus()
-      } else { setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setCustomer(''); setCountry(''); setUseLoc(''); setLocTouched(false); setSource('') }
+        setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setKeyCust(false); setKeyProj(false); noT.current?.focus()
+      } else { setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setKeyCust(false); setKeyProj(false); setCustomer(''); setCountry(''); setUseLoc(''); setLocTouched(false); setSource('') }
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) } finally { setBusy(false) }
   }
 
@@ -231,6 +233,11 @@ export default function App() {
               {(meta?.sources ?? DEFAULTS.sources).map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
+        </div>
+        <div className="row" style={{ alignItems: 'center', gap: 18, marginBottom: 8 }}>
+          <label className="chk"><input type="checkbox" checked={keyCust} onChange={(e) => setKeyCust(e.target.checked)} /> <span className="tag kc">重点客户</span></label>
+          <label className="chk"><input type="checkbox" checked={keyProj} onChange={(e) => setKeyProj(e.target.checked)} /> <span className="tag kp">重点项目</span></label>
+          <span className="hint">勾选后将在询报价管理列表中以彩色标签块展示</span>
         </div>
         <div className="col"><label>备注</label><textarea className="sa" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="客户要求、交期等补充说明（选填）" /></div>
         <div className="actions">

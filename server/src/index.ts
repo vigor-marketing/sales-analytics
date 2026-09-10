@@ -88,6 +88,8 @@ app.post('/api/inquiries', (req, res) => {
   const source = str(req.body?.source)
   const handTotal = num(req.body?.totalAmount)
   const note = text(req.body?.note) || null
+  const keyCust = req.body?.isKeyCustomer ? 1 : 0
+  const keyProj = req.body?.isKeyProject ? 1 : 0
   const items = (Array.isArray(req.body?.items) ? (req.body.items as unknown[]) : []) as { productName?: unknown; qty?: unknown; amount?: unknown; currency?: unknown }[]
   if (!no) return fail(res, '询价号必填')
   if (d.prepare('SELECT 1 FROM inquiries WHERE inquiry_no = ?').get(no)) return fail(res, `询价号 ${no} 已存在`, 409)
@@ -112,8 +114,8 @@ app.post('/api/inquiries', (req, res) => {
       d.prepare('UPDATE customers SET country = COALESCE(?, country), source = COALESCE(?, source), updated_at = ? WHERE id = ?').run(country || null, source || null, t, cus.id)
     }
     const iid = newId()
-    d.prepare('INSERT INTO inquiries (id, inquiry_no, date, customer_id, country, use_location, sales, purchaser, source, hand_total, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(iid, no, date, cus.id, country || cus.country, useLocation, sales, purchaser, source, handTotal, note, t, t)
+    d.prepare('INSERT INTO inquiries (id, inquiry_no, date, customer_id, country, use_location, sales, purchaser, source, hand_total, note, is_key_customer, is_key_project, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(iid, no, date, cus.id, country || cus.country, useLocation, sales, purchaser, source, handTotal, note, keyCust, keyProj, t, t)
     const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
     cleanItems.forEach((it) => ins.run(newId(), iid, it.productName, it.qty, it.amount, it.currency, it.sort))
   })()
@@ -142,7 +144,7 @@ app.get('/api/inquiries', (req, res) => {
   if (country) { parts.push('(i.country = ? OR i.use_location = ?)'); args.push(country, country) }
   const where = parts.length ? `WHERE ${parts.join(' AND ')}` : ''
   const join = 'FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id'
-  const rows = d.prepare(`SELECT i.id, i.inquiry_no, i.date, i.country, i.use_location, i.sales, i.purchaser, i.source, i.hand_total, i.note, i.created_at, c.name AS customer_name ${join} ${where} ORDER BY i.date DESC, i.created_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
+  const rows = d.prepare(`SELECT i.id, i.inquiry_no, i.date, i.country, i.use_location, i.sales, i.purchaser, i.source, i.hand_total, i.note, i.is_key_customer, i.is_key_project, i.created_at, c.name AS customer_name ${join} ${where} ORDER BY i.date DESC, i.created_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
   const ids = rows.map((r) => str(r.id))
   const totalsOf = new Map<string, { currency: string; amount: number }[]>()
   if (ids.length) {
@@ -177,17 +179,22 @@ app.put('/api/inquiries/:id', (req, res) => {
   const source = str(req.body?.source) || str(old.source)
   const handTotal = req.body?.totalAmount !== undefined ? num(req.body?.totalAmount) : num(old.hand_total)
   const note = req.body?.note !== undefined ? (text(req.body?.note) || null) : str(old.note) || null
-  const items = Array.isArray(req.body?.items) ? (req.body.items as unknown[]) : []
+  const keyCust = req.body?.isKeyCustomer !== undefined ? (req.body.isKeyCustomer ? 1 : 0) : (num(old.is_key_customer) ?? 0)
+  const keyProj = req.body?.isKeyProject !== undefined ? (req.body.isKeyProject ? 1 : 0) : (num(old.is_key_project) ?? 0)
+  const itemsProvided = Array.isArray(req.body?.items)
+  const items = itemsProvided ? (req.body.items as unknown[]) : []
   const clean = items
     .map((it, i) => ({ productName: str((it as { productName?: unknown }).productName), qty: num((it as { qty?: unknown }).qty), amount: num((it as { amount?: unknown }).amount) ?? 0, currency: ['USD', 'CNY', 'EUR'].includes(str((it as { currency?: unknown }).currency)) ? str((it as { currency?: unknown }).currency) : 'USD', sort: i + 1 }))
     .filter((x) => x.productName && x.amount > 0)
-  if (!clean.length) return fail(res, '至少一行产品（产品名称与金额>0）')
+  if (itemsProvided && !clean.length) return fail(res, '至少一行产品（产品名称与金额>0）')
   const t = nowIso()
   d.transaction(() => {
-    d.prepare('UPDATE inquiries SET date = ?, country = ?, use_location = ?, sales = ?, purchaser = ?, source = ?, hand_total = ?, note = ?, updated_at = ? WHERE id = ?').run(date, country, useLocation, sales, purchaser, source, handTotal, note, t, req.params.id)
-    d.prepare('DELETE FROM inquiry_items WHERE inquiry_id = ?').run(req.params.id)
-    const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    clean.forEach((it) => ins.run(newId(), req.params.id, it.productName, it.qty, it.amount, it.currency, it.sort))
+    d.prepare('UPDATE inquiries SET date = ?, country = ?, use_location = ?, sales = ?, purchaser = ?, source = ?, hand_total = ?, note = ?, is_key_customer = ?, is_key_project = ?, updated_at = ? WHERE id = ?').run(date, country, useLocation, sales, purchaser, source, handTotal, note, keyCust, keyProj, t, req.params.id)
+    if (itemsProvided) {
+      d.prepare('DELETE FROM inquiry_items WHERE inquiry_id = ?').run(req.params.id)
+      const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      clean.forEach((it) => ins.run(newId(), req.params.id, it.productName, it.qty, it.amount, it.currency, it.sort))
+    }
   })()
   ok(res, { id: req.params.id })
 })
