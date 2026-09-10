@@ -148,7 +148,6 @@ export default function FollowUps({ meta }: { meta: MetaLite }) {
               <select className="sa" style={{ width: 180 }} value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>
                 {methods.map((m) => <option key={m}>{m}</option>)}
               </select>
-              <span className="hint">选项可在「字段与选项设置 → 跟进方式」中维护</span>
             </div>
             <div className="col w2"><label>下次跟进时间</label><input className="sa" type="datetime-local" value={f.nextFollowupAt} onChange={(e) => setF({ ...f, nextFollowupAt: e.target.value })} /></div>
             <div className="col w2"><label>跟进人</label>
