@@ -1,16 +1,15 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { get, post } from './api'
 import { StatusChip } from './StatusChip'
 import { KeyTags } from './KeyTags'
 import GuidanceNote from './Guidance'
 import GuidanceModal from './GuidanceModal'
-import FollowupRecordModal from './FollowupRecordModal'
 
 interface MetaLite { sales: { name: string; team: string }[]; methods?: string[] }
 interface Lookup {
   id: string; inquiry_no: string; date: string; customer_name: string; country: string | null; use_location: string | null
   sales: string; purchaser: string; source: string; is_won: number; won_date?: string | null; orderNo?: string | null
-  productNames: string; usdApprox: number; totals: { currency: string; total: number }[]; itemCount?: number; feeTotal?: number; fee_currency?: string | null; grandTotals?: { currency: string; total: number }[]; quoteUsdApprox?: number
+  productNames: string; usdApprox: number; totals: { currency: string; total: number }[]; itemCount?: number
   last_followup_at?: string | null; next_followup_at?: string | null; status?: 'won' | 'lost' | 'following'; is_key_customer?: number; is_key_project?: number; items: { product_name: string; qty: number | null; amount: number; currency: string }[]
 }
 interface Att { url: string; name: string; size?: number }
@@ -37,13 +36,6 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   const [sales, setSales] = useState('')
   const [no, setNo] = useState('')
   const [hit, setHit] = useState<Lookup | null>(null)
-  // 项目行展开（多条跟进的项目：第一次点击先展开）；展开状态在切换页面后也保留
-  const [expanded, setExpanded] = useState<Set<string>>(() => {
-    try { const raw = sessionStorage.getItem('sa:fuExpanded'); return new Set<string>(raw ? JSON.parse(raw) as string[] : []) } catch { return new Set<string>() }
-  })
-  useEffect(() => { try { sessionStorage.setItem('sa:fuExpanded', JSON.stringify([...expanded])) } catch { /* 忽略 */ } }, [expanded])
-  // 单条记录弹窗：最新一条可编辑，较早的只读
-  const [recModal, setRecModal] = useState<{ record: Fu; editable: boolean; create?: boolean } | null>(null)
   const [lookErr, setLookErr] = useState('')
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; text: string } | null>(null)
   const [f, setF] = useState({ date: today(), method: methods[0] ?? '电话', summary: '', detail: '', nextFollowupAt: '', byName: '' })
@@ -51,6 +43,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   const [files, setFiles] = useState<Att[]>([])
   const [uploading, setUploading] = useState(false)
   const [dragP, setDragP] = useState(false); const [dragF, setDragF] = useState(false)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [commentOf, setCommentOf] = useState<Fu | null>(null)
   const photoInput = useRef<HTMLInputElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -58,31 +51,14 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   const [options, setOptions] = useState<{ id: string; inquiry_no: string; customer_name: string; date: string }[]>([])
   const [optLoading, setOptLoading] = useState(false)
   const [busy, setBusy] = useState(false)
-  const fitRef = useRef<HTMLDivElement | null>(null)
-  // 记住本页滚动位置（切换页面、展开项目、打开弹窗、保存后刷新都不跳回顶部）
-  const keepScroll = () => {
-    const el = fitRef.current
-    if (!el) return () => { /* 忽略 */ }
-    const top = el.scrollTop
-    return () => { requestAnimationFrame(() => { if (fitRef.current) fitRef.current.scrollTop = top }) }
-  }
-  const restoreScroll = () => {
-    const saved = Number(sessionStorage.getItem('sa:fuScroll') || '0')
-    if (saved > 0) requestAnimationFrame(() => { if (fitRef.current) fitRef.current.scrollTop = saved })
-  }
-  const onFitScroll = () => {
-    const el = fitRef.current
-    if (el) try { sessionStorage.setItem('sa:fuScroll', String(Math.round(el.scrollTop))) } catch { /* 忽略 */ }
-  }
 
   // 详情打开状态上报（用于页面右上角显示「返回询报价跟进」）
   useEffect(() => { onDetailChange?.(Boolean(hit)) }, [hit, onDetailChange])
   // 页面右上角点了「返回询报价跟进」：退出详情回到列表
   useEffect(() => {
     if (!resetSignal) return
-    const restore = keepScroll()
     setNo(''); setHit(null); setLookErr('')
-    restore()   // 返回列表时保持原来的滚动位置，不跳回顶部
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [resetSignal])
 
   // 进入跟进（仪表盘跳转 / 点击跟进记录行）时保留已选询价，仅手动切换销售才清空
@@ -115,52 +91,11 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   }, [sales, no])
   useEffect(() => { const t = setTimeout(() => { void lookup() }, 400); return () => clearTimeout(t) }, [lookup])
 
-  // 同一个项目（同一条询价）的多条跟进记录，在前端合并成一行
-  const groups = useMemo(() => {
-    const m = new Map<string, {
-      key: string; rep: Fu; count: number; records: Fu[]
-      dates: string[]; nextAt: string | null; firstDate: string
-      comments: { id: string; content: string; by_name: string | null; created_at: string }[]
-      photos: string[]; atts: Att[]; methods: string[]; byNames: string[]
-    }>()
-    list.forEach((r) => {
-      const g = m.get(r.inquiry_id)
-      if (!g) {
-        m.set(r.inquiry_id, {
-          key: r.inquiry_id, rep: r, count: 1, records: [r], dates: [r.date], nextAt: r.next_followup_at, firstDate: r.date,
-          comments: [...(r.comments ?? [])], photos: [...(r.photos ?? [])], atts: [...(r.attachments ?? [])],
-          methods: [r.method].filter(Boolean), byNames: r.by_name ? [r.by_name] : [],
-        })
-        return
-      }
-      g.count += 1
-      g.records.push(r)
-      g.dates.push(r.date)
-      // 列表按日期倒序返回，第一条即最新；下次跟进取最新一条有填写的那次
-      if (!g.nextAt && r.next_followup_at) g.nextAt = r.next_followup_at
-      if (r.date < g.firstDate) g.firstDate = r.date
-      g.comments.push(...(r.comments ?? []))
-      ;(r.photos ?? []).forEach((x) => { if (!g.photos.includes(x)) g.photos.push(x) })
-      ;(r.attachments ?? []).forEach((x) => { if (!g.atts.some((y) => y.url === x.url)) g.atts.push(x) })
-      if (r.method && !g.methods.includes(r.method)) g.methods.push(r.method)
-      if (r.by_name && !g.byNames.includes(r.by_name)) g.byNames.push(r.by_name)
-    })
-    // 指导按时间正序展示（最新的在最后）
-    m.forEach((g) => g.comments.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))))
-    return Array.from(m.values()).sort((a, b) => String(b.rep.date).localeCompare(String(a.rep.date)) || String(b.rep.created_at).localeCompare(String(a.rep.created_at)))
-  }, [list])
-
   const loadList = useCallback(async () => {
     try { setList(await get<Fu[]>(`/followups?sales=${encodeURIComponent(sales)}${hit ? `&inquiryId=${encodeURIComponent(hit.id)}` : ''}`)) }
     catch { /* */ }
   }, [sales, hit])
   useEffect(() => { void loadList() }, [loadList])
-  // 页面（重新）挂载后、列表渲染完成再恢复上次的滚动位置
-  useEffect(() => {
-    if (!list.length) return
-    const t = setTimeout(restoreScroll, 60)
-    return () => clearTimeout(t)
-  }, [list.length])
 
   const upload = async (files2: FileList | null, kind: 'photo' | 'file') => {
     if (!files2?.length) return
@@ -196,7 +131,6 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   }
 
   return (
-    <div className="page-fit" ref={fitRef} onScroll={onFitScroll}>
     <div className="card">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0 }}>询报价跟进</h3>
@@ -233,7 +167,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
             <span className="hint">询价 {hit.inquiry_no}</span>
             <span style={{ flex: 1 }} />
             <button className="btn sm" title="返回询报价跟进列表"
-              onClick={() => { const restore = keepScroll(); setNo(''); setHit(null); setLookErr(''); restore() }}>← 返回跟进列表</button>
+              onClick={() => { setNo(''); setHit(null); setLookErr(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>← 返回跟进列表</button>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', fontSize: 13 }}>
             <span>询价号 <b className="mono">{hit.inquiry_no}</b></span>
@@ -243,8 +177,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
             <span>采购 <b>{hit.purchaser}</b></span>
             <span>来源 <b>{hit.source}</b></span>
             <span>询价日期 <b className="mono">{hit.date}</b></span>
-            <span>产品合计 <b>{(hit.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</b>{(hit.feeTotal ?? 0) > 0 ? <> ＋ 费用 <b>{money(hit.feeTotal)} {hit.fee_currency || 'USD'}</b></> : null}</span>
-            <span>总报价（含费用） <b style={{ color: 'var(--brand)' }}>{(hit.grandTotals || hit.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</b>（≈USD {money(hit.usdApprox)}）</span>
+            <span>报价合计 <b>{(hit.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</b>（≈USD {money(hit.usdApprox)}）</span>
             <span>状态 <b><StatusChip status={hit.status ?? (Number(hit.is_won) === 1 ? 'won' : 'following')} /></b></span>
             <span>标签 <b><KeyTags kc={hit.is_key_customer} kp={hit.is_key_project} compact /></b></span>
             <span>最近跟进 <b className="mono">{hit.last_followup_at || '—'}</b></span>
@@ -339,17 +272,6 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
         </div>
       )}
 
-      {recModal && (
-        <FollowupRecordModal record={recModal.record} editable={recModal.editable} create={recModal.create}
-          onClose={() => setRecModal(null)}
-          onSaved={() => {
-            const restore = keepScroll()
-            void loadList()
-            if (recModal.create) { setMsg({ t: 'ok', text: `已建立跟进（${recModal.record.inquiry_no}）` }); setRecModal(null) }
-            setTimeout(restore, 80)
-          }} />
-      )}
-
       {commentOf && (
         // 未进入详情时可新增；已进入跟进详情则只读
         <GuidanceModal record={commentOf} people={meta.sales.map((x) => x.name)} readOnly={Boolean(hit)}
@@ -357,166 +279,95 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
       )}
 
       <div style={{ marginTop: 14 }}>
-        <div style={{ fontWeight: 700, marginBottom: 6 }}>
-          {hit
-            ? `跟进记录（本询价 ${list.length} 条明细）`
-            : `跟进记录（按项目合并：${groups.length} 个项目 / ${list.length} 条记录${sales ? ` · ${sales} 名下` : ''}）`}
-        </div>
-        <div className="tablewrap">
-          <table className="grid data-table fixed-table follow-table" style={{ fontSize: 12.5, minWidth: 1330 }}>
-            <colgroup>
-              {hit
-                ? <><col style={{ width: 95 }} /><col style={{ width: 215 }} /><col style={{ width: 105 }} /><col style={{ width: 80 }} /><col style={{ width: 210 }} />
-                  <col style={{ width: 240 }} /><col style={{ width: 110 }} /><col style={{ width: 150 }} /><col style={{ width: 115 }} /></>
-                : <><col style={{ width: 95 }} /><col style={{ width: 215 }} /><col style={{ width: 105 }} /><col style={{ width: 80 }} /><col style={{ width: 140 }} />
-                  <col style={{ width: 200 }} /><col style={{ width: 240 }} /><col style={{ width: 110 }} /><col style={{ width: 150 }} /></>}
-            </colgroup>
-            <thead><tr>{(hit
-              ? ['跟进日期', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间']
-              : ['最近跟进', '询价号 / 客户', '销售 / 跟进人', '方式', '跟进次数', '最近简述与内容', '跟进指导（全部）', '图片 / 附件', '下次跟进']
-            ).map((h) => <th key={h} className={h === '下次跟进' || h === '最近跟进' || h === '录入时间' ? 'cell-datetime' : (h === '询价号 / 客户' ? 'cell-left' : undefined)} title={h === '跟进次数' ? '同一个项目的多条跟进记录已在前端合并，点击整行可查看该项目全部记录' : undefined}>{h}</th>)}</tr></thead>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>跟进记录{hit ? `（本询价 ${list.length} 条）` : sales ? `（${sales} 名下 ${list.length} 条）` : ''}</div>
+        <div className="tablewrap" style={{ overflowX: 'auto' }}>
+          <table className="grid follow-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <thead><tr>{['跟进日期', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
             <tbody>
-              {(hit ? list.map((r) => ({
-                key: r.id, rep: r, count: 1, records: [r], firstDate: r.date, dates: [r.date], nextAt: r.next_followup_at,
-                comments: [...(r.comments ?? [])], photos: [...(r.photos ?? [])], atts: [...(r.attachments ?? [])],
-                methods: [r.method].filter(Boolean), byNames: r.by_name ? [r.by_name] : [],
-              })) : groups).map((g) => {
-                const r = g.rep
+              {list.map((r) => {
                 const detail = r.detail || r.content || ''
-                const photos = g.photos
-                const atts = g.atts
-                const merged = !hit && g.count > 1
-                const rangeTxt = g.firstDate === r.date ? r.date : `${g.firstDate} ~ ${r.date}`
-                const open = expanded.has(g.key)
+                const longText = detail.length > 90
+                const opened = expanded.has(r.id)
+                const photos = r.photos || []
+                const atts = r.attachments || []
                 return (
-                  <Fragment key={g.key}>
-                  <tr className={'row-click' + (open ? ' fu-open' : '')} title={merged ? `该项目 ${g.count} 条跟进：点击展开，再点最新一条可编辑、点较早的只能查看` : '点击查看/编辑这条跟进记录'}
+                  <tr key={r.id} className="row-click" title="点击进入该询价的跟进" style={{ borderBottom: '1px solid var(--line2)' }}
                     onClick={(e) => {
-                      // 行内按钮（查看/追加指导）不触发展开
+                      // 行内按钮（查看/追加指导）不触发进入跟进
                       if ((e.target as HTMLElement).closest('button,a,input,select,textarea')) return
-                      const restore = keepScroll()
-                      if (merged) {
-                        setExpanded((prev) => { const n = new Set(prev); if (n.has(g.key)) n.delete(g.key); else n.add(g.key); return n })
-                        restore()
-                        return
-                      }
-                      // 单条记录的项目：直接打开该记录（是该询价最新一条时可编辑，否则只读）
-                      setRecModal({ record: r, editable: hit ? list[0]?.id === r.id : true })
-                      restore()
+                      keepNoRef.current = true
+                      setSales(r.sales); setNo(r.inquiry_no)
+                      window.scrollTo({ top: 0, behavior: 'smooth' })
                     }}>
-                    <td className="mono cell-datetime" title={merged ? `最近跟进 ${r.date}（首次 ${g.firstDate}）` : r.date}>{r.date}</td>
-                    <td className="cell-left" title={`${r.inquiry_no} · ${r.customer_name || '—'}${Number(r.is_key_customer) === 1 ? ' · 重点客户' : ''}${Number(r.is_key_project) === 1 ? ' · 重点项目' : ''}`}>
-                      <span className="mono" style={{ fontWeight: 600 }}>{r.inquiry_no}</span>
-                      <span className="cell-note">{r.customer_name}</span>
-                      {(Number(r.is_key_customer) === 1 || Number(r.is_key_project) === 1) && <span style={{ marginLeft: 6, display: 'inline-flex', verticalAlign: 'middle' }}><KeyTags kc={r.is_key_customer} kp={r.is_key_project} compact /></span>}
+                    <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.date}</td>
+                    <td style={{ padding: '7px 8px' }}>
+                      <div className="mono" style={{ fontWeight: 600 }}>{r.inquiry_no}</div>
+                      <div style={{ marginTop: 2 }}>{r.customer_name}</div>
+                      {(Number(r.is_key_customer) === 1 || Number(r.is_key_project) === 1) && (
+                        <div style={{ marginTop: 3 }}><KeyTags kc={r.is_key_customer} kp={r.is_key_project} compact /></div>
+                      )}
                     </td>
-                    <td title={r.by_name && r.by_name !== r.sales ? `销售 ${r.sales || '—'} · 跟进人 ${r.by_name}` : (r.sales || '—')}>
-                      <span style={{ fontWeight: 600 }}>{r.sales || '—'}</span>
-                      {r.by_name && r.by_name !== r.sales && <span className="cell-note">跟进人 {r.by_name}</span>}
+                    <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontWeight: 600 }}>{r.sales || '—'}</div>
+                      {r.by_name && r.by_name !== r.sales && <div className="hint" style={{ fontSize: 11 }}>跟进人 {r.by_name}</div>}
                     </td>
-                    <td title={g.methods.length > 1 ? `该项目用过：${g.methods.join('、')}` : (r.method || '—')} style={{ textAlign: 'center' }}>
-                      <span className="badge">{hit ? (r.method || '—') : (g.methods[0] || '—')}</span>
+                    <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}><span className="badge">{r.method || '—'}</span></td>
+                    <td style={{ padding: '7px 8px', minWidth: 260, maxWidth: 460 }}>
+                      {r.summary && <div style={{ fontWeight: 600 }}>{r.summary}</div>}
+                      {detail
+                        ? <div className={'hint follow-detail' + (longText && !opened ? ' clamp2' : '')} style={{ marginTop: r.summary ? 2 : 0, whiteSpace: 'pre-wrap' }}>{detail}</div>
+                        : (!r.summary && <span className="hint">—</span>)}
+                      {longText && (
+                        <button className="linkbtn" onClick={() => setExpanded((prev) => { const n = new Set(prev); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n })}>
+                          {opened ? '收起' : `展开全文（${detail.length} 字）`}
+                        </button>
+                      )}
                     </td>
-                    {!hit && (
-                      <td style={{ textAlign: 'center' }} title={merged ? `同一个项目共 ${g.count} 条跟进记录（${rangeTxt}）` : '该项目目前 1 条跟进记录'}>
-                        <span className={'badge' + (merged ? ' new' : '')}>{g.count} 条</span>
-                      </td>
-                    )}
-                    <td title={([merged ? `【${g.count} 条跟进合并】最近一条 ${r.date}：` : '', r.summary, detail].filter(Boolean).join(' ｜ ')) || '—'}>
-                      {r.summary && <span style={{ fontWeight: 600 }}>{r.summary}</span>}
-                      {detail && <span className={r.summary ? 'cell-note' : ''}>{detail}</span>}
-                      {!r.summary && !detail && <span className="hint">—</span>}
-                    </td>
-                    <td className="cell-guidance">
+                    <td style={{ padding: '7px 8px', minWidth: 130 }}>
                       {(() => {
-                        const cs = hit ? (r.comments ?? []) : g.comments
+                        const cs = r.comments ?? []
                         return (
-                          <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 6, maxWidth: '100%' }}>
-                            <GuidanceNote all comments={cs} />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                            <GuidanceNote compact comments={cs} />
                             {/* 跟进列表里可查看并新增指导；进入某个询价的跟进详情后只查看 */}
-                            <button className="btn xs" style={{ flex: '0 0 auto' }} onClick={() => setCommentOf(r)}
+                            <button className="btn xs" onClick={() => setCommentOf(r)}
                               title={hit ? '查看全部跟进指导（详情内只读）' : cs.length ? '查看全部指导 / 继续追加' : '添加跟进指导'}>
                               {hit ? '查看指导' : cs.length ? '查看/追加指导' : '＋ 添加指导'}
                             </button>
-                          </span>
+                          </div>
                         )
                       })()}
                     </td>
-                    <td title={[merged ? `（该项目 ${g.count} 条记录合计）` : '', ...photos.map((_, i) => `图片 ${i + 1}`), ...atts.map((a) => a.name)].filter(Boolean).join('、') || '—'}>
+                    <td style={{ padding: '7px 8px', minWidth: 150 }}>
                       {photos.length === 0 && atts.length === 0 ? <span className="hint">—</span> : (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                          {photos.length > 0 && <span className="badge">🖼 {photos.length}</span>}
-                          {atts.length > 0 && <span className="filelink" style={{ maxWidth: 120 }}>📎 {atts.length} 个附件</span>}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          {photos.map((p) => (
+                            <a key={p} href={p} target="_blank" rel="noreferrer" title="查看原图">
+                              <img src={p} alt="图" style={{ width: 44, height: 34, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line)', display: 'block' }} />
+                            </a>
+                          ))}
+                          {atts.length > 0 && (
+                            <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                              {atts.map((a) => (
+                                <a key={a.url} className="filelink" href={a.url} target="_blank" rel="noreferrer" title={a.name}>
+                                  📎 {a.name}{a.size != null ? `（${(a.size / 1024).toFixed(0)}KB）` : ''}
+                                </a>
+                              ))}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </td>
-                    <td className="mono cell-datetime" title={g.nextAt ? String(g.nextAt).replace('T', ' ') : '未设置下次跟进'}>{g.nextAt ? String(g.nextAt).replace('T', ' ') : '—'}</td>
-                    {hit && <td className="mono hint cell-datetime" title={String(r.created_at || '').slice(0, 19).replace('T', ' ')}>{String(r.created_at || '').slice(0, 16).replace('T', ' ')}</td>}
+                    <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.next_followup_at ? r.next_followup_at.replace('T', ' ') : '—'}</td>
+                    <td className="mono hint" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{String(r.created_at || '').slice(0, 16).replace('T', ' ')}</td>
                   </tr>
-                  {/* 展开该项目下的每一条跟进记录：最新一条可编辑，较早的只能查看 */}
-                  {open && (g.records ?? []).map((rec, idx) => {
-                    const isLatest = idx === 0
-                    const recDetail = rec.detail || rec.content || ''
-                    const recPhotos = rec.photos || []
-                    const recAtts = rec.attachments || []
-                    return (
-                      <tr key={rec.id} className={'row-click fu-child' + (isLatest ? ' fu-child-latest' : '')}
-                        title={isLatest ? '该项目最新一条 · 点击编辑' : '较早的记录 · 点击查看（只读）'}
-                        onClick={() => { const restore = keepScroll(); setRecModal({ record: rec, editable: isLatest }); restore() }}>
-                        <td className="mono cell-datetime">{rec.date}</td>
-                        <td className="cell-left"><span className="fu-indent">└</span><span className="mono" style={{ fontWeight: 600 }}>{rec.inquiry_no}</span><span className="cell-note">{rec.customer_name}</span></td>
-                        <td title={rec.by_name && rec.by_name !== rec.sales ? `销售 ${rec.sales || '—'} · 跟进人 ${rec.by_name}` : (rec.sales || '—')}>
-                          <span style={{ fontWeight: 600 }}>{rec.sales || '—'}</span>
-                          {rec.by_name && rec.by_name !== rec.sales && <span className="cell-note">跟进人 {rec.by_name}</span>}
-                        </td>
-                        <td style={{ textAlign: 'center' }}><span className="badge">{rec.method || '—'}</span></td>
-                        <td style={{ textAlign: 'center' }}>
-                          {isLatest ? <span className="badge new" title="最新一条：可编辑">最新 · 可编辑</span> : <span className="badge" title="较早的记录：只能查看">只读</span>}
-                        </td>
-                        <td title={[rec.summary, recDetail].filter(Boolean).join(' ｜ ') || '—'}>
-                          {rec.summary && <span style={{ fontWeight: 600 }}>{rec.summary}</span>}
-                          {recDetail && <span className={rec.summary ? 'cell-note' : ''}>{recDetail}</span>}
-                          {!rec.summary && !recDetail && <span className="hint">—</span>}
-                        </td>
-                        <td className="cell-guidance">
-                          {(rec.comments ?? []).length === 0 ? <span className="hint">—</span> : (
-                            <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 6, maxWidth: '100%' }}>
-                              <GuidanceNote all comments={rec.comments} />
-                              <button className="btn xs" style={{ flex: '0 0 auto' }} title="查看全部指导 / 继续追加" onClick={() => setCommentOf(rec)}>{hit ? '查看指导' : '查看/追加指导'}</button>
-                            </span>
-                          )}
-                        </td>
-                        <td title={[...recPhotos.map((_, i) => `图片 ${i + 1}`), ...recAtts.map((a) => a.name)].join('、') || '—'}>
-                          {recPhotos.length === 0 && recAtts.length === 0 ? <span className="hint">—</span> : (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                              {recPhotos.length > 0 && <span className="badge">🖼 {recPhotos.length}</span>}
-                              {recAtts.length > 0 && <span className="filelink" style={{ maxWidth: 120 }}>📎 {recAtts.length} 个附件</span>}
-                            </span>
-                          )}
-                        </td>
-                        <td className="mono cell-datetime">{rec.next_followup_at ? String(rec.next_followup_at).replace('T', ' ') : '—'}</td>
-                      </tr>
-                    )
-                  })}
-                  {open && (
-                    <tr className="fu-child fu-child-add">
-                      <td colSpan={9}>
-                        {/* 直接弹窗建立跟进，不跳到页面顶部的建立跟进框 */}
-                        <button className="btn xs" title="在弹窗里为该项目建立一条新跟进，不离开本页列表"
-                          onClick={(e) => { e.stopPropagation(); const restore = keepScroll(); setRecModal({ record: r, editable: false, create: true }); restore() }}>＋ 为该项目建立新的跟进</button>
-                        <span className="hint" style={{ marginLeft: 8 }}>最新一条可点击编辑，较早的记录只能查看</span>
-                      </td>
-                    </tr>
-                  )}
-                  </Fragment>
                 )
               })}
-              {list.length === 0 && <tr><td colSpan={9} className="hint" style={{ textAlign: 'center' }}>暂无跟进记录</td></tr>}
+              {list.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 20, color: 'var(--sub)' }}>暂无跟进记录</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
-    </div>
     </div>
   )
 }
