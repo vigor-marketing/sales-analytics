@@ -116,3 +116,8 @@ ul.sugs li:hover, ul.sugs li.on { background: var(--brand-light) }
 .ro.area{align-items:flex-start;min-height:64px;line-height:1.55}
 .ro.empty{color:var(--sub)}
 .box-fixed .ro.area{width:100%}
+
+/* 产品档案选择面板（点击按钮才展开） */
+.prod-panel{position:absolute;z-index:25;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow-lg);max-height:240px;overflow:auto;padding:8px}
+.prod-item{padding:6px 8px;border-radius:6px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.prod-item:hover{background:var(--brand-light)}
