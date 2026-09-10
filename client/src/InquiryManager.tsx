@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { del, get, post, put } from './api'
 import { StatusChip, type Status } from './StatusChip'
 import ReasonPicker from './ReasonPicker'
+import ProductPicker, { type ProductLite } from './ProductPicker'
 import { COUNTRIES } from './countries'
 
 interface TotalItem { currency: string; total: number }
@@ -24,6 +25,9 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
   const [msg, setMsg] = useState(''); const [busy, setBusy] = useState(false)
   const [viewId, setViewId] = useState<string | null>(null)
   const [editId, setEditId] = useState<string | null>(null)
+  // 产品档案：编辑时可直接下拉选择；这里手输的新产品保存后同样沉淀进档案
+  const [products, setProducts] = useState<ProductLite[]>([])
+  useEffect(() => { get<ProductLite[]>('/products').then((l) => setProducts(Array.isArray(l) ? l : [])).catch(() => { /* */ }) }, [])
 
   const load = useCallback(async () => {
     try {
@@ -97,7 +101,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
         </table>
       </div>
       {viewId && <DetailModal id={viewId} onClose={() => setViewId(null)} />}
-      {editId && <EditModal id={editId} meta={meta} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); void load() }} />}
+      {editId && <EditModal id={editId} meta={meta} products={products} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); void load() }} />}
     </div>
   )
 }
@@ -282,7 +286,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   )
 }
 
-function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onClose, onSaved }: { id: string; meta?: MetaLite; onClose: () => void; onSaved: () => void }) {
+function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, products = [], onClose, onSaved }: { id: string; meta?: MetaLite; products?: ProductLite[]; onClose: () => void; onSaved: () => void }) {
   const [order, setOrder] = useState<{ id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null>(null)
   const [ord, setOrd] = useState({ wonDate: new Date().toISOString().slice(0, 10), orderNo: '', amount: '', currency: 'USD', note: '', winReason: '' })
   const [ordErr, setOrdErr] = useState('')
@@ -376,7 +380,10 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
             <div style={{ margin: '6px 0', fontWeight: 600 }}>产品明细</div>
             {form.items.map((it, i) => (
               <div key={i} className="row" style={{ marginBottom: 6, alignItems: 'center', flexWrap: 'nowrap' }}>
-                <input className="sa" style={{ flex: '1 1 240px', minWidth: 160 }} value={it.productName} placeholder="产品名称" onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, productName: e.target.value } : x) })} />
+                <div style={{ flex: '1 1 240px', minWidth: 160 }}>
+                  <ProductPicker value={it.productName} products={products} placeholder="产品名称（可手输，也可选择）"
+                    onChange={(patch) => set({ items: form.items.map((x, j) => j === i ? { ...x, productName: patch.productName, currency: patch.currency ?? x.currency } : x) })} />
+                </div>
                 <input className="sa" style={{ flex: '0 0 100px', width: 100 }} type="number" placeholder="数量" value={it.qty} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, qty: e.target.value } : x) })} />
                 <input className="sa" style={{ flex: '0 0 130px', width: 130 }} type="number" placeholder="金额" value={it.amount} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, amount: e.target.value } : x) })} />
                 <select className="sa" style={{ flex: '0 0 96px', width: 96 }} value={it.currency} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, currency: e.target.value } : x) })}>{CURS.map((c) => <option key={c}>{c}</option>)}</select>

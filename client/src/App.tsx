@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get, post } from './api'
 import { StatusChip } from './StatusChip'
+import ProductPicker, { type ProductLite } from './ProductPicker'
 import { COUNTRIES } from './countries'
 import { ArticleIcon, CartIcon, ChartBarIcon, ChartColumnIcon, ChatBubbleHistoryIcon, EditIcon, SettingIcon, UserIcon } from 'tdesign-icons-react'
 import CustomerArchive from './CustomerArchive'
@@ -103,8 +104,6 @@ export default function App() {
   const [keyCust, setKeyCust] = useState<'' | '1' | '0'>('')
   const [keyProj, setKeyProj] = useState<'' | '1' | '0'>('')
   const [stars, setStars] = useState<'' | '1' | '2' | '3' | '4' | '5'>('')
-  const [prodOpen, setProdOpen] = useState<number | null>(null)
-  const [prodFilter, setProdFilter] = useState('')
   const [products, setProducts] = useState<{ id: string; name: string; currency: string; last_amount: number | null; use_count: number }[]>([])
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -113,11 +112,6 @@ export default function App() {
   const [cusFocus, setCusFocus] = useState(false)
   const [page, setPage] = useState<PageKey>(() => initialPage())
   const noT = useRef<HTMLInputElement>(null)
-  useEffect(() => {
-    const onDoc = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('.prod-pick')) setProdOpen(null) }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [])
   // 浏览器页签标题跟随当前页面
   useEffect(() => { document.title = `${TITLES[page]} · 销售数据分析` }, [page])
   // 页面变化 → 写入 hash 与本地记忆（刷新后回到同一页，可分享链接）
@@ -311,32 +305,11 @@ export default function App() {
             <div className="col w-idx"><label>序号</label><div className="idx-cell">{i + 1}</div></div>
             <div className="col grow1">
               <label>产品名称 <span className="hint">（可手输；点右侧按钮从产品档案选择）</span></label>
-              <div className="prod-pick" style={{ display: 'flex', gap: 6 }}>
-                <input className="sa" style={{ width: '100%' }} value={it.productName} placeholder="如：可溶桥塞"
-                  title={(() => { const h = products.find((pp) => pp.name.toLowerCase() === it.productName.trim().toLowerCase()); return h ? `档案：参考金额 ${h.last_amount == null ? '—' : Number(h.last_amount).toLocaleString()} ${h.currency} · 已用 ${h.use_count} 次` : '' })()}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    const hit = products.find((pp) => pp.name.toLowerCase() === v.trim().toLowerCase())
-                    setItems((a) => a.map((x, j) => j === i ? { ...x, productName: v, currency: hit ? hit.currency : x.currency } : x))
-                  }} />
-                <button type="button" className="btn sm" style={{ flexShrink: 0 }} title="从产品档案选择"
-                  onClick={() => { setProdOpen(prodOpen === i ? null : i); setProdFilter('') }}>选择 ▾</button>
-                {prodOpen === i && (
-                  <div className="prod-panel">
-                    <input className="sa" style={{ width: '100%', marginBottom: 6 }} autoFocus value={prodFilter} placeholder="筛选产品…" onChange={(e) => setProdFilter(e.target.value)} />
-                    {products.filter((pp) => !prodFilter.trim() || pp.name.toLowerCase().includes(prodFilter.trim().toLowerCase())).map((pp) => (
-                      <div key={pp.id} className="prod-item" onClick={() => {
-                        setItems((a) => a.map((x, j) => j === i ? { ...x, productName: pp.name, currency: pp.currency } : x))
-                        setProdOpen(null)
-                      }}>
-                        <b>{pp.name}</b>
-                        <span className="hint" style={{ marginLeft: 8 }}>{pp.last_amount == null ? '—' : Number(pp.last_amount).toLocaleString()} {pp.currency} · 已用 {pp.use_count} 次</span>
-                      </div>
-                    ))}
-                    {products.length === 0 && <div className="hint" style={{ padding: 8 }}>产品档案为空（录入后自动生成）</div>}
-                  </div>
-                )}
-              </div>
+              <ProductPicker
+                value={it.productName}
+                products={products as ProductLite[]}
+                onChange={(patch) => setItems((a) => a.map((x, j) => j === i ? { ...x, productName: patch.productName, currency: patch.currency ?? x.currency } : x))}
+              />
             </div>
             <div className="col w1"><label>数量</label><input className="sa" type="number" min="0" value={it.qty} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} /></div>
             <div className="col w1"><label>金额 *</label><input className="sa" type="number" min="0" value={it.amount} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} /></div>
