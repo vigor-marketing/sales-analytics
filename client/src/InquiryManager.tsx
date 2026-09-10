@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { del, get, post, put } from './api'
 import { StatusChip, type Status } from './StatusChip'
 import ReasonPicker from './ReasonPicker'
@@ -8,7 +8,7 @@ import { COUNTRIES } from './countries'
 interface TotalItem { currency: string; total: number }
 interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; customer_stars?: number | null; won_date?: string | null; orderNo?: string | null; orderId?: string | null; last_followup_at?: string | null; next_followup_at?: string | null; is_lost?: number; lost_reason?: string | null; lost_date?: string | null; status?: Status; blockers?: string | null; action_plan?: string | null; support_needed?: string | null }
 interface Detail extends Row { items: { product_name: string; qty: number | null; amount: number; currency: string }[]; order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null }
-interface MetaLite { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; lostReasons?: string[]; winReasons?: string[] }
+interface MetaLite { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; lostReasons?: string[]; winReasons?: string[]; fx?: Record<string, number> }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
 const CURS = ['USD', 'CNY', 'EUR']
@@ -292,7 +292,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
   const [ordErr, setOrdErr] = useState('')
   const [ordBusy, setOrdBusy] = useState(false)
   const [ordOpen, setOrdOpen] = useState(false)
-  // 询价报价合计（生成销售订单时自动带出金额与币种，可手改）
+  // 询价报价合计（与录入页一致：按币种自动合计 + 折USD），并用于生成订单时带出金额
   const [quote, setQuote] = useState<{ currency: string; total: number }[]>([])
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
   const [form, setForm] = useState<{ inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; note: string; blockers: string; actionPlan: string; supportNeeded: string; stars: string; keyCust: boolean; keyProj: boolean; isLost: boolean; lostReason: string; lostDate: string; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
@@ -300,7 +300,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
   useEffect(() => {
     get<Detail>(`/inquiries/${id}`).then((d) => {
       setOrdOpen(false)
-      setQuote((d.totals || []).filter((t) => Number(t.total) > 0))
+      setQuote((d.totals || []).filter((t) => Number(t.total) > 0)) // 首次快照；后续以 liveTotals 为准
       if (d.order) { setOrder(d.order); setOrd({ wonDate: d.order.won_date, orderNo: d.order.order_no, amount: d.order.amount == null ? '' : String(d.order.amount), currency: d.order.currency, note: d.order.note || '', winReason: d.order.win_reason || '' }) }
       else { setOrder(null) }
     }).catch(() => { /* */ })
@@ -324,6 +324,16 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
     catch (e) { setOrdErr((e as Error).message) } finally { setOrdBusy(false) }
   }
   useEffect(() => { get<Detail>(`/inquiries/${id}`).then((d) => setForm({ inquiryNo: d.inquiry_no, customerName: d.customer_name, date: d.date, country: d.country || '', useLoc: d.use_location || '', sales: d.sales, purchaser: d.purchaser, source: d.source, handTotal: d.hand_total == null ? '' : String(d.hand_total), note: d.note || '', stars: d.customer_stars == null ? '' : String(d.customer_stars), blockers: d.blockers || '', actionPlan: d.action_plan || '', supportNeeded: d.support_needed || '', keyCust: Number(d.is_key_customer) === 1, keyProj: Number(d.is_key_project) === 1, isLost: Number(d.is_lost) === 1, lostReason: d.lost_reason || '', lostDate: d.lost_date || new Date().toISOString().slice(0, 10),  items: (d.items || []).map((it) => ({ productName: it.product_name, qty: it.qty == null ? '' : String(it.qty), amount: String(it.amount), currency: it.currency })) })).catch((e) => setErr((e as Error).message)) }, [id])
+  // 实时合计：跟随产品明细的金额与币种变化（与「询报价录入」同一口径）
+  const liveTotals = useMemo(() => {
+    const m = new Map<string, number>()
+    ;(form?.items ?? []).forEach((it) => { const a = Number(it.amount) || 0; if (a > 0) m.set(it.currency, (m.get(it.currency) ?? 0) + a) })
+    const list = Array.from(m.entries()).sort((a, b) => CURS.indexOf(a[0]) - CURS.indexOf(b[0])).map(([currency, total]) => ({ currency, total }))
+    const fx = meta.fx ?? { USD: 1, CNY: 7.12, EUR: 0.92 }
+    const usd = list.reduce((sum, x) => sum + x.total / (fx[x.currency] || 1), 0)
+    return { list, usd }
+  }, [form, meta.fx])
+
   const save = async () => {
     if (!form) return
     if (!form.items.some((it) => it.productName.trim() && Number(it.amount) > 0)) return setErr('至少一行有效产品')
@@ -364,7 +374,18 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
               <div className="col w1"><label>来源 *</label>
                 <select className="sa" value={form.source} onChange={(e) => set({ source: e.target.value })}><option value="">—</option>{meta.sources.map((s) => <option key={s} value={s}>{s}</option>)}</select>
               </div>
-              <div className="col w1"><label>总金额（选填）</label><input className="sa" type="number" value={form.handTotal} onChange={(e) => set({ handTotal: e.target.value })} /></div>
+            </div>
+            <div style={{ marginTop: 8, borderTop: '1px dashed var(--line)', paddingTop: 8 }}>
+              <div className="totals" style={{ marginBottom: 6 }}>
+                <span className="badge new">总报价金额（自动）：</span>
+                {liveTotals.list.map((t) => <span key={t.currency} className="t">{money(t.total)} {t.currency}</span>)}
+                {liveTotals.list.some((t) => t.currency !== 'USD') && <span className="badge">折 USD 约 {money(Math.round(liveTotals.usd))}</span>}
+                {liveTotals.list.length === 0 && <span className="hint">填一行金额后自动合计</span>}
+              </div>
+              <div className="row" style={{ marginBottom: 0 }}>
+                <div className="col w2"><label>总金额（手填 · 选填）</label><input className="sa" type="number" value={form.handTotal} onChange={(e) => set({ handTotal: e.target.value })} placeholder="议价/最终金额" /></div>
+              </div>
+              <div className="hint" style={{ display: 'block', marginTop: 4 }}>总报价金额=各行金额自动合计（只读）；总金额可另行手填最终/成交金额，与报价一致可留空。</div>
             </div>
             <div className="row" style={{ alignItems: 'center', gap: 18 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>客户星级</span>
@@ -396,9 +417,9 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                           ...x,
                           productName: patch.productName,
                           currency: patch.currency ?? x.currency,
-                          // 从档案选择时带出参考数量/金额；已有内容不覆盖
-                          qty: patch.fromArchive && !x.qty ? (patch.qty ?? x.qty) : x.qty,
-                          amount: patch.fromArchive && !x.amount ? (patch.amount ?? x.amount) : x.amount,
+                          // 命中产品档案：完全带入上次录入的数量与金额，之后可自由修改
+                          qty: patch.fromArchive ? (patch.qty ?? '') : x.qty,
+                          amount: patch.fromArchive ? (patch.amount ?? '') : x.amount,
                         } : x)),
                       })
                     }} />
@@ -486,7 +507,8 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
               {!order && !ordOpen && (
                 <div className="actions">
                   <button className="btn pri" disabled={ordBusy || form.isLost} onClick={() => {
-                    const best = [...quote].sort((a, b) => Number(b.total) - Number(a.total))[0]
+                    const src = liveTotals.list.length ? liveTotals.list : quote
+                    const best = [...src].sort((a, b) => Number(b.total) - Number(a.total))[0]
                     if (best) setOrd((o) => ({ ...o, amount: String(best.total), currency: best.currency }))
                     setOrdOpen(true)
                   }}>生成销售订单</button>

@@ -312,8 +312,9 @@ export default function App() {
                   ...x,
                   productName: patch.productName,
                   currency: patch.currency ?? x.currency,
-                  qty: patch.fromArchive && !x.qty ? (patch.qty ?? x.qty) : x.qty,
-                  amount: patch.fromArchive && !x.amount ? (patch.amount ?? x.amount) : x.amount,
+                  // 命中产品档案：完全带入上次录入的数量与金额，之后可自由修改
+                  qty: patch.fromArchive ? (patch.qty ?? '') : x.qty,
+                  amount: patch.fromArchive ? (patch.amount ?? '') : x.amount,
                 } : x))}
               />
             </div>

@@ -44,11 +44,14 @@ export default function ProductPicker({
         style={{ width: '100%', minWidth: 0 }}
         value={value}
         placeholder={placeholder}
-        title={hit ? `档案参考：${info(hit)}（点「选择 ▾」可直接带出数量与金额）` : ''}
+        title={hit ? `档案参考：${info(hit)}（选择后自动带入上次录入的数量与金额，可修改）` : ''}
         onChange={(e) => {
           const v = e.target.value
           const h = products.find((p) => p.name.toLowerCase() === v.trim().toLowerCase())
-          onChange({ productName: v, currency: h?.currency })
+          // 名称改成档案里的产品（手输命中同名）时，同样完全带入上次录入的数量/金额/币种
+          onChange(h
+            ? { productName: v, currency: h.currency, qty: num2str(h.last_qty) ?? '', amount: num2str(h.last_amount) ?? '', fromArchive: true }
+            : { productName: v })
         }}
       />
       <button type="button" className="btn sm" style={{ flexShrink: 0 }} title="从产品档案选择（自动带出币种、参考数量与金额）"
@@ -59,7 +62,8 @@ export default function ProductPicker({
           {shown.map((p) => (
             <div key={p.id} className="prod-item" title="点击带出该产品的币种、参考数量与金额"
               onClick={() => {
-                onChange({ productName: p.name, currency: p.currency, qty: num2str(p.last_qty), amount: num2str(p.last_amount), fromArchive: true })
+                // 完全带入该产品上次录入的信息（数量、金额、币种），带入后仍可修改
+                onChange({ productName: p.name, currency: p.currency, qty: num2str(p.last_qty) ?? '', amount: num2str(p.last_amount) ?? '', fromArchive: true })
                 setOpen(false)
               }}>
               <b>{p.name}</b>
@@ -67,7 +71,7 @@ export default function ProductPicker({
             </div>
           ))}
           {shown.length === 0 && <div className="hint" style={{ padding: 8 }}>{products.length === 0 ? '产品档案为空（录入后自动生成）' : '没有匹配的产品，可直接手输新名称'}</div>}
-          <div className="hint" style={{ borderTop: '1px solid var(--line)', marginTop: 6, paddingTop: 4 }}>选择后自动带出：币种、参考数量、参考金额（可再修改）</div>
+          <div className="hint" style={{ borderTop: '1px solid var(--line)', marginTop: 6, paddingTop: 4 }}>选择后自动带入该产品上次录入的数量、金额与币种，带入后可直接修改</div>
         </div>
       )}
     </div>
