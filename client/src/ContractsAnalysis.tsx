@@ -151,6 +151,9 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   const [sales, setSales] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [product, setProduct] = useState('')
   const [rows, setRows] = useState<OrderRow[]>([]); const [stats, setStats] = useState<Stats | null>(null); const [msg, setMsg] = useState('')
   const [reasons, setReasons] = useState<ReasonData | null>(null)
+  // 按产品分析：产品下拉（取自产品档案）
+  const [products, setProducts] = useState<{ id: string; name: string; use_count: number }[]>([])
+  useEffect(() => { get<{ id: string; name: string; use_count: number }[]>('/products').then((l) => setProducts(Array.isArray(l) ? l : [])).catch(() => { /* */ }) }, [])
   const [trendMode, setTrendMode] = useState<'year' | 'month'>('year')
   const [year, setYear] = useState('')
 
@@ -232,7 +235,11 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           <h3 style={{ margin: 0, fontSize: 16 }}>销售订单分析</h3>
           <span className="hint" style={{ flex: 1, minWidth: 180 }}>成交金额、转化周期、产品/销售/客户与成交·丢单原因（全部跟随下方筛选）</span>
           <select className="sa" value={sales} onChange={(e) => setSales(e.target.value)}><option value="">全部销售</option>{meta.sales.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}</select>
-          <input className="sa" style={{ width: 130 }} value={product} onChange={(e) => setProduct(e.target.value)} placeholder="产品名称" />
+          <select className="sa" style={{ maxWidth: 220 }} value={product} onChange={(e) => setProduct(e.target.value)} title="按产品筛选（下拉可选）">
+            <option value="">全部产品</option>
+            {products.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+            {product && !products.some((p) => p.name === product) && <option value={product}>{product}</option>}
+          </select>
           <input className="sa" type="date" value={from} onChange={(e) => setFrom(e.target.value)} title="成单/丢单日期起" />
           <input className="sa" type="date" value={to} onChange={(e) => setTo(e.target.value)} title="成单/丢单日期止" />
           <button className="btn sm" onClick={() => void load()}>查询</button>
@@ -273,7 +280,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           {trend.length && trendN > 0 ? <TrendChart data={trend} /> : <div className="hint" style={{ fontSize: 12 }}>暂无数据</div>}
         </Panel>
 
-        <Panel title="按产品" hint={`${productRows.length} 个产品 · 合计 ${productRows.reduce((a, b) => a + b.count, 0)} 次`}>
+        <Panel title="按产品" hint={`${product ? `已筛「${product}」· ` : ''}${productRows.length} 个产品 · 合计 ${productRows.reduce((a, b) => a + b.count, 0)} 次`}>
           <BarList
             labelW={118}
             items={productRows.slice(0, 6).map((p) => ({
