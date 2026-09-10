@@ -14,10 +14,10 @@ export default function ReasonPicker({
   const [custom, setCustom] = useState(Boolean(value) && !list.includes(value))
   const sel = custom ? '__custom__' : (list.includes(value) ? value : '')
   return (
-    <>
+    <div className="reason-row">
       <select
         className="sa"
-        style={width ? { width } : { width: '100%' }}
+        style={{ flex: custom ? '1 1 46%' : '1 1 100%', minWidth: 120, width: width ?? undefined }}
         value={sel}
         onChange={(e) => {
           const v = e.target.value
@@ -29,8 +29,8 @@ export default function ReasonPicker({
         <option value="__custom__">其他（手动输入）</option>
       </select>
       {custom && (
-        <input className="sa" style={{ width: '100%', marginTop: 4 }} value={value} onChange={(e) => onChange(e.target.value)} placeholder="请输入原因" />
+        <input className="sa" style={{ flex: '1 1 54%', minWidth: 120 }} value={value} onChange={(e) => onChange(e.target.value)} placeholder="请输入原因" />
       )}
-    </>
+    </div>
   )
 }
