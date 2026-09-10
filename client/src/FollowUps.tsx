@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { get, post } from './api'
 import { StatusChip } from './StatusChip'
+import { KeyTags } from './KeyTags'
 
 interface MetaLite { sales: { name: string; team: string }[]; methods?: string[] }
 interface Lookup {
   id: string; inquiry_no: string; date: string; customer_name: string; country: string | null; use_location: string | null
   sales: string; purchaser: string; source: string; is_won: number; won_date?: string | null; orderNo?: string | null
   productNames: string; usdApprox: number; totals: { currency: string; total: number }[]; itemCount?: number
-  last_followup_at?: string | null; next_followup_at?: string | null; status?: 'won' | 'lost' | 'following'; items: { product_name: string; qty: number | null; amount: number; currency: string }[]
+  last_followup_at?: string | null; next_followup_at?: string | null; status?: 'won' | 'lost' | 'following'; is_key_customer?: number; is_key_project?: number; items: { product_name: string; qty: number | null; amount: number; currency: string }[]
 }
 interface Att { url: string; name: string }
 interface Fu {
   id: string; inquiry_id: string; inquiry_no: string; customer_name: string; sales: string; date: string
   method: string; content: string | null; summary: string | null; detail: string | null
   photos: string[]; attachments: Att[]; next_followup_at: string | null; by_name: string | null; created_at: string
+  is_key_customer?: number; is_key_project?: number
 }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Math.round(Number(n)).toLocaleString('zh-CN'))
@@ -132,6 +134,7 @@ export default function FollowUps({ meta }: { meta: MetaLite }) {
             <span>询价日期 <b className="mono">{hit.date}</b></span>
             <span>报价合计 <b>{(hit.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</b>（≈USD {money(hit.usdApprox)}）</span>
             <span>状态 <b><StatusChip status={hit.status ?? (Number(hit.is_won) === 1 ? 'won' : 'following')} /></b></span>
+            <span>标签 <b><KeyTags kc={hit.is_key_customer} kp={hit.is_key_project} compact /></b></span>
             <span>最近跟进 <b className="mono">{hit.last_followup_at || '—'}</b></span>
             <span>下次跟进 <b className="mono">{hit.next_followup_at || '—'}</b></span>
           </div>
@@ -203,13 +206,14 @@ export default function FollowUps({ meta }: { meta: MetaLite }) {
         <div style={{ fontWeight: 700, marginBottom: 6 }}>跟进记录{hit ? `（本询价 ${list.length} 条）` : sales ? `（${sales} 名下 ${list.length} 条）` : ''}</div>
         <div className="tablewrap" style={{ overflowX: 'auto' }}>
           <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-            <thead><tr>{['跟进日期', '询价号', '客户', '销售', '方式', '简述', '具体内容', '图片', '附件', '下次跟进', '跟进人'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+            <thead><tr>{['跟进日期', '询价号', '客户', '标签', '销售', '方式', '简述', '具体内容', '图片', '附件', '下次跟进', '跟进人'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
             <tbody>
               {list.map((r) => (
                 <tr key={r.id} style={{ borderBottom: '1px solid var(--line2)' }}>
                   <td style={{ padding: '6px 8px' }} className="mono">{r.date}</td>
                   <td style={{ padding: '6px 8px' }} className="mono">{r.inquiry_no}</td>
                   <td style={{ padding: '6px 8px' }}>{r.customer_name}</td>
+                  <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><KeyTags kc={r.is_key_customer} kp={r.is_key_project} compact /></td>
                   <td style={{ padding: '6px 8px' }}>{r.sales}</td>
                   <td style={{ padding: '6px 8px' }}>{r.method}</td>
                   <td style={{ padding: '6px 8px', minWidth: 160 }}>{r.summary || '—'}</td>

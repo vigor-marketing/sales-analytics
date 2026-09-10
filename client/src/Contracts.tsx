@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { del, get, put } from './api'
 import ReasonPicker from './ReasonPicker'
+import { KeyTags } from './KeyTags'
 
 interface Item { product_name: string; qty: number | null; amount: number; currency: string }
 interface OrderRow {
   order_id: string; order_no: string; won_date: string; order_amount: number | null; order_currency: string; order_note: string | null
+  is_key_customer?: number; is_key_project?: number
   inquiry_id: string; inquiry_no: string; date: string; sales: string; purchaser: string; source: string
   customer_name: string; hand_total: number | null; usdApprox: number; totals: { currency: string; total: number }[]
   productNames: string; itemCount: number; items: Item[]; cycleDays: number | null
@@ -52,13 +54,14 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
 
       <div className="tablewrap" style={{ overflow: 'auto', maxHeight: '56vh' }}>
         <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-          <thead><tr>{['订单号', '询价号', '客户', '产品', '询价日期', '成单日期', '转化周期', '销售', '订单金额', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+          <thead><tr>{['订单号', '询价号', '客户', '标签', '产品', '询价日期', '成单日期', '转化周期', '销售', '订单金额', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.order_id} style={{ borderBottom: '1px solid var(--line2)' }}>
                 <td style={{ padding: '6px 8px' }} className="mono">{r.order_no}</td>
                 <td style={{ padding: '6px 8px' }} className="mono">{r.inquiry_no}</td>
                 <td style={{ padding: '6px 8px' }}>{r.customer_name}</td>
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><KeyTags kc={r.is_key_customer} kp={r.is_key_project} /></td>
                 <td style={{ padding: '6px 8px', maxWidth: 260, whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.productNames || '—'}</td>
                 <td style={{ padding: '6px 8px' }} className="mono">{r.date}</td>
                 <td style={{ padding: '6px 8px' }} className="mono">{r.won_date}</td>
@@ -72,7 +75,7 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无销售订单（到「询报价管理」点“生成销售订单”并填写成单日期）</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={11} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无销售订单（到「询报价管理」点“生成销售订单”并填写成单日期）</td></tr>}
           </tbody>
         </table>
       </div>

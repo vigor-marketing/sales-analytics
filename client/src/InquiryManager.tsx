@@ -3,6 +3,7 @@ import { del, get, post, put } from './api'
 import { StatusChip, type Status } from './StatusChip'
 import ReasonPicker from './ReasonPicker'
 import ProductPicker, { type ProductLite } from './ProductPicker'
+import { KeyTags } from './KeyTags'
 import { COUNTRIES } from './countries'
 
 interface TotalItem { currency: string; total: number }
@@ -106,16 +107,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
   )
 }
 
-function TagBlocks({ r }: { r: { is_key_customer?: number; is_key_project?: number } }) {
-  const kc = Number(r.is_key_customer) === 1, kp = Number(r.is_key_project) === 1
-  if (!kc && !kp) return <span className="hint">—</span>
-  return (
-    <>
-      {kc && <span className="tag kc">重点客户</span>}
-      {kp && <span className="tag kp">重点项目</span>}
-    </>
-  )
-}
+const TagBlocks = ({ r }: { r: { is_key_customer?: number; is_key_project?: number } }) => <KeyTags kc={r.is_key_customer} kp={r.is_key_project} />
 function Field({ label, value, area, empty, fixed }: { label: string; value?: string | number | null; area?: boolean; empty?: boolean; fixed?: boolean }) {
   const txt = value === null || value === undefined || value === '' ? '—' : String(value)
   return (

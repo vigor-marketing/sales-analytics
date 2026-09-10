@@ -374,7 +374,7 @@ app.get('/api/followups', (req, res) => {
   if (inquiryId) { parts.push('f.inquiry_id = ?'); args.push(inquiryId) }
   if (salesQ) { parts.push('i.sales = ?'); args.push(salesQ) }
   if (q) { parts.push('(i.inquiry_no LIKE ? OR f.content LIKE ? OR c.name LIKE ?)'); const l = `%${q}%`; args.push(l, l, l) }
-  const rows = d.prepare(`SELECT f.*, i.inquiry_no, i.sales, c.name AS customer_name FROM followups f
+  const rows = d.prepare(`SELECT f.*, i.inquiry_no, i.sales, i.is_key_customer, i.is_key_project, c.name AS customer_name FROM followups f
     JOIN inquiries i ON i.id = f.inquiry_id LEFT JOIN customers c ON c.id = i.customer_id
     WHERE ${parts.join(' AND ')} ORDER BY f.date DESC, f.created_at DESC LIMIT 300`).all(...args) as Record<string, unknown>[]
   ok(res, rows.map((r) => {
