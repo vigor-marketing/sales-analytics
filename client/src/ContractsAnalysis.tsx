@@ -27,9 +27,9 @@ const compact = (v: number) => (v >= 10000 ? `${Math.round(v / 1000)}k` : v >= 1
 function Panel({ title, hint, children, extra, style }: { title: string; hint?: string; children: React.ReactNode; extra?: React.ReactNode; style?: React.CSSProperties }) {
   return (
     <section className="card panel-tight" style={style}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <h4 style={{ margin: 0, fontSize: 14 }}>{title}</h4>
-        {hint && <span className="hint" style={{ fontSize: 11.5 }}>{hint}</span>}
+      <div className="panel-head">
+        <h4 className="panel-title">{title}</h4>
+        {hint && <span className="hint panel-hint">{hint}</span>}
         <span style={{ flex: 1 }} />
         {extra}
       </div>
@@ -38,17 +38,28 @@ function Panel({ title, hint, children, extra, style }: { title: string; hint?: 
   )
 }
 
+/** 分区标题：把九个板块按主题分组，便于扫读 */
+function Section({ title, note }: { title: string; note?: string }) {
+  return (
+    <div className="dash-sec">
+      <span className="dash-sec-t">{title}</span>
+      {note && <span className="hint" style={{ fontSize: 11.5 }}>{note}</span>}
+      <span className="dash-sec-line" />
+    </div>
+  )
+}
+
 /** 图文结合：左边名称、中间条形、右边数值与备注 */
 /** 纯数据表格：这些分析板块只保留数字，不做条形/色块图 */
 function DataTable({ cols, rows, empty = '暂无数据' }: { cols: string[]; rows: React.ReactNode[][]; empty?: string }) {
   return (
     <div className="tablewrap" style={{ overflowX: 'auto' }}>
-      <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-        <thead><tr>{cols.map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+      <table className="grid data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+        <thead><tr>{cols.map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i} style={{ borderBottom: '1px solid var(--line2)' }}>
-              {r.map((c, j) => <td key={j} style={{ padding: '6px 8px' }}>{c}</td>)}
+            <tr key={i}>
+              {r.map((c, j) => <td key={j} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{c}</td>)}
             </tr>
           ))}
           {rows.length === 0 && <tr><td colSpan={cols.length} className="hint" style={{ padding: 12, textAlign: 'center' }}>{empty}</td></tr>}
@@ -60,10 +71,10 @@ function DataTable({ cols, rows, empty = '暂无数据' }: { cols: string[]; row
 
 function Kpi({ label, value, tone, note }: { label: string; value: string; tone?: string; note?: string }) {
   return (
-    <div className="kpi-chip">
+    <div className="kpi-chip" style={tone ? { borderTopColor: tone } : undefined}>
       <span className="hint" style={{ fontSize: 11.5 }}>{label}</span>
-      <b style={{ fontSize: 17, color: tone ?? 'var(--text)' }}>{value}</b>
-      {note && <span className="hint" style={{ fontSize: 11 }}>{note}</span>}
+      <b style={{ fontSize: 18, color: tone ?? 'var(--text)' }}>{value}</b>
+      {note && <span className="hint" style={{ fontSize: 11.5 }}>{note}</span>}
     </div>
   )
 }
@@ -341,6 +352,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
 
       {/* 概览 + 趋势：同一行，紧凑 */}
       <div className="dash-grid" style={{ marginTop: 10 }}>
+        <Section title="总体概览" note="当前筛选范围内的成交规模与周期" />
         <div className="dash-span2" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {stats && (<>
             <Kpi label="销售订单数" value={`${stats.contractCount} 单`} note={stats.contractCount ? `平均单值 ${money(stats.usdTotal / stats.contractCount)} USD` : ''} />
@@ -349,6 +361,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
             <Kpi label="丢单金额（折USD）" value={money(lostSum?.usdTotal ?? 0)} tone="var(--danger)" note={winSum && winSum.usdTotal > 0 && lostSum ? `占成交 ${Math.round((lostSum.usdTotal / winSum.usdTotal) * 100)}%` : ''} />
           </>)}
         </div>
+
+        <Section title="趋势与总量" note="跟随上方筛选" />
 
         <Panel
           style={{ gridColumn: '1 / -1' }}
@@ -370,6 +384,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         >
           {trend.length && trendN > 0 ? <TrendChart data={trend} /> : <div className="hint" style={{ fontSize: 12 }}>暂无数据</div>}
         </Panel>
+
+        <Section title="产品与小组" note="按产品、按小组，以及组内成员明细" />
 
         <Panel title="按产品" hint={`${product ? `已筛「${product}」· ` : ''}${productRows.length} 个产品 · 合计 ${productRows.reduce((a, b) => a + b.count, 0)} 次`}>
           <DataTable
@@ -398,18 +414,18 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         <Panel title="小组内成员分析" hint="每个小组下各成员的成单金额与占比（含本期无成单的成员）" style={{ gridColumn: '1 / -1' }}>
           {teamMembers.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
             <div className="tablewrap" style={{ overflowX: 'auto' }}>
-              <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                <thead><tr>{['小组 / 成员', '订单数', '金额（折USD）', '组内占比', '平均转化周期', '组内排名'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+              <table className="grid data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead><tr>{['小组 / 成员', '订单数', '金额（折USD）', '组内占比', '平均转化周期', '组内排名'].map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {teamMembers.map((t) => (
                     <Fragment key={t.team}>
                       <tr style={{ background: '#f4f7fc' }}>
                         <td style={{ padding: '6px 8px', fontWeight: 800 }}>{t.team}<span className="hint" style={{ marginLeft: 6, fontWeight: 400 }}>小组合计 {t.list.length} 人</span></td>
-                        <td style={{ padding: '6px 8px', fontWeight: 700 }}>{t.n} 单</td>
-                        <td className="mono" style={{ padding: '6px 8px', fontWeight: 700 }}>{money(t.usd)}</td>
-                        <td style={{ padding: '6px 8px' }}>100%</td>
-                        <td style={{ padding: '6px 8px' }}>—</td>
-                        <td style={{ padding: '6px 8px' }}>—</td>
+                        <td style={{ padding: '6px 8px', fontWeight: 700, textAlign: 'right' }}>{t.n} 单</td>
+                        <td className="mono" style={{ padding: '6px 8px', fontWeight: 700, textAlign: 'right' }}>{money(t.usd)}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>100%</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>—</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>—</td>
                       </tr>
                       {t.rows.map((m, i) => (
                         <tr key={t.team + m.name} style={{ borderBottom: '1px solid var(--line2)' }}>
@@ -417,11 +433,11 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                             {m.name}
                             {m.n === 0 && <span className="hint" style={{ marginLeft: 6 }}>本期无成单</span>}
                           </td>
-                          <td style={{ padding: '6px 8px' }}>{m.n} 单</td>
-                          <td className="mono" style={{ padding: '6px 8px' }}>{money(m.usd)}</td>
-                          <td style={{ padding: '6px 8px' }}>{m.n === 0 ? '—' : `${m.share}%`}</td>
-                          <td style={{ padding: '6px 8px' }}>{m.avgCycle == null ? '—' : `${m.avgCycle} 天`}</td>
-                          <td style={{ padding: '6px 8px' }}>{m.n === 0 ? '—' : `第 ${i + 1} 名`}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.n} 单</td>
+                          <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>{money(m.usd)}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.n === 0 ? '—' : `${m.share}%`}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.avgCycle == null ? '—' : `${m.avgCycle} 天`}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.n === 0 ? '—' : `第 ${i + 1} 名`}</td>
                         </tr>
                       ))}
                     </Fragment>
@@ -431,6 +447,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
             </div>
           )}
         </Panel>
+
+        <Section title="销售与月度" note="按销售汇总，并按月份拆解小组表现" />
 
         <Panel title="按销售" hint="成单次数 · 金额 · 平均周期">
           <DataTable
@@ -449,8 +467,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           {monthTeams.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
             <>
               <div className="tablewrap" style={{ overflowX: 'auto' }}>
-                <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                  <thead><tr>{['月份', ...activeTeams, '合计'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+                <table className="grid data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                  <thead><tr>{['月份', ...activeTeams, '合计'].map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
                   <tbody>
                     {monthTeams.map((mo) => {
                       const best = activeTeams.reduce((bi, t, i) => ((mo.teams.get(t)?.usd ?? 0) > (mo.teams.get(activeTeams[bi])?.usd ?? 0) ? i : bi), 0)
@@ -461,7 +479,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                             const v = mo.teams.get(t)
                             const isBest = i === best && !!v && activeTeams.filter((x) => mo.teams.has(x)).length > 1
                             return (
-                              <td key={t} style={{ padding: '6px 8px', whiteSpace: 'nowrap', background: isBest ? '#f2f8ff' : undefined }}>
+                              <td key={t} style={{ padding: '6px 8px', whiteSpace: 'nowrap', textAlign: 'right', background: isBest ? '#f2f8ff' : undefined }}>
                                 {v ? <>
                                   <span style={{ fontWeight: isBest ? 700 : 400 }}>{money(v.usd)}</span>
                                   <span className="hint" style={{ marginLeft: 4 }}>（{v.n} 单）</span>
@@ -469,7 +487,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                               </td>
                             )
                           })}
-                          <td className="mono" style={{ padding: '6px 8px', fontWeight: 700 }}>{money(mo.total.usd)} USD<span className="hint" style={{ marginLeft: 4 }}>（{mo.total.n} 单）</span></td>
+                          <td className="mono" style={{ padding: '6px 8px', fontWeight: 700, textAlign: 'right' }}>{money(mo.total.usd)} USD<span className="hint" style={{ marginLeft: 4 }}>（{mo.total.n} 单）</span></td>
                         </tr>
                       )
                     })}
@@ -478,9 +496,9 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                       {activeTeams.map((t) => {
                         const usd = monthTeams.reduce((a, mo) => a + (mo.teams.get(t)?.usd ?? 0), 0)
                         const n = monthTeams.reduce((a, mo) => a + (mo.teams.get(t)?.n ?? 0), 0)
-                        return <td key={t} style={{ padding: '6px 8px', whiteSpace: 'nowrap', fontWeight: 700 }}>{money(usd)}<span className="hint" style={{ marginLeft: 4 }}>（{n} 单）</span></td>
+                        return <td key={t} style={{ padding: '6px 8px', whiteSpace: 'nowrap', fontWeight: 700, textAlign: 'right' }}>{money(usd)}<span className="hint" style={{ marginLeft: 4 }}>（{n} 单）</span></td>
                       })}
-                      <td className="mono" style={{ padding: '6px 8px', fontWeight: 800 }}>{money(monthTeams.reduce((a, mo) => a + mo.total.usd, 0))} USD<span className="hint" style={{ marginLeft: 4 }}>（{monthTeams.reduce((a, mo) => a + mo.total.n, 0)} 单）</span></td>
+                      <td className="mono" style={{ padding: '6px 8px', fontWeight: 800, textAlign: 'right' }}>{money(monthTeams.reduce((a, mo) => a + mo.total.usd, 0))} USD<span className="hint" style={{ marginLeft: 4 }}>（{monthTeams.reduce((a, mo) => a + mo.total.n, 0)} 单）</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -489,6 +507,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
             </>
           )}
         </Panel>
+
+        <Section title="原因分析" note="成交原因与丢单原因分布" />
 
         <Panel title="成交原因分析" hint={`${winSum?.total ?? 0} 单 · ${money(winSum?.usdTotal ?? 0)} USD`}
           extra={winSum && winSum.missing > 0 ? <span className="hint" style={{ color: '#a35c00', fontSize: 11 }}>{winSum.missing} 笔未填</span> : undefined}>
@@ -506,6 +526,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
             rows={(lostSum?.items ?? []).map((x) => [x.reason, `${x.count} 单`, `${x.share}%`, money(x.usd), `${x.usdShare}%`, x.avgCycle == null ? '—' : `${x.avgCycle} 天`])}
           />
         </Panel>
+
+        <Section title="客户排行" note="按订单金额折USD排序" />
 
         <Panel title="客户 Top10" hint={`合计 ${money(sumUsd)} USD`} style={{ gridColumn: '1 / -1' }}>
           <DataTable
