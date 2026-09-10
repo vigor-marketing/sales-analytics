@@ -51,15 +51,19 @@ function Section({ title, note }: { title: string; note?: string }) {
 
 /** 图文结合：左边名称、中间条形、右边数值与备注 */
 /** 纯数据表格：这些分析板块只保留数字，不做条形/色块图 */
-function DataTable({ cols, rows, empty = '暂无数据' }: { cols: string[]; rows: React.ReactNode[][]; empty?: string }) {
+function DataTable({ cols, rows, empty = '暂无数据', widths }: { cols: string[]; rows: React.ReactNode[][]; empty?: string; widths?: string[] }) {
   return (
     <div className="tablewrap" style={{ overflowX: 'auto' }}>
-      <table className="grid data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+      <table className="grid data-table fixed-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+        {widths && <colgroup>{widths.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>}
         <thead><tr>{cols.map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
         <tbody>
           {rows.map((r, i) => (
             <tr key={i}>
-              {r.map((c, j) => <td key={j} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{c}</td>)}
+              {r.map((c, j) => (
+                <td key={j} style={{ textAlign: j === 0 ? 'left' : 'right' }} className={j === 0 ? 'ellip' : undefined}
+                  title={typeof c === 'string' ? c : undefined}>{c}</td>
+              ))}
             </tr>
           ))}
           {rows.length === 0 && <tr><td colSpan={cols.length} className="hint" style={{ padding: 12, textAlign: 'center' }}>{empty}</td></tr>}
@@ -450,7 +454,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         {tab === 'all' && (
         <Panel title="按产品" hint={`${product ? `已筛「${product}」· ` : ''}${productRows.length} 个产品 · 合计 ${productRows.reduce((a, b) => a + b.count, 0)} 次`}>
           <DataTable
-            cols={['产品', '成单次数', '金额（折USD）', '平均转化周期']}
+            cols={['产品', '成单次数', '金额（折USD）', '平均周期']}
+            widths={['40%', '18%', '24%', '18%']}
             empty="暂无成单产品"
             rows={productRows.slice(0, 15).map((p) => [
               p.name, `${p.count} 次`, money(p.usd), p.avgCycle == null ? '—' : `${p.avgCycle} 天`,
@@ -463,7 +468,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         {tab === 'team' && (<>
         <Panel title="按小组" hint="小组维度：单数 · 金额 · 占比 · 平均周期 · 组内人数">
           <DataTable
-            cols={['小组', '订单数', '金额（折USD）', '金额占比', '平均转化周期', '组内人数']}
+            cols={['小组', '订单数', '金额（折USD）', '金额占比', '平均周期', '组内人数']}
+            widths={['26%', '13%', '20%', '13%', '16%', '12%']}
             empty="暂无成单小组"
             rows={teamRows.map((t) => [t.name, `${t.n} 单`, money(t.usd), `${t.share}%`, t.avgCycle == null ? '—' : `${t.avgCycle} 天`, `${t.people} 人`])}
           />
@@ -480,7 +486,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         <Panel title="小组内成员分析" hint={`${teamFilter ? `已筛「${teamFilter}」· ` : ''}每个小组下各成员的成单金额与占比（含本期无成单的成员）`} style={{ gridColumn: '1 / -1' }}>
           {shownTeams.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
             <div className="tablewrap" style={{ overflowX: 'auto' }}>
-              <table className="grid data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <table className="grid data-table fixed-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <colgroup><col style={{ width: '28%' }} /><col style={{ width: '14%' }} /><col style={{ width: '18%' }} /><col style={{ width: '13%' }} /><col style={{ width: '16%' }} /><col style={{ width: '11%' }} /></colgroup>
                 <thead><tr>{['小组 / 成员', '订单数', '金额（折USD）', '组内占比', '平均转化周期', '组内排名'].map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {shownTeams.map((t) => (
@@ -495,7 +502,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                       </tr>
                       {t.rows.map((m, i) => (
                         <tr key={t.team + m.name} style={{ borderBottom: '1px solid var(--line2)' }}>
-                          <td style={{ padding: '6px 8px', paddingLeft: 22 }}>
+                          <td className="ellip" style={{ padding: '6px 8px', paddingLeft: 22 }} title={m.name}>
                             {m.name}
                             {m.n === 0 && <span className="hint" style={{ marginLeft: 6 }}>本期无成单</span>}
                           </td>
@@ -519,7 +526,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         {tab === 'all' && (<>
         <Panel title="按销售" hint="成单次数 · 金额 · 平均周期">
           <DataTable
-            cols={['销售', '成单次数', '金额（折USD）', '平均转化周期']}
+            cols={['销售', '成单次数', '金额（折USD）', '平均周期']}
+            widths={['40%', '18%', '24%', '18%']}
             empty="暂无成单销售"
             rows={salesRows.map((p) => [p.name, `${p.n} 单`, money(p.usd), p.avgCycle == null ? '—' : `${p.avgCycle} 天`])}
           />
@@ -537,7 +545,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           {monthTeams.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
             <>
               <div className="tablewrap" style={{ overflowX: 'auto' }}>
-                <table className="grid data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <table className="grid data-table fixed-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                  <colgroup><col style={{ width: '14%' }} />{[...activeTeams, '合计'].map((t) => <col key={t} style={{ width: `${Math.round(86 / (activeTeams.length + 1))}%` }} />)}</colgroup>
                   <thead><tr>{['月份', ...activeTeams, '合计'].map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
                   <tbody>
                     {monthTeams.map((mo) => {
@@ -584,7 +593,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         <Panel title="成交原因分析" hint={`${winSum?.total ?? 0} 单 · ${money(winSum?.usdTotal ?? 0)} USD`}
           extra={winSum && winSum.missing > 0 ? <span className="hint" style={{ color: '#a35c00', fontSize: 11 }}>{winSum.missing} 笔未填</span> : undefined}>
           <DataTable
-            cols={['成交原因', '订单数', '占比', '金额（折USD）', '金额占比', '平均转化周期']}
+            cols={['成交原因', '订单数', '占比', '金额（折USD）', '金额占比', '平均周期']}
+            widths={['26%', '13%', '12%', '18%', '13%', '18%']}
             empty="暂无成交原因（生成/编辑销售订单时填写）"
             rows={(winSum?.items ?? []).map((x) => [x.reason, `${x.count} 单`, `${x.share}%`, money(x.usd), `${x.usdShare}%`, x.avgCycle == null ? '—' : `${x.avgCycle} 天`])}
           />
@@ -592,7 +602,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
 
         <Panel title="丢单原因分析" hint={`${lostSum?.total ?? 0} 单 · ${money(lostSum?.usdTotal ?? 0)} USD`}>
           <DataTable
-            cols={['丢单原因', '丢单数', '占比', '丢单金额（折USD）', '金额占比', '平均丢单周期']}
+            cols={['丢单原因', '丢单数', '占比', '丢单金额（折USD）', '金额占比', '丢单周期']}
+            widths={['26%', '13%', '12%', '18%', '13%', '18%']}
             empty="暂无丢单记录（在询报价管理里标记未成单）"
             rows={(lostSum?.items ?? []).map((x) => [x.reason, `${x.count} 单`, `${x.share}%`, money(x.usd), `${x.usdShare}%`, x.avgCycle == null ? '—' : `${x.avgCycle} 天`])}
           />
@@ -604,6 +615,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         <Panel title="客户 Top10" hint={`合计 ${money(sumUsd)} USD`} style={{ gridColumn: '1 / -1' }}>
           <DataTable
             cols={['排名', '客户', '金额（折USD）', '订单数', '金额占比']}
+            widths={['7%', '41%', '22%', '14%', '16%']}
             rows={topCustomers.map((c, i) => [`${i + 1}`, c.name, money(c.usd), `${c.n} 单`, `${sumUsd ? Math.round((c.usd / sumUsd) * 100) : 0}%`])}
           />
         </Panel>
