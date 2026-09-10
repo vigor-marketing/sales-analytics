@@ -143,11 +143,13 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
   const [ord, setOrd] = useState({ wonDate: new Date().toISOString().slice(0, 10), orderNo: '', amount: '', currency: 'USD', note: '' })
   const [ordErr, setOrdErr] = useState('')
   const [ordBusy, setOrdBusy] = useState(false)
+  const [ordOpen, setOrdOpen] = useState(false)
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
-  const [form, setForm] = useState<{ inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; note: string; blockers: string; actionPlan: string; supportNeeded: string; keyCust: boolean; keyProj: boolean; won: boolean; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
+  const [form, setForm] = useState<{ inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; note: string; blockers: string; actionPlan: string; supportNeeded: string; keyCust: boolean; keyProj: boolean; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
   const set = (patch: Partial<typeof form>) => setForm((f) => (f ? { ...f, ...patch } : f))
   useEffect(() => {
     get<Detail>(`/inquiries/${id}`).then((d) => {
+      setOrdOpen(false)
       if (d.order) { setOrder(d.order); setOrd({ wonDate: d.order.won_date, orderNo: d.order.order_no, amount: d.order.amount == null ? '' : String(d.order.amount), currency: d.order.currency, note: d.order.note || '' }) }
       else { setOrder(null) }
     }).catch(() => { /* */ })
@@ -170,7 +172,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
     try { await del(`/orders/${order.id}`); onSaved() }
     catch (e) { setOrdErr((e as Error).message) } finally { setOrdBusy(false) }
   }
-  useEffect(() => { get<Detail>(`/inquiries/${id}`).then((d) => setForm({ inquiryNo: d.inquiry_no, customerName: d.customer_name, date: d.date, country: d.country || '', useLoc: d.use_location || '', sales: d.sales, purchaser: d.purchaser, source: d.source, handTotal: d.hand_total == null ? '' : String(d.hand_total), note: d.note || '', blockers: d.blockers || '', actionPlan: d.action_plan || '', supportNeeded: d.support_needed || '', keyCust: Number(d.is_key_customer) === 1, keyProj: Number(d.is_key_project) === 1, won: Number(d.is_won) === 1, items: (d.items || []).map((it) => ({ productName: it.product_name, qty: it.qty == null ? '' : String(it.qty), amount: String(it.amount), currency: it.currency })) })).catch((e) => setErr((e as Error).message)) }, [id])
+  useEffect(() => { get<Detail>(`/inquiries/${id}`).then((d) => setForm({ inquiryNo: d.inquiry_no, customerName: d.customer_name, date: d.date, country: d.country || '', useLoc: d.use_location || '', sales: d.sales, purchaser: d.purchaser, source: d.source, handTotal: d.hand_total == null ? '' : String(d.hand_total), note: d.note || '', blockers: d.blockers || '', actionPlan: d.action_plan || '', supportNeeded: d.support_needed || '', keyCust: Number(d.is_key_customer) === 1, keyProj: Number(d.is_key_project) === 1, items: (d.items || []).map((it) => ({ productName: it.product_name, qty: it.qty == null ? '' : String(it.qty), amount: String(it.amount), currency: it.currency })) })).catch((e) => setErr((e as Error).message)) }, [id])
   const save = async () => {
     if (!form) return
     if (!form.items.some((it) => it.productName.trim() && Number(it.amount) > 0)) return setErr('至少一行有效产品')
@@ -180,7 +182,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
         date: form.date, country: form.country, useLocation: form.useLoc || form.country, sales: form.sales, purchaser: form.purchaser, source: form.source,
         totalAmount: form.handTotal ? Number(form.handTotal) : undefined, note: form.note,
         blockers: form.blockers, actionPlan: form.actionPlan, supportNeeded: form.supportNeeded,
-        isKeyCustomer: form.keyCust, isKeyProject: form.keyProj, isWon: form.won,
+        isKeyCustomer: form.keyCust, isKeyProject: form.keyProj,
         items: form.items.filter((it) => it.productName.trim() && Number(it.amount) > 0).map((it) => ({ productName: it.productName.trim(), qty: it.qty ? Number(it.qty) : undefined, amount: Number(it.amount), currency: it.currency })),
       })
       onSaved()
@@ -211,6 +213,12 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
               </div>
               <div className="col w1"><label>总金额（选填）</label><input className="sa" type="number" value={form.handTotal} onChange={(e) => set({ handTotal: e.target.value })} /></div>
             </div>
+            <div className="row" style={{ alignItems: 'center', gap: 18 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>标签</span>
+              <label className="chk"><input type="checkbox" checked={form.keyCust} onChange={(e) => set({ keyCust: e.target.checked })} /> <span className="tag kc">重点客户</span></label>
+              <label className="chk"><input type="checkbox" checked={form.keyProj} onChange={(e) => set({ keyProj: e.target.checked })} /> <span className="tag kp">重点项目</span></label>
+              <span className="hint">（在询价基本信息中修改；成交状态由下方销售订单自动判定）</span>
+            </div>
             <div style={{ margin: '6px 0', fontWeight: 600 }}>产品明细</div>
             {form.items.map((it, i) => (
               <div key={i} className="row" style={{ marginBottom: 6 }}>
@@ -222,11 +230,6 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
               </div>
             ))}
             <button className="btn sm" onClick={() => set({ items: [...form.items, { productName: '', qty: '', amount: '', currency: 'USD' }] })}>＋ 添加产品</button>
-            <div className="row" style={{ alignItems: 'center', gap: 18 }}>
-              <label className="chk"><input type="checkbox" checked={form.won} onChange={(e) => set({ won: e.target.checked })} /> <span className="tag won">已成单</span></label>
-              <label className="chk"><input type="checkbox" checked={form.keyCust} onChange={(e) => set({ keyCust: e.target.checked })} /> <span className="tag kc">重点客户</span></label>
-              <label className="chk"><input type="checkbox" checked={form.keyProj} onChange={(e) => set({ keyProj: e.target.checked })} /> <span className="tag kp">重点项目</span></label>
-            </div>
             <div className="row" style={{ marginTop: 8 }}>
               <div className="col grow1"><label>卡点/问题</label><textarea className="sa" rows={2} value={form.blockers} onChange={(e) => set({ blockers: e.target.value })} /></div>
               <div className="col grow1"><label>行动计划</label><textarea className="sa" rows={2} value={form.actionPlan} onChange={(e) => set({ actionPlan: e.target.value })} /></div>
@@ -240,8 +243,15 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
             </div>
 
             <div style={{ marginTop: 14, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>销售订单 {order ? <span className="tag won" style={{ marginLeft: 6 }}>已成单</span> : <span className="hint" style={{ fontWeight: 400 }}>（未生成；填写成单日期后点击生成，询价将自动判定为已成交）</span>}</div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>销售订单 {order ? <span className="hint" style={{ fontWeight: 400 }}>（已生成：{order.order_no} · 成单日期 {order.won_date}）</span> : <span className="hint" style={{ fontWeight: 400 }}>（未生成，点击下方按钮补充信息）</span>}</div>
               {ordErr && <div className="msg err">{ordErr}</div>}
+              {order && !ordOpen && (
+                <div className="actions">
+                  <button className="btn pri" disabled={ordBusy} onClick={() => setOrdOpen(true)}>编辑订单</button>
+                  <button className="btn danger" disabled={ordBusy} onClick={() => void delOrder()}>删除订单</button>
+                </div>
+              )}
+              {ordOpen && (<>
               <div className="row">
                 <div className="col w2"><label>成单日期 *</label><input className="sa" type="date" value={ord.wonDate} onChange={(e) => setOrd({ ...ord, wonDate: e.target.value })} /></div>
                 <div className="col w2"><label>订单号 <span className="hint">（留空自动）</span></label><input className="sa" value={ord.orderNo} onChange={(e) => setOrd({ ...ord, orderNo: e.target.value })} /></div>
@@ -251,9 +261,15 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
               <div className="col"><label>订单备注</label><textarea className="sa" rows={2} value={ord.note} onChange={(e) => setOrd({ ...ord, note: e.target.value })} /></div>
               <div className="actions" style={{ marginTop: 8 }}>
                 {order
-                  ? <><button className="btn pri" disabled={ordBusy} onClick={() => void saveOrder()}>保存订单修改</button><button className="btn danger" disabled={ordBusy} onClick={() => void delOrder()}>删除订单</button></>
-                  : <button className="btn pri" disabled={ordBusy} onClick={() => void genOrder()}>生成销售订单</button>}
+                  ? <><button className="btn pri" disabled={ordBusy} onClick={() => void saveOrder()}>保存订单修改</button><button className="btn" disabled={ordBusy} onClick={() => setOrdOpen(false)}>取消</button></>
+                  : <><button className="btn pri" disabled={ordBusy} onClick={() => void genOrder()}>确认生成订单</button><button className="btn" disabled={ordBusy} onClick={() => setOrdOpen(false)}>取消</button></>}
               </div>
+              </>)}
+              {!order && !ordOpen && (
+                <div className="actions">
+                  <button className="btn pri" disabled={ordBusy} onClick={() => setOrdOpen(true)}>生成销售订单</button>
+                </div>
+              )}
             </div>
           </>
         )}
