@@ -92,6 +92,17 @@ export function schema(): void {
   try { db.exec('ALTER TABLE inquiries ADD COLUMN is_lost INTEGER NOT NULL DEFAULT 0') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN lost_reason TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN lost_date TEXT') } catch { /* 已存在 */ }
+  // 丢单原因下拉自带「其他（手动输入）」，历史字典里的裸「其他」属重复项，清理掉
+  try {
+    const raw = db.prepare("SELECT v FROM settings WHERE k = 'lostReasons'").get() as { v: string } | undefined
+    if (raw?.v) {
+      const arr = JSON.parse(raw.v)
+      if (Array.isArray(arr) && arr.includes('其他')) {
+        const next = arr.filter((x: unknown) => x !== '其他')
+        db.prepare('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v').run('lostReasons', JSON.stringify(next))
+      }
+    }
+  } catch { /* 忽略 */ }
 }
 export const getDb = () => db
 
@@ -117,7 +128,7 @@ export function getFollowMethods(): string[] {
 /** 丢单原因字典（设置中可管理；录入时下拉选 + 允许手填） */
 export function getLostReasons(): string[] {
   try { const arr = JSON.parse(getSetting('lostReasons', '')); if (Array.isArray(arr) && arr.length) return arr.filter((x) => typeof x === 'string' && x.trim()) } catch { /* */ }
-  return ['价格无优势', '交期太长', '技术方案不满足', '客户选择竞品', '客户预算取消', '项目暂停/延期', '联系不上客户', '其他']
+  return ['价格无优势', '交期太长', '技术方案不满足', '客户选择竞品', '客户预算取消', '项目暂停/延期', '联系不上客户']
 }
 export function saveLostReasons(list: string[]): void {
   setSetting('lostReasons', JSON.stringify(list.filter((x) => text(x)).slice(0, 100)))

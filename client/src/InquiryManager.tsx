@@ -10,7 +10,7 @@ interface MetaLite { sales: { name: string; team: string }[]; purchasers: string
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
 const CURS = ['USD', 'CNY', 'EUR']
-const LOST_REASONS = ['价格无优势', '交期太长', '技术方案不满足', '客户选择竞品', '客户预算取消', '项目暂停/延期', '联系不上客户', '其他']
+const LOST_REASONS = ['价格无优势', '交期太长', '技术方案不满足', '客户选择竞品', '客户预算取消', '项目暂停/延期', '联系不上客户']
 /** 状态文案由后端自动判定：有订单=已成单，标记未成单=未成单，其余=跟进中 */
 // 状态标签统一尺寸（见 StatusChip），三种状态大小一致
 const StatusTag = StatusChip
@@ -367,7 +367,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
                         }}
                       >
                         <option value="">— 请选择原因 —</option>
-                        {(meta.lostReasons?.length ? meta.lostReasons : LOST_REASONS).map((x) => <option key={x} value={x}>{x}</option>)}
+                        {(meta.lostReasons?.length ? meta.lostReasons : LOST_REASONS).filter((x) => x !== '其他').map((x) => <option key={x} value={x}>{x}</option>)}
                         <option value="__custom__">其他（手动输入）</option>
                       </select>
                     </div>
