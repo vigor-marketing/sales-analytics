@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { del, get, put } from './api'
+import { get, put } from './api'
 import ReasonPicker from './ReasonPicker'
 import { KeyTags } from './KeyTags'
 
@@ -20,7 +20,6 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
   const [q, setQ] = useState(''); const [sales, setSales] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [product, setProduct] = useState('')
   const [rows, setRows] = useState<OrderRow[]>([])
   const [msg, setMsg] = useState(''); const [viewId, setViewId] = useState<string | null>(null); const [editId, setEditId] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
   const load = useCallback(async () => {
     try {
       const p = new URLSearchParams()
@@ -30,11 +29,6 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
     } catch (e) { setMsg((e as Error).message) }
   }, [q, sales, from, to, product])
   useEffect(() => { void load() }, [load])
-  const doDelete = async (r: OrderRow) => {
-    if (!window.confirm(`删除订单 ${r.order_no}？删除后该询价将自动变为“跟进中”。`)) return
-    setBusy(true)
-    try { await del(`/orders/${r.order_id}`); setMsg(`已删除订单：${r.order_no}`); await load() } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) }
-  }
   const card: React.CSSProperties = { flex: '1 1 150px', minWidth: 150, background: '#fff', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px' }
   return (
     <div className="card">
@@ -71,7 +65,6 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
                   <button className="btn sm" onClick={() => setViewId(r.order_id)}>查看</button>
                   <button className="btn sm" onClick={() => setEditId(r.order_id)}>编辑</button>
-                  <button className="btn sm danger" disabled={busy} onClick={() => void doDelete(r)}>删除</button>
                 </td>
               </tr>
             ))}
