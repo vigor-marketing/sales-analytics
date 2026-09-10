@@ -91,11 +91,11 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
         {/* 自适应列宽：表格永远不超过屏幕宽度（长内容在单元格内换行/省略，悬停看全文） */}
         <table className="grid fit-table" style={{ borderCollapse: 'collapse', fontSize: 12.5 }}>
           <colgroup>
-            <col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '8%' }} /><col style={{ width: '10%' }} /><col style={{ width: '6%' }} />
-            <col style={{ width: '9%' }} /><col style={{ width: '6%' }} /><col style={{ width: '11%' }} /><col style={{ width: '11%' }} /><col style={{ width: '5%' }} />
-            <col style={{ width: '5%' }} /><col style={{ width: '5%' }} /><col style={{ width: '10%' }} />
+            <col style={{ width: '9%' }} /><col style={{ width: '6%' }} /><col style={{ width: '9%' }} /><col style={{ width: '11%' }} /><col style={{ width: '7%' }} />
+            <col style={{ width: '10%' }} /><col style={{ width: '7%' }} /><col style={{ width: '17%' }} /><col style={{ width: '5%' }} /><col style={{ width: '5%' }} />
+            <col style={{ width: '5%' }} /><col style={{ width: '9%' }} />
           </colgroup>
-          <thead><tr>{['询价号', '日期', '客户', '状态', '标签', '报价合计（含费用）', '最近跟进', '跟进简述', '跟进详情', '销售', '采购', '来源', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: h === '来源' ? 'center' : 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '报价合计（含费用）' ? '产品明细合计 ＋ 运费/税费/佣金/其他费用' : (h === '跟进简述' || h === '跟进详情' ? '该询价最近一条跟进的简述 / 详情（悬停看全文）' : undefined)}>{h}</th>)}</tr></thead>
+          <thead><tr>{['询价号', '日期', '客户', '状态', '标签', '报价合计（含费用）', '最近跟进', '跟进简述与详情', '销售', '采购', '来源', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: h === '来源' ? 'center' : 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '报价合计（含费用）' ? '产品明细合计 ＋ 运费/税费/佣金/其他费用' : (h === '跟进简述与详情' ? '该询价最近一条跟进的简述与详情；点行内「查看详情」看全部跟进与附件' : undefined)}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} className={r.status === 'lost' ? 'row-lost' : undefined} style={{ borderBottom: '1px solid var(--line2)' }}>
@@ -115,14 +115,15 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                 <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }} title={r.last_followup_at ? `最近跟进：${r.last_followup_at}${r.followup_count ? `（共 ${r.followup_count} 次）` : ''}` : '还没有跟进记录'}>
                   {r.last_followup_at || '—'}
                 </td>
-                <td style={{ padding: '6px 8px', fontWeight: 600 }} title={r.last_followup_summary || '还没有跟进记录'}>
-                  {r.last_followup_summary || <span className="hint">—</span>}
-                  {r.last_followup_by ? <span className="cell-note">（{r.last_followup_by}）</span> : null}
-                </td>
-                {/* 跟进详情单独一列：单元格只做摘要，完整内容点「查看详情」（含图片/附件） */}
-                <td style={{ padding: '6px 8px' }} title={r.last_followup_detail || '还没有跟进记录'}>
+                {/* 简述与详情合并在一列；完整内容（含图片/附件）点「查看详情」 */}
+                <td style={{ padding: '6px 8px' }} title={[r.last_followup_summary, r.last_followup_detail].filter(Boolean).join(' ｜ ') || '还没有跟进记录'}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.last_followup_detail || <span className="hint">—</span>}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {r.last_followup_summary && <b>{r.last_followup_summary}</b>}
+                      {r.last_followup_detail && <span className={r.last_followup_summary ? 'cell-note' : ''}>{r.last_followup_detail}</span>}
+                      {!r.last_followup_summary && !r.last_followup_detail && <span className="hint">—</span>}
+                      {r.last_followup_by ? <span className="cell-note">（{r.last_followup_by}）</span> : null}
+                    </span>
                     {r.followup_count ? (
                       <button className="btn xs" style={{ flex: '0 0 auto' }} title="查看该询价全部跟进详情（含简述、详情、图片、附件、跟进指导）"
                         onClick={() => setFollowOf({ id: r.id, no: r.inquiry_no, customer: r.customer_name })}>查看详情{r.followup_count > 1 ? `（${r.followup_count}）` : ''}</button>
@@ -144,7 +145,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无询报价记录（先到「询报价录入」录一单）</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={12} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无询报价记录（先到「询报价录入」录一单）</td></tr>}
           </tbody>
         </table>
       </div>
