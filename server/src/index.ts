@@ -221,6 +221,56 @@ app.post('/api/inquiries', (req, res) => {
   ok(res, { id: iid, inquiryNo: no, customerId: customerId, createdCustomer, team: teamName || null }, 201)
 })
 
+// —— 询报价跟进：按 销售+询价号 定位询价并建立跟进 ——
+app.get('/api/inquiries/lookup', (req, res) => {
+  const d = getDb()
+  const no = str(req.query.no), salesQ = str(req.query.sales)
+  if (!no) return fail(res, '请提供询价号')
+  const parts = ['i.inquiry_no = ?']; const args: unknown[] = [no]
+  if (salesQ) { parts.push('i.sales = ?'); args.push(salesQ) }
+  const r = d.prepare(`SELECT i.*, c.name AS customer_name, o.order_no AS order_no, o.won_date AS order_won_date,
+      CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END AS won_flag
+    FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id LEFT JOIN orders o ON o.inquiry_id = i.id
+    WHERE ${parts.join(' AND ')}`).get(...args) as Record<string, unknown> | undefined
+  if (!r) return fail(res, salesQ ? '该销售名下未找到此询价号' : '未找到此询价号', 404)
+  const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(r.id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
+  const totals = fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount })))
+  const usd = totals.reduce((s2, x) => s2 + x.total / (FX2[x.currency] || 1), 0)
+  const { won_flag, order_won_date, is_won: _w, won_date: _wd, ...base } = r
+  ok(res, { ...base, is_won: Number(won_flag) === 1 ? 1 : 0, won_date: str(order_won_date) || null, orderNo: str(r.order_no) || null, items, totals, usdApprox: Math.round(usd), productNames: items.map((x) => x.product_name).join(' / ') })
+})
+app.get('/api/followups', (req, res) => {
+  const d = getDb()
+  const inquiryId = str(req.query.inquiryId), salesQ = str(req.query.sales), q = str(req.query.q)
+  const parts: string[] = ['1=1']; const args: unknown[] = []
+  if (inquiryId) { parts.push('f.inquiry_id = ?'); args.push(inquiryId) }
+  if (salesQ) { parts.push('i.sales = ?'); args.push(salesQ) }
+  if (q) { parts.push('(i.inquiry_no LIKE ? OR f.content LIKE ? OR c.name LIKE ?)'); const l = `%${q}%`; args.push(l, l, l) }
+  const rows = d.prepare(`SELECT f.*, i.inquiry_no, i.sales, c.name AS customer_name FROM followups f
+    JOIN inquiries i ON i.id = f.inquiry_id LEFT JOIN customers c ON c.id = i.customer_id
+    WHERE ${parts.join(' AND ')} ORDER BY f.date DESC, f.created_at DESC LIMIT 300`).all(...args)
+  ok(res, rows)
+})
+app.post('/api/followups', (req, res) => {
+  const d = getDb()
+  const inquiryId = str(req.body?.inquiryId)
+  const iq = d.prepare('SELECT * FROM inquiries WHERE id = ?').get(inquiryId) as Record<string, unknown> | undefined
+  if (!iq) return fail(res, '询价不存在', 404)
+  const date = str(req.body?.date) || todayStr()
+  const content = text(req.body?.content)
+  if (!content) return fail(res, '请填写跟进内容')
+  const nextAt = str(req.body?.nextFollowupAt) || null
+  const byName = str(req.body?.byName) || text(iq.sales)
+  const t = nowIso()
+  const fid = newId()
+  d.transaction(() => {
+    d.prepare('INSERT INTO followups (id, inquiry_id, date, method, content, next_followup_at, by_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(fid, inquiryId, date, str(req.body?.method) || '电话', content, nextAt, byName, t)
+    d.prepare('UPDATE inquiries SET last_followup_at = ?, next_followup_at = COALESCE(?, next_followup_at), updated_at = ? WHERE id = ?').run(date, nextAt, t, inquiryId)
+  })()
+  ok(res, { id: fid, inquiryId, date, nextFollowupAt: nextAt }, 201)
+})
+
 // —— 销售订单（成交的唯一来源；询价是否成交由是否存在订单自动判定） ——
 function nextOrderNo(): string {
   const d = getDb()

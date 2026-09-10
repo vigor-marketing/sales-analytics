@@ -44,6 +44,9 @@ export function schema(): void {
       last_amount REAL, last_qty REAL, use_count INTEGER NOT NULL DEFAULT 0,
       last_used_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       UNIQUE(name COLLATE NOCASE));
+    CREATE TABLE IF NOT EXISTS followups (
+      id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL, date TEXT NOT NULL, method TEXT,
+      content TEXT, next_followup_at TEXT, by_name TEXT, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS orders (
       id TEXT PRIMARY KEY, order_no TEXT NOT NULL, inquiry_id TEXT NOT NULL,
       customer_id TEXT, won_date TEXT NOT NULL, amount REAL, currency TEXT NOT NULL DEFAULT 'USD',
@@ -61,8 +64,24 @@ export function schema(): void {
   try { db.exec('ALTER TABLE inquiries ADD COLUMN action_plan TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN support_needed TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN won_date TEXT') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE inquiries ADD COLUMN last_followup_at TEXT') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE inquiries ADD COLUMN next_followup_at TEXT') } catch { /* 已存在 */ }
 }
-export const getDb = () => db
+// 语句缓存：避免每次请求/每行都新建 prepared statement（Node 24 下大量 Statement 回收会触发原生断言崩溃）
+const stmtCache = new Map<string, Database.Statement>()
+function cachedPrepare(sql: string): Database.Statement {
+  let st = stmtCache.get(sql)
+  if (!st) { st = db.prepare(sql); stmtCache.set(sql, st) }
+  return st
+}
+const dbProxy = new Proxy(db, {
+  get(target, prop, receiver) {
+    if (prop === 'prepare') return cachedPrepare
+    const v = Reflect.get(target, prop, receiver)
+    return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v
+  },
+}) as Database.Database
+export const getDb = () => dbProxy
 
 export function getSetting(k: string, dft = ''): string {
   const r = db.prepare('SELECT v FROM settings WHERE k = ?').get(k) as { v: string } | undefined
