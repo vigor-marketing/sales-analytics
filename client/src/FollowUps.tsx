@@ -10,7 +10,7 @@ interface Lookup {
   productNames: string; usdApprox: number; totals: { currency: string; total: number }[]; itemCount?: number
   last_followup_at?: string | null; next_followup_at?: string | null; status?: 'won' | 'lost' | 'following'; is_key_customer?: number; is_key_project?: number; items: { product_name: string; qty: number | null; amount: number; currency: string }[]
 }
-interface Att { url: string; name: string }
+interface Att { url: string; name: string; size?: number }
 interface Fu {
   id: string; inquiry_id: string; inquiry_no: string; customer_name: string; sales: string; date: string
   method: string; content: string | null; summary: string | null; detail: string | null
@@ -33,6 +33,7 @@ export default function FollowUps({ meta }: { meta: MetaLite }) {
   const [photos, setPhotos] = useState<string[]>([])
   const [files, setFiles] = useState<Att[]>([])
   const [uploading, setUploading] = useState(false)
+  const [dragP, setDragP] = useState(false); const [dragF, setDragF] = useState(false)
   const photoInput = useRef<HTMLInputElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const [list, setList] = useState<Fu[]>([])
@@ -76,7 +77,7 @@ export default function FollowUps({ meta }: { meta: MetaLite }) {
         })
         const res = await post<{ url: string; name: string }>('/uploads', { name: file.name, dataUrl })
         if (kind === 'photo') setPhotos((a) => [...a, res.url])
-        else setFiles((a) => [...a, { url: res.url, name: res.name }])
+        else setFiles((a) => [...a, { url: res.url, name: res.name, size: (res as { size?: number }).size ?? file.size }])
       }
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) } finally { setUploading(false) }
   }
@@ -166,32 +167,57 @@ export default function FollowUps({ meta }: { meta: MetaLite }) {
 
           <div className="row" style={{ marginTop: 8, alignItems: 'flex-start' }}>
             <div className="col" style={{ flex: 1, minWidth: 280 }}>
-              <label>图片/照片</label>
+              <label>图片/照片 {photos.length > 0 && <span className="badge new">{photos.length}</span>}</label>
               <input ref={photoInput} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => { void upload(e.target.files, 'photo'); e.target.value = '' }} />
-              <button className="btn xs" style={{ alignSelf: 'flex-start' }} disabled={uploading} onClick={() => photoInput.current?.click()}>＋ 上传图片</button>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                {photos.map((p) => (
-                  <span key={p} style={{ position: 'relative' }}>
-                    <img src={p} alt="照片" style={{ width: 84, height: 64, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)' }} />
-                    <button className="icon-del" style={{ position: 'absolute', top: -8, right: -8, width: 22, height: 22, fontSize: 13 }} title="移除" onClick={() => setPhotos((a) => a.filter((x) => x !== p))}>×</button>
-                  </span>
-                ))}
-                {photos.length === 0 && <span className="hint">未上传</span>}
+              <div
+                className={'dropzone' + (dragP ? ' on' : '') + (uploading ? ' uploading' : '')}
+                onClick={() => { if (!uploading) photoInput.current?.click() }}
+                onDragOver={(e) => { e.preventDefault(); setDragP(true) }}
+                onDragLeave={() => setDragP(false)}
+                onDrop={(e) => { e.preventDefault(); setDragP(false); if (!uploading) void upload(e.dataTransfer.files, 'photo') }}
+                title="点击选择，或把图片拖进来（可多选，单张≤8MB）"
+              >
+                <span style={{ fontSize: 16, lineHeight: 1 }}>🖼</span>
+                <span>{uploading ? '上传中…' : '点击或拖拽图片到此处'}</span>
+                <span className="hint" style={{ fontSize: 11 }}>支持多张 · 单张 ≤ 8MB</span>
               </div>
+              {photos.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                  {photos.map((p) => (
+                    <span key={p} className="thumb" title="点击查看原图">
+                      <a href={p} target="_blank" rel="noreferrer"><img src={p} alt="照片" /></a>
+                      <button className="del" title="移除这张图片" onClick={() => setPhotos((a) => a.filter((x) => x !== p))}>×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="col" style={{ flex: 1, minWidth: 280 }}>
-              <label>附件</label>
+              <label>附件 {files.length > 0 && <span className="badge new">{files.length}</span>}</label>
               <input ref={fileInput} type="file" multiple style={{ display: 'none' }} onChange={(e) => { void upload(e.target.files, 'file'); e.target.value = '' }} />
-              <button className="btn xs" style={{ alignSelf: 'flex-start' }} disabled={uploading} onClick={() => fileInput.current?.click()}>＋ 上传附件</button>
-              <div style={{ marginTop: 6 }}>
-                {files.map((x) => (
-                  <div key={x.url} className="row" style={{ marginBottom: 4 }}>
-                    <a className="mono" href={x.url} target="_blank" rel="noreferrer" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.name}</a>
-                    <button className="btn sm danger" onClick={() => setFiles((a) => a.filter((y) => y.url !== x.url))}>移除</button>
-                  </div>
-                ))}
-                {files.length === 0 && <span className="hint">未上传</span>}
+              <div
+                className={'dropzone' + (dragF ? ' on' : '') + (uploading ? ' uploading' : '')}
+                onClick={() => { if (!uploading) fileInput.current?.click() }}
+                onDragOver={(e) => { e.preventDefault(); setDragF(true) }}
+                onDragLeave={() => setDragF(false)}
+                onDrop={(e) => { e.preventDefault(); setDragF(false); if (!uploading) void upload(e.dataTransfer.files, 'file') }}
+                title="点击选择，或把文件拖进来（可多选，单个≤8MB）"
+              >
+                <span style={{ fontSize: 16, lineHeight: 1 }}>📎</span>
+                <span>{uploading ? '上传中…' : '点击或拖拽文件到此处'}</span>
+                <span className="hint" style={{ fontSize: 11 }}>支持多选 · 单个 ≤ 8MB</span>
               </div>
+              {files.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                  {files.map((x) => (
+                    <span key={x.url} className="filechip" title={x.name}>
+                      <a className="mono" href={x.url} target="_blank" rel="noreferrer">{x.name}</a>
+                      {x.size != null && <span className="hint" style={{ fontSize: 11 }}>{(x.size / 1024).toFixed(0)}KB</span>}
+                      <button className="del" title="移除该附件" onClick={() => setFiles((a) => a.filter((y) => y.url !== x.url))}>×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

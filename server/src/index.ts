@@ -9,7 +9,15 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 app.use(cors())
-app.use(express.json())
+// 图片/附件以 base64 JSON 上传，body 上限放到 12MB（对应单文件约 8MB 的原始大小）
+app.use(express.json({ limit: '12mb' }))
+// 上传超限等 body 解析错误，返回统一的中文提示（而不是 HTML 500）
+app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const e = err as { type?: string; status?: number; message?: string }
+  if (e?.type === 'entity.too.large') return fail(res, '文件过大（单个文件上限 8MB）', 413)
+  if (e?.status === 400 && e?.message?.includes('JSON')) return fail(res, '请求内容格式不正确', 400)
+  return next(err)
+})
 
 const str = (v: unknown) => text(v)
 /** 录入/更新询价时把产品沉淀进产品档案 */
@@ -395,7 +403,7 @@ app.post('/api/followups', (req, res) => {
   const detail = text(req.body?.detail) || text(req.body?.content) || null
   if (!summary && !detail) return fail(res, '请填写跟进简述或具体内容')
   const photos = Array.isArray(req.body?.photos) ? (req.body.photos as unknown[]).map((x) => str(x)).filter(Boolean).slice(0, 20) : []
-  const attachments = Array.isArray(req.body?.attachments) ? (req.body.attachments as { url?: unknown; name?: unknown }[]).map((x) => ({ url: str(x.url), name: str(x.name) })).filter((x) => x.url).slice(0, 20) : []
+  const attachments = Array.isArray(req.body?.attachments) ? (req.body.attachments as { url?: unknown; name?: unknown; size?: unknown }[]).map((x) => ({ url: str(x.url), name: str(x.name), size: num(x.size) ?? null })).filter((x) => x.url).slice(0, 20) : []
   const nextAt = str(req.body?.nextFollowupAt) || null
   const byName = str(req.body?.byName) || text(iq.sales)
   const t = nowIso()
