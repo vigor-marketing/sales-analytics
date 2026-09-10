@@ -1,8 +1,8 @@
 /** sales-analytics v3 起步：询报价录入页 API */
 import cors from 'cors'
 import express from 'express'
-import { schema, ensurePeople, backfillProducts, migrateWonToOrders, getDb, getSources, getCountries, saveSources, getSetting, setSetting, newId, nowIso, todayStr, text, num } from './db.js'
-import { existsSync } from 'node:fs'
+import { schema, ensurePeople, backfillProducts, migrateWonToOrders, getDb, getSources, getCountries, saveSources, getFollowMethods, saveFollowMethods, getSetting, setSetting, newId, nowIso, todayStr, text, num } from './db.js'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -31,7 +31,7 @@ app.get('/api/meta/bootstrap', (_req, res) => {
   const people = d.prepare('SELECT name, department, team_name, role FROM people ORDER BY team_name, name').all() as { name: string; department: string; team_name: string; role: string }[]
   const sales = people.filter((p) => p.role === 'sales').map((p) => ({ name: p.name, team: p.team_name }))
   const purchasers = people.filter((p) => ['采购部', '销售支持组'].includes(p.department)).map((p) => p.name)
-  ok(res, { sales, purchasers, sources: getSources(), countries: getCountries(), fx: FX, month: todayStr().slice(0, 7) })
+  ok(res, { sales, purchasers, sources: getSources(), methods: getFollowMethods(), countries: getCountries(), fx: FX, month: todayStr().slice(0, 7) })
 })
 
 // —— 产品档案：录入自动沉淀 + 查询/维护 ——
@@ -67,6 +67,33 @@ app.delete('/api/products/:id', (req, res) => {
   const r = getDb().prepare('DELETE FROM products WHERE id = ?').run(req.params.id)
   if (!r.changes) return fail(res, '产品不存在', 404)
   ok(res, { deleted: 1 })
+})
+
+// —— 跟进方式字典管理（设置页统一维护） ——
+app.get('/api/follow-methods', (_req, res) => ok(res, getFollowMethods()))
+app.post('/api/follow-methods', (req, res) => {
+  const b = (req.body ?? {}) as { action?: string; value?: string; newValue?: string }
+  const list = getFollowMethods()
+  if (b.action === 'add' && str(b.value)) { const v = str(b.value); if (!list.includes(v)) list.push(v); saveFollowMethods(list); return ok(res, list) }
+  if (b.action === 'remove' && str(b.value)) { saveFollowMethods(list.filter((x) => x !== str(b.value))); return ok(res, getFollowMethods()) }
+  if (b.action === 'rename' && str(b.value) && str(b.newValue)) { saveFollowMethods(list.map((x) => (x === str(b.value) ? str(b.newValue) : x))); return ok(res, getFollowMethods()) }
+  fail(res, '未知操作')
+})
+
+// —— 附件/图片上传（base64 JSON 方式，落盘 server/data/uploads） ——
+const UPLOAD_DIR = path.resolve(__dirname, '../data/uploads')
+app.post('/api/uploads', (req, res) => {
+  const name = str(req.body?.name) || 'file'
+  const dataUrl = str(req.body?.dataUrl)
+  const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl)
+  if (!m) return fail(res, '文件格式不正确')
+  const buf = Buffer.from(m[2], 'base64')
+  if (buf.length > 8 * 1024 * 1024) return fail(res, '文件过大（上限 8MB）')
+  mkdirSync(UPLOAD_DIR, { recursive: true })
+  const safe = name.replace(/[^\w.\-\u4e00-\u9fa5]/g, '_').slice(-60)
+  const file = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safe}`
+  writeFileSync(path.join(UPLOAD_DIR, file), buf)
+  ok(res, { url: `/uploads/${file}`, name, size: buf.length, type: m[1] }, 201)
 })
 
 // —— 客户档案：列表（含询价联动聚合） + 详情 ——
@@ -119,6 +146,7 @@ app.get('/api/options', (_req, res) => {
   ok(res, {
     editable: [
       { code: 'source', name: '询价来源', values: getSources() },
+      { code: 'follow_method', name: '跟进方式', values: getFollowMethods() },
       { code: 'country_custom', name: '自定义国别补充（可选维护）', values: (() => { try { const a = JSON.parse(getSetting('countries', '')); return Array.isArray(a) ? a : [] } catch { return [] } })() },
     ],
     fixed: [
@@ -250,8 +278,11 @@ app.get('/api/followups', (req, res) => {
   if (q) { parts.push('(i.inquiry_no LIKE ? OR f.content LIKE ? OR c.name LIKE ?)'); const l = `%${q}%`; args.push(l, l, l) }
   const rows = d.prepare(`SELECT f.*, i.inquiry_no, i.sales, c.name AS customer_name FROM followups f
     JOIN inquiries i ON i.id = f.inquiry_id LEFT JOIN customers c ON c.id = i.customer_id
-    WHERE ${parts.join(' AND ')} ORDER BY f.date DESC, f.created_at DESC LIMIT 300`).all(...args)
-  ok(res, rows)
+    WHERE ${parts.join(' AND ')} ORDER BY f.date DESC, f.created_at DESC LIMIT 300`).all(...args) as Record<string, unknown>[]
+  ok(res, rows.map((r) => {
+    const parse = (v: unknown) => { try { const a = JSON.parse(str(v)); return Array.isArray(a) ? a : [] } catch { return [] } }
+    return { ...r, photos: parse(r.photos), attachments: parse(r.attachments) }
+  }))
 })
 app.post('/api/followups', (req, res) => {
   const d = getDb()
@@ -259,15 +290,18 @@ app.post('/api/followups', (req, res) => {
   const iq = d.prepare('SELECT * FROM inquiries WHERE id = ?').get(inquiryId) as Record<string, unknown> | undefined
   if (!iq) return fail(res, '询价不存在', 404)
   const date = str(req.body?.date) || todayStr()
-  const content = text(req.body?.content)
-  if (!content) return fail(res, '请填写跟进内容')
+  const summary = text(req.body?.summary) || null
+  const detail = text(req.body?.detail) || text(req.body?.content) || null
+  if (!summary && !detail) return fail(res, '请填写跟进简述或具体内容')
+  const photos = Array.isArray(req.body?.photos) ? (req.body.photos as unknown[]).map((x) => str(x)).filter(Boolean).slice(0, 20) : []
+  const attachments = Array.isArray(req.body?.attachments) ? (req.body.attachments as { url?: unknown; name?: unknown }[]).map((x) => ({ url: str(x.url), name: str(x.name) })).filter((x) => x.url).slice(0, 20) : []
   const nextAt = str(req.body?.nextFollowupAt) || null
   const byName = str(req.body?.byName) || text(iq.sales)
   const t = nowIso()
   const fid = newId()
   d.transaction(() => {
-    d.prepare('INSERT INTO followups (id, inquiry_id, date, method, content, next_followup_at, by_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(fid, inquiryId, date, str(req.body?.method) || '电话', content, nextAt, byName, t)
+    d.prepare('INSERT INTO followups (id, inquiry_id, date, method, content, summary, detail, photos, attachments, next_followup_at, by_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(fid, inquiryId, date, str(req.body?.method) || '电话', detail, summary, detail, JSON.stringify(photos), JSON.stringify(attachments), nextAt, byName, t)
     d.prepare('UPDATE inquiries SET last_followup_at = ?, next_followup_at = COALESCE(?, next_followup_at), updated_at = ? WHERE id = ?').run(date, nextAt, t, inquiryId)
   })()
   ok(res, { id: fid, inquiryId, date, nextFollowupAt: nextAt }, 201)
@@ -494,7 +528,9 @@ schema(); ensurePeople(); backfillProducts(); migrateWonToOrders()
 
 // 生产托管前端产物（可选）
 const clientDist = path.resolve(__dirname, '../../client/dist')
+app.use('/uploads', express.static(path.resolve(__dirname, '../data/uploads')))
 if (existsSync(clientDist)) {
+  app.use('/uploads', express.static(UPLOAD_DIR))
   app.use(express.static(clientDist, {
     setHeaders(res, filePath) {
       // 页面壳不缓存（避免刷新到旧版本）；带 hash 的静态资源可长缓存

@@ -61,7 +61,8 @@ export function schema(): void {
       UNIQUE(name COLLATE NOCASE));
     CREATE TABLE IF NOT EXISTS followups (
       id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL, date TEXT NOT NULL, method TEXT,
-      content TEXT, next_followup_at TEXT, by_name TEXT, created_at TEXT NOT NULL);
+      content TEXT, summary TEXT, detail TEXT, photos TEXT, attachments TEXT,
+      next_followup_at TEXT, by_name TEXT, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS orders (
       id TEXT PRIMARY KEY, order_no TEXT NOT NULL, inquiry_id TEXT NOT NULL,
       customer_id TEXT, won_date TEXT NOT NULL, amount REAL, currency TEXT NOT NULL DEFAULT 'USD',
@@ -80,6 +81,10 @@ export function schema(): void {
   try { db.exec('ALTER TABLE inquiries ADD COLUMN support_needed TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN customer_stars INTEGER') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE customers ADD COLUMN stars INTEGER') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE followups ADD COLUMN summary TEXT') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE followups ADD COLUMN detail TEXT') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE followups ADD COLUMN photos TEXT') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE followups ADD COLUMN attachments TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN won_date TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN last_followup_at TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN next_followup_at TEXT') } catch { /* 已存在 */ }
@@ -100,6 +105,15 @@ export function getSources(): string[] {
   try { const arr = JSON.parse(getSetting('inquirySources', '')); if (Array.isArray(arr)) return arr.filter((x) => typeof x === 'string' && x.trim()) } catch { /* */ }
   return ['展会', '官网', '转介绍', '老客户复购', '平台询盘', '邮件直询', '其他']
 }
+/** 跟进方式字典（设置中可管理） */
+export function getFollowMethods(): string[] {
+  try { const arr = JSON.parse(getSetting('followMethods', '')); if (Array.isArray(arr) && arr.length) return arr.filter((x) => typeof x === 'string' && x.trim()) } catch { /* */ }
+  return ['电话', '邮件', '微信', '拜访', '展会', '其他']
+}
+export function saveFollowMethods(list: string[]): void {
+  setSetting('followMethods', JSON.stringify(list.filter((x) => text(x)).slice(0, 100)))
+}
+
 export function saveSources(list: string[]): void {
   setSetting('inquirySources', JSON.stringify(list.filter((x) => text(x)).slice(0, 200)))
 }
