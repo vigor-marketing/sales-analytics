@@ -286,6 +286,20 @@ app.post('/api/countries-custom', (req, res) => {
   ok(res, arr)
 })
 
+// —— 一次性保存整组选项（设置页「保存」按钮用） ——
+app.post('/api/options/save', (req, res) => {
+  const code = str(req.body?.code)
+  const raw = Array.isArray(req.body?.values) ? (req.body.values as unknown[]).map((x) => str(x).trim()).filter(Boolean) : null
+  if (!raw) return fail(res, '请提供选项列表')
+  const values = raw.filter((v, i, a) => a.indexOf(v) === i)
+  if (code === 'source') { saveSources(values); return ok(res, getSources()) }
+  if (code === 'follow_method') { saveFollowMethods(values); return ok(res, getFollowMethods()) }
+  if (code === 'lost_reason') { saveLostReasons(values); return ok(res, getLostReasons()) }
+  if (code === 'win_reason') { saveWinReasons(values); return ok(res, getWinReasons()) }
+  if (code === 'country_custom') { setSetting('countries', JSON.stringify(values)); return ok(res, values) }
+  return fail(res, '未知的字段类型')
+})
+
 // —— 录入询报价（新客户名自动建档） ——
 app.post('/api/inquiries', (req, res) => {
   const d = getDb()
