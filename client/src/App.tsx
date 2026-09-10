@@ -248,6 +248,7 @@ export default function App() {
         </div>
         {items.map((it, i) => (
           <div key={i} className="item-row">
+            <span className="row-idx" title={`第 ${i + 1} 个产品`}>{i + 1}</span>
             <div className="col grow1">
               <label>产品名称 <span className="hint">（输入即联动产品档案，可直接下拉选择）</span></label>
               <input className="sa" style={{ width: '100%' }} list="prod-list" value={it.productName} placeholder="如：可溶桥塞"
@@ -266,7 +267,9 @@ export default function App() {
             {items.length > 1 && <button className="btn sm danger" onClick={() => setItems((a) => a.filter((_, j) => j !== i))}>删除</button>}
           </div>
         ))}
-        <button className="btn sm" onClick={() => setItems((a) => [...a, emptyRow()])}>＋ 添加产品</button>
+        <button className="add-row" onClick={() => setItems((a) => [...a, emptyRow()])}>
+          <span className="plus">＋</span> 添加产品
+        </button>
         <datalist id="prod-list">{products.map((pp) => <option key={pp.id} value={pp.name} />)}</datalist>
 
         <div style={{ marginTop: 14, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
