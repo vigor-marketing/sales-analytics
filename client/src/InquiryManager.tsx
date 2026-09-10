@@ -401,10 +401,6 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
             <div className="row" style={{ marginTop: 8 }}>
               <div className="col grow1"><label>备注</label><textarea className="sa" rows={2} value={form.note} onChange={(e) => set({ note: e.target.value })} /></div>
             </div>
-            <div className="actions">
-              <button className="btn pri" disabled={busy} onClick={() => void save()}>保存修改{busy ? '…' : ''}</button>
-            </div>
-
             {/* 跟进状态：自动判定，未成单需填原因 */}
             <div className={form.isLost && !order ? 'statuswrap-lost' : ''} style={{ marginTop: 14, borderTop: form.isLost && !order ? 'none' : '1px dashed var(--line)', paddingTop: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -478,6 +474,13 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                   {form.isLost && <span className="hint" style={{ color: 'var(--danger)' }}>已标记「未成单」：请先取消未成单标记并保存，才能生成销售订单</span>}
                 </div>
               )}
+            </div>
+
+            {/* 保存按钮固定在弹窗最下方右下角 */}
+            <div className="modal-foot">
+              {err && <span className="hint" style={{ color: 'var(--danger)', marginRight: 'auto' }}>{err}</span>}
+              <button className="btn" disabled={busy} onClick={onClose}>取消</button>
+              <button className="btn pri" disabled={busy} onClick={() => void save()}>保存修改{busy ? '…' : ''}</button>
             </div>
           </>
         )}
