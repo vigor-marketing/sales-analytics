@@ -4,6 +4,7 @@ import { StatusChip } from './StatusChip'
 import { KeyTags } from './KeyTags'
 import GuidanceNote from './Guidance'
 import GuidanceModal from './GuidanceModal'
+import FollowupRecordModal from './FollowupRecordModal'
 
 interface MetaLite { sales: { name: string; team: string }[]; methods?: string[] }
 interface Lookup {
@@ -51,6 +52,8 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   const [options, setOptions] = useState<{ id: string; inquiry_no: string; customer_name: string; date: string }[]>([])
   const [optLoading, setOptLoading] = useState(false)
   const [busy, setBusy] = useState(false)
+  // 查看某一条跟进详情（最新一条可编辑，较早的只读）
+  const [recOf, setRecOf] = useState<Fu | null>(null)
   // 详情里默认只「查看多条跟进」；点击任意一条（或点「＋ 新建跟进」）才展开建立跟进表单
   const [formOpen, setFormOpen] = useState(false)
   const formRef = useRef<HTMLDivElement | null>(null)
@@ -199,6 +202,13 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
         </div>
       )}
 
+      {recOf && (
+        <FollowupRecordModal record={recOf as unknown as Parameters<typeof FollowupRecordModal>[0]['record']}
+          editable={Number(recOf.seq) === Number(recOf.seq_total)}
+          onClose={() => setRecOf(null)}
+          onSaved={() => { void loadList(); void lookup() }} />
+      )}
+
       {commentOf && (
         // 未进入详情时可新增；已进入跟进详情则只读
         <GuidanceModal record={commentOf} people={meta.sales.map((x) => x.name)} readOnly={Boolean(hit)}
@@ -215,10 +225,11 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
         <div className="tablewrap" style={{ overflowX: 'auto' }}>
           <table className="grid follow-table fit-table" style={{ borderCollapse: 'collapse', fontSize: 12.5 }}>
             <colgroup>
-              <col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '8%' }} /><col style={{ width: '7%' }} />
-              <col style={{ width: '19%' }} /><col style={{ width: '16%' }} /><col style={{ width: '7%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} />
+              <col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '12%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
+              <col style={{ width: '16%' }} /><col style={{ width: '14%' }} /><col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
+              <col style={{ width: '11%' }} />
             </colgroup>
-            <thead><tr>{['跟进日期', '第几次跟进', '询价号 / 客户', '销售 / 跟进人', '方式', '跟进简述与内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+            <thead><tr>{['跟进日期', '第几次跟进', '询价号 / 客户', '销售 / 跟进人', '方式', '跟进简述与内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '操作' ? '查看该条跟进详情（简述、详情、图片、附件、指导）；最新一条可编辑，较早的只读' : undefined}>{h}</th>)}</tr></thead>
             <tbody>
               {list.map((r) => {
                 const detail = r.detail || r.content || ''
@@ -297,10 +308,15 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                     </td>
                     <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.next_followup_at ? r.next_followup_at.replace('T', ' ') : '—'}</td>
                     <td className="mono hint" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{String(r.created_at || '').slice(0, 16).replace('T', ' ')}</td>
+                    {/* 查看该条跟进详情：最新一条可编辑，较早的只读 */}
+                    <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>
+                      <button className="btn xs" title={Number(r.seq) === Number(r.seq_total) ? '查看/编辑这条跟进详情（该项目最新一条）' : '查看这条跟进详情（较早的记录，只读）'}
+                        onClick={() => setRecOf(r)}>查看详情</button>
+                    </td>
                   </tr>
                 )
               })}
-              {list.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 20, color: 'var(--sub)' }}>暂无跟进记录</td></tr>}
+              {list.length === 0 && <tr><td colSpan={11} style={{ textAlign: 'center', padding: 20, color: 'var(--sub)' }}>暂无跟进记录</td></tr>}
             </tbody>
           </table>
         </div>
