@@ -2,7 +2,7 @@
 import cors from 'cors'
 import express from 'express'
 import { schema, ensurePeople, backfillProducts, migrateWonToOrders, getDb, getSources, getCountries, saveSources, getFollowMethods, saveFollowMethods, getLostReasons, saveLostReasons, getWinReasons, saveWinReasons, getSetting, setSetting, newId, nowIso, todayStr, text, num } from './db.js'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -50,6 +50,35 @@ function upsertProducts(
     }
   })
 }
+/** 启动清理：删掉指向已不存在询价的明细行；清掉 24 小时内未被任何记录引用的上传文件 */
+function cleanupOrphans(): void {
+  try {
+    const d = getDb()
+    const items = d.prepare('DELETE FROM inquiry_items WHERE inquiry_id NOT IN (SELECT id FROM inquiries)').run()
+    if (items.changes) console.log(`[cleanup] 清理孤儿询价明细 ${items.changes} 行`)
+    const refs = new Set<string>()
+    ;(d.prepare('SELECT photos, attachments FROM followups').all() as { photos: string | null; attachments: string | null }[]).forEach((r) => {
+      const collect = (v: unknown, key?: string) => {
+        if (typeof v === 'string' && v) refs.add(path.basename(v))
+        else if (v && typeof v === 'object') { const u = (v as Record<string, unknown>)[key ?? 'url']; if (typeof u === 'string' && u) refs.add(path.basename(u)) }
+      }
+      try { (JSON.parse(r.photos || '[]') as unknown[]).forEach((x) => collect(x)) } catch { /* 忽略 */ }
+      try { (JSON.parse(r.attachments || '[]') as unknown[]).forEach((x) => collect(x)) } catch { /* 忽略 */ }
+    })
+    if (!existsSync(UPLOAD_DIR)) return
+    const cutoff = Date.now() - 24 * 3600 * 1000
+    let removed = 0
+    readdirSync(UPLOAD_DIR).forEach((f) => {
+      const full = path.join(UPLOAD_DIR, f)
+      try {
+        const st = statSync(full)
+        if (st.isFile() && st.mtimeMs < cutoff && !refs.has(f)) { unlinkSync(full); removed += 1 }
+      } catch { /* 忽略单个文件错误 */ }
+    })
+    if (removed) console.log(`[cleanup] 清理未引用的上传文件 ${removed} 个`)
+  } catch (e) { console.warn('[cleanup] 跳过：', (e as Error).message) }
+}
+
 const ok = (res: express.Response, data: unknown, st = 200) => res.status(st).json({ ok: true, data })
 const fail = (res: express.Response, msg: string, st = 400) => res.status(st).json({ ok: false, error: msg })
 
@@ -904,12 +933,12 @@ app.put('/api/inquiries/:id', (req, res) => {
 app.delete('/api/inquiries/:id', (_req, res) => fail(res, '询报价不允许删除', 403))
 
 schema(); ensurePeople(); backfillProducts(); migrateWonToOrders()
+cleanupOrphans()
 
 // 生产托管前端产物（可选）
 const clientDist = path.resolve(__dirname, '../../client/dist')
-app.use('/uploads', express.static(path.resolve(__dirname, '../data/uploads')))
+app.use('/uploads', express.static(UPLOAD_DIR))
 if (existsSync(clientDist)) {
-  app.use('/uploads', express.static(UPLOAD_DIR))
   app.use(express.static(clientDist, {
     setHeaders(res, filePath) {
       // 页面壳不缓存（避免刷新到旧版本）；带 hash 的静态资源可长缓存
@@ -918,9 +947,23 @@ if (existsSync(clientDist)) {
   }))
   app.get('*', (req, res, next) => { if (req.path.startsWith('/api/')) return next(); res.sendFile(path.join(clientDist, 'index.html')) })
 }
+// 未匹配到的接口统一返回 JSON，避免前端把 SPA 首页当成接口响应
+app.use('/api', (req, res) => fail(res, `接口不存在：${req.method} ${req.originalUrl}`, 404))
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   res.status(500).json({ ok: false, error: err.message || 'Internal Error' })
 })
 
 const PORT = Number(process.env.PORT ?? 3218)
-app.listen(PORT, '127.0.0.1', () => console.log(`[sales-analytics v3] http://127.0.0.1:${PORT}/api/meta/bootstrap`))
+const server = app.listen(PORT, '127.0.0.1', () => console.log(`[sales-analytics v3] http://127.0.0.1:${PORT}/api/meta/bootstrap`))
+
+// 优雅退出：停止接收请求并关闭数据库（关闭时会做 WAL 检查点，避免日志无限增长）
+const shutdown = (sig: string) => {
+  console.log(`[sales-analytics] 收到 ${sig}，正在关闭…`)
+  server.close(() => {
+    try { getDb().close() } catch { /* 忽略 */ }
+    process.exit(0)
+  })
+  setTimeout(() => process.exit(0), 3000).unref()
+}
+process.on('SIGINT', () => shutdown('SIGINT'))
+process.on('SIGTERM', () => shutdown('SIGTERM'))
