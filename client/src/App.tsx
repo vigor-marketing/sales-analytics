@@ -183,8 +183,11 @@ export default function App() {
     if (!items.some((it) => it.productName.trim() && Number(it.amount) > 0)) return setMsg({ t: 'err', text: '至少一行询价明细：填写产品名称且金额>0' })
     setBusy(true)
     try {
+      const isNew = custId === '__new__'
       const res = await post<Saved>('/inquiries', {
         inquiryNo: no.trim(), date, customerName: customer.trim(), country: country.trim() || undefined, clientId: custId && custId !== '__new__' ? custId : undefined,
+        // 新客户：服务端按 newClient 建档（与 customerName 内容一致，兼容两种契约）
+        newClient: isNew ? { name: customer.trim(), country: country.trim() || undefined, useLocation: useLoc.trim() || country.trim() || undefined } : undefined,
         items: items.filter((it) => it.productName.trim() && Number(it.amount) > 0).map((it) => ({ productName: it.productName.trim(), qty: it.qty ? Number(it.qty) : undefined, amount: Number(it.amount), currency: it.currency })),
         sales, purchaser, source, totalAmount: handTotal ? Number(handTotal) : undefined, note: note.trim() || undefined,
         useLocation: useLoc.trim() || undefined, isKeyCustomer: keyCust === '1', isKeyProject: keyProj === '1',

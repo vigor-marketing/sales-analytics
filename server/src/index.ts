@@ -197,7 +197,8 @@ app.post('/api/inquiries', (req, res) => {
   const customerStars = starsRaw && starsRaw >= 1 && starsRaw <= 5 ? Math.round(starsRaw) : null
   const clientIdIn = str(req.body?.clientId)
   const nc = (req.body?.newClient ?? null) as { name?: unknown; country?: unknown; useLocation?: unknown } | null
-  const newName = str(nc?.name)
+  // 兼容两种契约：newClient.name（标准）与 customerName（旧客户端直接传名称）
+  const newName = str(nc?.name) || (clientIdIn ? '' : str(req.body?.customerName))
   const items = (Array.isArray(req.body?.items) ? (req.body.items as unknown[]) : []) as { productName?: unknown; qty?: unknown; amount?: unknown; currency?: unknown }[]
 
   if (!no) return fail(res, '询价号必填')
@@ -517,6 +518,12 @@ app.put('/api/inquiries/:id', (req, res) => {
       const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
       clean.forEach((it) => ins.run(newId(), req.params.id, it.productName, it.qty, it.amount, it.currency, it.sort))
       upsertProducts(clean, date, t)
+    }
+    // 客户档案同步：星级/国别/使用地/来源在询报价里改动后要跟着更新
+    const custId = text(old.customer_id)
+    if (custId) {
+      d.prepare('UPDATE customers SET country = COALESCE(?, country), use_location = COALESCE(?, use_location), source = COALESCE(?, source), stars = COALESCE(?, stars), updated_at = ? WHERE id = ?')
+        .run(country || null, useLocation || null, source || null, customerStars, t, custId)
     }
   })()
   ok(res, { id: req.params.id })

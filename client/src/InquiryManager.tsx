@@ -3,7 +3,7 @@ import { del, get, post, put } from './api'
 import { COUNTRIES } from './countries'
 
 interface TotalItem { currency: string; total: number }
-interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; customer_stars?: number | null; won_date?: string | null; orderNo?: string | null; orderId?: string | null; blockers?: string | null; action_plan?: string | null; support_needed?: string | null }
+interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; customer_stars?: number | null; won_date?: string | null; orderNo?: string | null; orderId?: string | null; last_followup_at?: string | null; next_followup_at?: string | null; blockers?: string | null; action_plan?: string | null; support_needed?: string | null }
 interface Detail extends Row { items: { product_name: string; qty: number | null; amount: number; currency: string }[]; order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null } | null }
 interface MetaLite { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[] }
 
@@ -145,6 +145,8 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)', marginLeft: 10 }}>成交状态</span>
               {Number(d.is_won) === 1 ? <span className="tag won">已生成销售订单</span> : <span className="badge">跟进中</span>}
               {Number(d.is_won) === 1 && <span className="hint">订单号 {d.orderNo || '—'} · 成单日期 {d.won_date || '—'}{cycle != null ? ` · 转化 ${cycle} 天` : ''}</span>}
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)', marginLeft: 10 }}>跟进</span>
+              <span className="hint">最近跟进 {d.last_followup_at || '—'} · 下次跟进 {d.next_followup_at || '—'}（记录见「询报价跟进」页）</span>
             </div>
 
             {/* 询价明细（与录入页一致） */}
@@ -197,12 +199,15 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
   const [ordErr, setOrdErr] = useState('')
   const [ordBusy, setOrdBusy] = useState(false)
   const [ordOpen, setOrdOpen] = useState(false)
+  // 询价报价合计（生成销售订单时自动带出金额与币种，可手改）
+  const [quote, setQuote] = useState<{ currency: string; total: number }[]>([])
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
   const [form, setForm] = useState<{ inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; note: string; blockers: string; actionPlan: string; supportNeeded: string; stars: string; keyCust: boolean; keyProj: boolean; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
   const set = (patch: Partial<typeof form>) => setForm((f) => (f ? { ...f, ...patch } : f))
   useEffect(() => {
     get<Detail>(`/inquiries/${id}`).then((d) => {
       setOrdOpen(false)
+      setQuote((d.totals || []).filter((t) => Number(t.total) > 0))
       if (d.order) { setOrder(d.order); setOrd({ wonDate: d.order.won_date, orderNo: d.order.order_no, amount: d.order.amount == null ? '' : String(d.order.amount), currency: d.order.currency, note: d.order.note || '' }) }
       else { setOrder(null) }
     }).catch(() => { /* */ })
@@ -315,7 +320,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
               <div className="row">
                 <div className="col w2"><label>成单日期 *</label><input className="sa" type="date" value={ord.wonDate} onChange={(e) => setOrd({ ...ord, wonDate: e.target.value })} /></div>
                 <div className="col w2"><label>订单号 <span className="hint">（留空自动）</span></label><input className="sa" value={ord.orderNo} onChange={(e) => setOrd({ ...ord, orderNo: e.target.value })} /></div>
-                <div className="col w2"><label>订单金额</label><input className="sa" type="number" value={ord.amount} onChange={(e) => setOrd({ ...ord, amount: e.target.value })} /></div>
+                <div className="col w2"><label>订单金额 <span className="hint">（默认带出报价合计）</span></label><input className="sa" type="number" value={ord.amount} onChange={(e) => setOrd({ ...ord, amount: e.target.value })} /></div>
                 <div className="col w1"><label>币种</label><select className="sa" value={ord.currency} onChange={(e) => setOrd({ ...ord, currency: e.target.value })}>{['USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}</select></div>
               </div>
               <div className="col"><label>订单备注</label><textarea className="sa" rows={2} value={ord.note} onChange={(e) => setOrd({ ...ord, note: e.target.value })} /></div>
@@ -327,7 +332,11 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
               </>)}
               {!order && !ordOpen && (
                 <div className="actions">
-                  <button className="btn pri" disabled={ordBusy} onClick={() => setOrdOpen(true)}>生成销售订单</button>
+                  <button className="btn pri" disabled={ordBusy} onClick={() => {
+                    const best = [...quote].sort((a, b) => Number(b.total) - Number(a.total))[0]
+                    if (best) setOrd((o) => ({ ...o, amount: String(best.total), currency: best.currency }))
+                    setOrdOpen(true)
+                  }}>生成销售订单</button>
                 </div>
               )}
             </div>
