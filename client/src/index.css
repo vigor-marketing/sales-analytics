@@ -150,7 +150,13 @@ ul.sugs li:hover, ul.sugs li.on { background: var(--brand-light) }
 .rem-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
 .rem-count{background:rgba(0,0,0,.06);border-radius:999px;padding:0 7px;font-size:11px;line-height:1.7}
 .rem-tabs button.on .rem-count{background:rgba(255,255,255,.28);color:#fff}
-.rem-data-table th,.rem-data-table td{height:38px !important}
+.rem-data-table th{height:38px !important}
+.rem-data-table td{min-height:38px;padding:6px 8px}
+/* 合并后的指导列：完整展示、允许换行 */
+.gd-all{background:#fffbeb;border-left:3px solid #f59e0b;border-radius:6px;padding:6px 8px}
+.gd-item{margin:2px 0}
+.gd-item .gd-meta{font-size:11px;color:#b45309;margin-left:6px}
+.gd-txt-full{font-size:12.5px;color:#78350f;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:1px}
 .rem-kind{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700;white-space:nowrap}
 .rem-table tbody tr:hover>td{background:#f7faff}
 .dash-sec{grid-column:1/-1;display:flex;align-items:center;gap:8px;margin:10px 0 0}

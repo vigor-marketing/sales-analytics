@@ -594,11 +594,13 @@ app.get('/api/dashboard', (_req, res) => {
     FROM followup_comments fc JOIN followups f ON f.id = fc.followup_id
     LEFT JOIN inquiries i ON i.id = f.inquiry_id LEFT JOIN customers c ON c.id = i.customer_id
     ORDER BY fc.created_at DESC`)
-  const guidanceByInquiry = new Map<string, { count: number; last: { content: string; by_name: string | null; created_at: string } }>()
-  commentRows.forEach((c) => {
+  const guidanceByInquiry = new Map<string, { count: number; list: { id: string; content: string; by_name: string | null; created_at: string }[] }>()
+  // commentRows 已按时间倒序，这里按时间正序累积，便于前端从上到下阅读
+  ;[...commentRows].reverse().forEach((c) => {
     const k = text(c.inquiry_id)
-    const cur = guidanceByInquiry.get(k) ?? { count: 0, last: { content: text(c.content), by_name: str(c.by_name) || null, created_at: text(c.created_at) } }
+    const cur = guidanceByInquiry.get(k) ?? { count: 0, list: [] }
     cur.count += 1
+    cur.list.push({ id: text(c.id), content: text(c.content), by_name: str(c.by_name) || null, created_at: text(c.created_at) })
     guidanceByInquiry.set(k, cur)
   })
   const guidance = commentRows.slice(0, 12).map((c) => ({
@@ -611,7 +613,7 @@ app.get('/api/dashboard', (_req, res) => {
     customer_name: text(r.customer_name), customer_stars: num(r.customer_stars), last_followup_at: str(r.last_followup_at) || null,
     next_followup_at: str(r.next_followup_at) || null, usd: Math.round(usdOf(text(r.id))),
     commentCount: guidanceByInquiry.get(text(r.id))?.count ?? 0,
-    lastComment: guidanceByInquiry.get(text(r.id))?.last ?? null,
+    comments: guidanceByInquiry.get(text(r.id))?.list ?? [],
   })
   const open = openRows.filter((r) => Number(r.has_order) === 0)
   const dateOf = (v: unknown) => String(str(v) || '').slice(0, 10)
