@@ -124,9 +124,8 @@ export default function Dashboard({ onGoFollow }: { onGoFollow?: (t: { sales: st
                     <td className="mono" style={{ padding: '0 8px', fontWeight: r.kind === 'overdue' ? 700 : 400, color: r.kind === 'overdue' ? 'var(--danger)' : undefined }}>{fmt(r.next_followup_at)}</td>
                     <td className="mono cell-top" style={{ padding: '0 8px', textAlign: 'right' }}>{money(r.usd)}</td>
                     <td style={{ padding: '6px 8px', whiteSpace: 'normal' }}>
-                      {r.comments && r.comments.length
-                        ? <GuidanceNote all comments={r.comments} />
-                        : <span className="hint">—（可在「询报价跟进」里点💬添加指导）</span>}
+                      {/* 没有跟进指导时留空，不显示占位文字 */}
+                      {r.comments && r.comments.length ? <GuidanceNote all comments={r.comments} /> : null}
                     </td>
                     <td style={{ padding: '0 8px', textAlign: 'center' }}>
                       <button className="btn xs pri" onClick={() => onGoFollow?.({ sales: r.sales, no: r.inquiry_no })}>去跟进</button>
