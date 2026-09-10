@@ -21,7 +21,7 @@ export const text = (v: unknown): string => (typeof v === 'string' && v.trim() ?
 export function schema(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS customers (
-      id TEXT PRIMARY KEY, name TEXT NOT NULL, country TEXT, source TEXT,
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, country TEXT, use_location TEXT, source TEXT,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       UNIQUE(name COLLATE NOCASE));
     CREATE TABLE IF NOT EXISTS inquiries (
@@ -43,6 +43,7 @@ export function schema(): void {
   try { db.exec('ALTER TABLE inquiries ADD COLUMN use_location TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN is_key_customer INTEGER NOT NULL DEFAULT 0') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN is_key_project INTEGER NOT NULL DEFAULT 0') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE customers ADD COLUMN use_location TEXT') } catch { /* 已存在 */ }
 }
 export const getDb = () => db
 

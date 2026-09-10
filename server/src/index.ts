@@ -25,14 +25,34 @@ app.get('/api/meta/bootstrap', (_req, res) => {
   ok(res, { sales, purchasers, sources: getSources(), countries: getCountries(), fx: FX, month: todayStr().slice(0, 7) })
 })
 
-// —— 客户联想（自动建档支持） ——
+// —— 客户档案：列表（含询价联动聚合） + 详情 ——
 app.get('/api/customers', (req, res) => {
+  const d = getDb()
   const q = str(req.query.q)
   const like = `%${q}%`
-  const rows = q
-    ? getDb().prepare('SELECT id, name, country FROM customers WHERE name LIKE ? ORDER BY updated_at DESC LIMIT 10').all(like)
-    : getDb().prepare('SELECT id, name, country FROM customers ORDER BY name LIMIT 50').all()
-  ok(res, rows)
+  const rows = (q
+    ? d.prepare('SELECT id, name, country, use_location, source, created_at, updated_at FROM customers WHERE name LIKE ? OR country LIKE ? ORDER BY updated_at DESC LIMIT 500').all(like, like)
+    : d.prepare('SELECT id, name, country, use_location, source, created_at, updated_at FROM customers ORDER BY updated_at DESC LIMIT 500').all()) as Record<string, unknown>[]
+  const out = rows.map((c) => {
+    const inqs = d.prepare('SELECT id, date, is_key_customer, is_key_project, (SELECT COALESCE(SUM(amount),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw FROM inquiries i WHERE i.customer_id = ? ORDER BY date DESC').all(c.id) as { id: string; date: string; is_key_customer: number; is_key_project: number; raw: number }[]
+    let usd = 0
+    inqs.forEach((i) => { const totals = d.prepare('SELECT currency, COALESCE(SUM(amount),0) AS t FROM inquiry_items WHERE inquiry_id = ? GROUP BY currency').all(i.id) as { currency: string; t: number }[]; totals.forEach((x) => { usd += (x.t || 0) / (FX2[x.currency] || 1) }) })
+    return { ...c, inquiryCount: inqs.length, lastDate: inqs[0]?.date ?? null, usdTotal: Math.round(usd), keyCustomer: inqs.some((i) => Number(i.is_key_customer) === 1) ? 1 : 0, keyProjectCount: inqs.filter((i) => Number(i.is_key_project) === 1).length }
+  })
+  ok(res, out)
+})
+app.get('/api/customers/:id', (req, res) => {
+  const d = getDb()
+  const c = d.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
+  if (!c) return fail(res, '客户不存在', 404)
+  const inqs = d.prepare('SELECT i.*, (SELECT COALESCE(SUM(amount),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw_amount FROM inquiries i WHERE i.customer_id = ? ORDER BY i.date DESC').all(req.params.id) as Record<string, unknown>[]
+  const list = inqs.map((i) => {
+    const items = d.prepare('SELECT currency, amount FROM inquiry_items WHERE inquiry_id = ?').all(i.id) as { currency: string; amount: number }[]
+    const totals = fmtTotals(items)
+    const usd = totals.reduce((s, x) => s + x.total / (FX2[x.currency] || 1), 0)
+    return { ...i, itemCount: items.length, totals, usdApprox: Math.round(usd) }
+  })
+  ok(res, { ...c, inquiries: list, summary: { inquiryCount: list.length, usdTotal: Math.round(list.reduce((s, x) => s + (x.usdApprox || 0), 0)), keyProjectCount: list.filter((x) => Number((x as Record<string, unknown>).is_key_project) === 1).length } })
 })
 
 // —— 询价号唯一性检查 ——
@@ -108,10 +128,10 @@ app.post('/api/inquiries', (req, res) => {
     let cus = d.prepare('SELECT * FROM customers WHERE name = ? COLLATE NOCASE').get(customerName) as { id: string; country: string | null } | undefined
     if (!cus) {
       const cid = newId()
-      d.prepare('INSERT INTO customers (id, name, country, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(cid, customerName, country, source, t, t)
+      d.prepare('INSERT INTO customers (id, name, country, use_location, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(cid, customerName, country, useLocation, source, t, t)
       cus = { id: cid, country }
     } else {
-      d.prepare('UPDATE customers SET country = COALESCE(?, country), source = COALESCE(?, source), updated_at = ? WHERE id = ?').run(country || null, source || null, t, cus.id)
+      d.prepare('UPDATE customers SET country = COALESCE(?, country), use_location = COALESCE(?, use_location), source = COALESCE(?, source), updated_at = ? WHERE id = ?').run(country || null, useLocation || null, source || null, t, cus.id)
     }
     const iid = newId()
     d.prepare('INSERT INTO inquiries (id, inquiry_no, date, customer_id, country, use_location, sales, purchaser, source, hand_total, note, is_key_customer, is_key_project, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get, post } from './api'
 import { COUNTRIES } from './countries'
-import { ArticleIcon, EditIcon, SettingIcon } from 'tdesign-icons-react'
+import { ArticleIcon, EditIcon, SettingIcon, UserIcon } from 'tdesign-icons-react'
+import CustomerArchive from './CustomerArchive'
 import InquiryManager from './InquiryManager'
 import SettingsView from './SettingsView'
 
@@ -21,13 +22,14 @@ const DEFAULTS: Bootstrap = {
   month: new Date().toISOString().slice(0, 7),
 }
 
-type PageKey = 'entry' | 'manage' | 'settings'
+type PageKey = 'entry' | 'manage' | 'customers' | 'settings'
 const NAV: { key: PageKey; label: string; icon: JSX.Element }[] = [
   { key: 'entry', label: '询报价录入', icon: <EditIcon /> },
   { key: 'manage', label: '询报价管理', icon: <ArticleIcon /> },
+  { key: 'customers', label: '客户档案', icon: <UserIcon /> },
   { key: 'settings', label: '字段与选项设置', icon: <SettingIcon /> },
 ]
-const TITLES: Record<PageKey, string> = { entry: '询报价录入', manage: '询报价管理', settings: '字段与选项设置' }
+const TITLES: Record<PageKey, string> = { entry: '询报价录入', manage: '询报价管理', customers: '客户档案', settings: '字段与选项设置' }
 function Shell({ page, onNav, children }: { page: PageKey; onNav: (p: PageKey) => void; children: React.ReactNode }) {
   return (
     <div className="sa-layout">
@@ -80,7 +82,9 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [cusList, setCusList] = useState<{ id: string; name: string; country: string | null }[]>([])
   const [cusFocus, setCusFocus] = useState(false)
-  const [page, setPage] = useState<'entry' | 'manage' | 'settings'>('entry')
+  const [page, setPage] = useState<PageKey>('entry')
+  const [mgrQuery, setMgrQuery] = useState<string | undefined>(undefined)
+  const [custQuery, setCustQuery] = useState<string | undefined>(undefined)
   const noT = useRef<HTMLInputElement>(null)
 
   useEffect(() => { get<Bootstrap>('/meta/bootstrap').then(setMeta).catch(() => { /* 使用内置默认，保存时会再报后端错误 */ }) }, [])
@@ -143,7 +147,9 @@ export default function App() {
 
   if (page !== 'entry') return (
     <Shell page={page} onNav={setPage}>
-      {page === 'manage' ? <InquiryManager meta={meta} /> : <SettingsView />}
+      {page === 'manage' && <InquiryManager meta={meta} initialQuery={mgrQuery} onOpenCustomer={(name) => { setCustQuery(name); setPage('customers') }} />}
+      {page === 'customers' && <CustomerArchive initialQuery={custQuery} onOpenInquiries={(name) => { setMgrQuery(name); setPage('manage') }} />}
+      {page === 'settings' && <SettingsView />}
     </Shell>
   )
   return (

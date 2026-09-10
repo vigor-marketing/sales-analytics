@@ -10,8 +10,8 @@ interface MetaLite { sales: { name: string; team: string }[]; purchasers: string
 const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
 const CURS = ['USD', 'CNY', 'EUR']
 
-export default function InquiryManager({ meta = { sales: [], purchasers: [], sources: [] } }: { meta?: MetaLite }) {
-  const [q, setQ] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState('')
+export default function InquiryManager({ meta = { sales: [], purchasers: [], sources: [] }, initialQuery, onOpenCustomer }: { meta?: MetaLite; initialQuery?: string; onOpenCustomer?: (name: string) => void }) {
+  const [q, setQ] = useState(initialQuery ?? ''); const [from, setFrom] = useState(''); const [to, setTo] = useState('')
   const [sales, setSales] = useState(''); const [pur, setPur] = useState(''); const [src, setSrc] = useState('')
   const [rows, setRows] = useState<Row[]>([]); const [total, setTotal] = useState(0)
   const [msg, setMsg] = useState(''); const [busy, setBusy] = useState(false)
@@ -29,6 +29,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
       setRows(d.rows); setTotal(d.meta.total)
     } catch (e) { setMsg('加载失败：' + (e as Error).message) }
   }, [q, from, to, sales, pur, src])
+  useEffect(() => { if (initialQuery !== undefined) setQ(initialQuery) }, [initialQuery])
   useEffect(() => { void load() }, [load])
   const doDelete = async (id: string) => {
     if (!window.confirm('确认删除这条询报价？将连同产品明细一起删除，不可恢复。')) return
@@ -80,6 +81,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                 <td style={{ padding: '6px 8px', maxWidth: 180 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.note || ''}>{r.note || '—'}</div></td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
                   <button className="btn sm" onClick={() => setViewId(r.id)}>查看</button>
+                  <button className="btn sm" onClick={() => onOpenCustomer?.(r.customer_name)} title="查看该客户档案">客户档案</button>
                   <button className="btn sm" onClick={() => setEditId(r.id)}>编辑</button>
                   <button className="btn sm danger" disabled={busy} onClick={() => void doDelete(r.id)}>删除</button>
                 </td>
