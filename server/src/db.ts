@@ -29,7 +29,7 @@ export function schema(): void {
       customer_id TEXT NOT NULL REFERENCES customers(id), country TEXT, use_location TEXT,
       sales TEXT, purchaser TEXT, source TEXT, hand_total REAL, note TEXT,
       is_key_customer INTEGER NOT NULL DEFAULT 0, is_key_project INTEGER NOT NULL DEFAULT 0,
-      is_won INTEGER NOT NULL DEFAULT 0,
+      is_won INTEGER NOT NULL DEFAULT 0, won_date TEXT,
       blockers TEXT, action_plan TEXT, support_needed TEXT,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS inquiry_items (
@@ -55,6 +55,7 @@ export function schema(): void {
   try { db.exec('ALTER TABLE inquiries ADD COLUMN blockers TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN action_plan TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN support_needed TEXT') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE inquiries ADD COLUMN won_date TEXT') } catch { /* 已存在 */ }
 }
 export const getDb = () => db
 

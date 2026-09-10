@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get, post } from './api'
 import { COUNTRIES } from './countries'
-import { ArticleIcon, CartIcon, EditIcon, SettingIcon, UserIcon } from 'tdesign-icons-react'
+import { ArticleIcon, CartIcon, ChartBarIcon, EditIcon, SettingIcon, UserIcon } from 'tdesign-icons-react'
 import CustomerArchive from './CustomerArchive'
 import ProductArchive from './ProductArchive'
+import Contracts from './Contracts'
 import InquiryManager from './InquiryManager'
 import SettingsView from './SettingsView'
 
@@ -23,15 +24,16 @@ const DEFAULTS: Bootstrap = {
   month: new Date().toISOString().slice(0, 7),
 }
 
-type PageKey = 'entry' | 'manage' | 'customers' | 'products' | 'settings'
+type PageKey = 'entry' | 'manage' | 'contracts' | 'customers' | 'products' | 'settings'
 const NAV: { key: PageKey; label: string; icon: JSX.Element }[] = [
   { key: 'entry', label: '询报价录入', icon: <EditIcon /> },
   { key: 'manage', label: '询报价管理', icon: <ArticleIcon /> },
+  { key: 'contracts', label: '销售订单', icon: <ChartBarIcon /> },
   { key: 'customers', label: '客户档案', icon: <UserIcon /> },
   { key: 'products', label: '产品档案', icon: <CartIcon /> },
   { key: 'settings', label: '字段与选项设置', icon: <SettingIcon /> },
 ]
-const TITLES: Record<PageKey, string> = { entry: '询报价录入', manage: '询报价管理', customers: '客户档案', products: '产品档案', settings: '字段与选项设置' }
+const TITLES: Record<PageKey, string> = { entry: '询报价录入', manage: '询报价管理', contracts: '销售订单', customers: '客户档案', products: '产品档案', settings: '字段与选项设置' }
 function Shell({ page, onNav, children }: { page: PageKey; onNav: (p: PageKey) => void; children: React.ReactNode }) {
   return (
     <div className="sa-layout">
@@ -162,6 +164,7 @@ export default function App() {
   if (page !== 'entry') return (
     <Shell page={page} onNav={setPage}>
       {page === 'manage' && <InquiryManager meta={meta} />}
+      {page === 'contracts' && <Contracts meta={meta} />}
       {page === 'customers' && <CustomerArchive />}
       {page === 'products' && <ProductArchive />}
       {page === 'settings' && <SettingsView />}
