@@ -277,12 +277,14 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
             </div>
             <div style={{ margin: '6px 0', fontWeight: 600 }}>产品明细</div>
             {form.items.map((it, i) => (
-              <div key={i} className="row" style={{ marginBottom: 6 }}>
-                <input className="sa grow1" value={it.productName} placeholder="产品名称" onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, productName: e.target.value } : x) })} />
-                <input className="sa w1" type="number" placeholder="数量" value={it.qty} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, qty: e.target.value } : x) })} />
-                <input className="sa w1" type="number" placeholder="金额" value={it.amount} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, amount: e.target.value } : x) })} />
-                <select className="sa w1" value={it.currency} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, currency: e.target.value } : x) })}>{CURS.map((c) => <option key={c}>{c}</option>)}</select>
-                {form.items.length > 1 && <button className="btn sm danger" onClick={() => set({ items: form.items.filter((_, j) => j !== i) })}>删</button>}
+              <div key={i} className="row" style={{ marginBottom: 6, alignItems: 'center', flexWrap: 'nowrap' }}>
+                <input className="sa" style={{ flex: '1 1 240px', minWidth: 160 }} value={it.productName} placeholder="产品名称" onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, productName: e.target.value } : x) })} />
+                <input className="sa" style={{ flex: '0 0 100px', width: 100 }} type="number" placeholder="数量" value={it.qty} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, qty: e.target.value } : x) })} />
+                <input className="sa" style={{ flex: '0 0 130px', width: 130 }} type="number" placeholder="金额" value={it.amount} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, amount: e.target.value } : x) })} />
+                <select className="sa" style={{ flex: '0 0 96px', width: 96 }} value={it.currency} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, currency: e.target.value } : x) })}>{CURS.map((c) => <option key={c}>{c}</option>)}</select>
+                <span className="row-act">
+                  {form.items.length > 1 && <button className="icon-del" title="删除该行" aria-label={`删除第 ${i + 1} 行`} onClick={() => set({ items: form.items.filter((_, j) => j !== i) })}>×</button>}
+                </span>
               </div>
             ))}
             <button className="btn sm" onClick={() => set({ items: [...form.items, { productName: '', qty: '', amount: '', currency: 'USD' }] })}>＋ 添加产品</button>
