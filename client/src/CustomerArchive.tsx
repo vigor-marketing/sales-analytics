@@ -37,23 +37,22 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
       <div className="hint" style={{ margin: '8px 0' }}>共 {rows.length} 个客户 · 询价 {totals.n} 条 · 累计折USD ≈ {money(totals.usd)}</div>
       <div className="tablewrap" style={{ overflow: 'auto', maxHeight: '62vh' }}>
         <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-          <thead><tr>{['客户名称', '国别', '标签', '询价数', '累计金额(USD)', '成单', '成交率', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+          <thead><tr>{['客户名称', '国别', '标签', '询价数', '累计金额(USD)', '成交率', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} style={{ borderBottom: '1px solid var(--line2)' }}>
                 <td style={{ padding: '6px 8px', fontWeight: 600 }}>{r.name}</td>
                 <td style={{ padding: '6px 8px' }}>{r.country || '—'}</td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><Tags kc={r.keyCustomer} kp={r.keyProjectCount} won={r.wonCount > 0 ? 1 : 0} /></td>
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><Tags kc={r.keyCustomer} kp={r.keyProjectCount} /></td>
                 <td style={{ padding: '6px 8px' }}>{r.inquiryCount}</td>
                 <td style={{ padding: '6px 8px' }} className="mono">{money(r.usdTotal)}</td>
-                <td style={{ padding: '6px 8px' }}>{r.wonCount}</td>
                 <td style={{ padding: '6px 8px', fontWeight: 700, color: r.winRate >= 50 ? '#059669' : r.winRate > 0 ? '#a35c00' : 'var(--sub)' }}>{r.winRate}%</td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
                   <button className="btn sm" onClick={() => setDetailId(r.id)}>查看</button>
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无客户档案（先到「询报价录入」录一单，即自动建档）</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无客户档案（先到「询报价录入」录一单，即自动建档）</td></tr>}
           </tbody>
         </table>
       </div>
@@ -87,7 +86,7 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               <span>建档时间 <b className="mono">{((d as unknown as { created_at?: string }).created_at ?? '').slice(0, 16)}</b></span>
             </div>
             <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead><tr>{['询价号', '日期', '销售', '采购', '来源', '标签', '行数', '报价合计', '折USD'].map((h) => <th key={h} style={{ textAlign: 'left', padding: 6, borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+              <thead><tr>{['询价号', '日期', '销售', '采购', '来源', '是否成交', '标签', '行数', '报价合计', '折USD'].map((h) => <th key={h} style={{ textAlign: 'left', padding: 6, borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
               <tbody>
                 {(d.inquiries ?? []).map((i) => (
                   <tr key={i.id} style={{ borderBottom: '1px solid var(--line2)' }}>
@@ -96,13 +95,14 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                     <td style={{ padding: 6 }}>{i.sales}</td>
                     <td style={{ padding: 6 }}>{i.purchaser}</td>
                     <td style={{ padding: 6 }}>{i.source}</td>
-                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}><Tags kc={i.is_key_customer} kp={i.is_key_project} won={i.is_won} /></td>
+                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}>{Number(i.is_won) === 1 ? <span className="tag won">已成单</span> : <span className="badge">未成交</span>}</td>
+                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}><Tags kc={i.is_key_customer} kp={i.is_key_project} /></td>
                     <td style={{ padding: 6 }}>{i.itemCount}</td>
                     <td style={{ padding: 6 }}>{(i.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</td>
                     <td style={{ padding: 6 }} className="mono">{money(i.usdApprox)}</td>
                   </tr>
                 ))}
-                {(d.inquiries ?? []).length === 0 && <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', color: 'var(--sub)' }}>该客户暂无询价</td></tr>}
+                {(d.inquiries ?? []).length === 0 && <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', color: 'var(--sub)' }}>该客户暂无询价</td></tr>}
               </tbody>
             </table>
           </>
