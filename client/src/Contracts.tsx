@@ -231,19 +231,18 @@ function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
               <Info label="下次跟进" value={d.next_followup_at ? String(d.next_followup_at).replace('T', ' ') : '—'} mono />
             </div>
             {fus.length > 0 ? (
-              <div className="tablewrap" style={{ marginTop: 6 }}>
-                <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
-                  <colgroup><col style={{ width: '11%' }} /><col style={{ width: '8%' }} /><col style={{ width: '20%' }} /><col style={{ width: '32%' }} /><col style={{ width: '15%' }} /><col style={{ width: '14%' }} /></colgroup>
-                  <thead><tr>{['跟进日期', '方式', '简述', '具体内容', '下次跟进', '跟进人'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
+              <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 6 }}>
+                <table className="grid data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                  <thead><tr>{['跟进日期', '方式', '简述', '具体内容', '下次跟进', '跟进人'].map((h, i) => <th key={h} style={{ textAlign: i === 3 ? 'left' : i === 0 || i === 2 || i === 4 ? 'left' : 'left' }}>{h}</th>)}</tr></thead>
                   <tbody>
                     {fus.map((f) => (
                       <tr key={f.id}>
-                        <td className="mono" title={f.date}>{f.date}</td>
-                        <td title={f.method || '—'}>{f.method || '—'}</td>
-                        <td title={f.summary || '—'}>{f.summary || '—'}</td>
-                        <td title={f.detail || '—'}>{f.detail || '—'}</td>
-                        <td className="mono" title={f.next_followup_at ? String(f.next_followup_at).replace('T', ' ') : '未设置'}>{f.next_followup_at ? String(f.next_followup_at).replace('T', ' ') : '—'}</td>
-                        <td title={f.by_name || '—'}>{f.by_name || '—'}</td>
+                        <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.date}</td>
+                        <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.method || '—'}</td>
+                        <td style={{ padding: '6px 8px' }}>{f.summary || '—'}</td>
+                        <td style={{ padding: '6px 8px', minWidth: 260, whiteSpace: 'pre-wrap' }}>{f.detail || '—'}</td>
+                        <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.next_followup_at ? String(f.next_followup_at).replace('T', ' ') : '—'}</td>
+                        <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.by_name || '—'}</td>
                       </tr>
                     ))}
                   </tbody>
