@@ -258,7 +258,7 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                             ))}
                           </td>
                           {/* 跟进指导：此处只读查看，醒目标注；新增/追加在「询报价跟进」页 */}
-                          <td style={{ padding: '6px 8px' }}><GuidanceNote compact comments={f.comments} /></td>
+                          <td style={{ padding: '6px 8px' }}><GuidanceNote all comments={f.comments} /></td>
                           <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.next_followup_at || '—'}</td>
                           <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.by_name || '—'}</td>
                           <td className="mono hint" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{String(f.created_at || '').slice(0, 16).replace('T', ' ')}</td>

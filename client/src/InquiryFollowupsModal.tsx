@@ -78,8 +78,9 @@ export default function InquiryFollowupsModal({ inquiryId, inquiryNo, customerNa
             </div>
             {(f.comments ?? []).length > 0 && (
               <div className="fu-card-sec">
-                <label>跟进指导（{(f.comments ?? []).length} 条）</label>
-                <div style={{ marginTop: 4 }}><GuidanceNote comments={f.comments} /></div>
+                <label>跟进指导（{(f.comments ?? []).length} 条 · 全部展开）</label>
+                {/* 全部指导逐条完整展示，无需悬停 */}
+                <div style={{ marginTop: 4 }}><GuidanceNote all comments={f.comments} /></div>
               </div>
             )}
           </div>
