@@ -4,7 +4,7 @@ import { COUNTRIES } from './countries'
 
 interface TotalItem { currency: string; total: number }
 interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; won_date?: string | null; orderNo?: string | null; orderId?: string | null; blockers?: string | null; action_plan?: string | null; support_needed?: string | null }
-interface Detail extends Row { items: { product_name: string; qty: number | null; amount: number; currency: string }[] }
+interface Detail extends Row { items: { product_name: string; qty: number | null; amount: number; currency: string }[]; order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null } | null }
 interface MetaLite { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[] }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
@@ -18,7 +18,6 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
   const [msg, setMsg] = useState(''); const [busy, setBusy] = useState(false)
   const [viewId, setViewId] = useState<string | null>(null)
   const [editId, setEditId] = useState<string | null>(null)
-  const [orderId, setOrderId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -32,11 +31,6 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
     } catch (e) { setMsg('加载失败：' + (e as Error).message) }
   }, [q, from, to, sales, pur, src])
   useEffect(() => { void load() }, [load])
-  const doDelete = async (id: string) => {
-    if (!window.confirm('确认删除这条询报价？将连同产品明细一起删除，不可恢复。')) return
-    setBusy(true)
-    try { await del(`/inquiries/${id}`); setMsg('已删除'); await load() } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) }
-  }
   const fmtT = (r: Row) => (r.totals ?? []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'
   const sumUsd = rows.reduce((s, r) => s + (r.usdApprox || 0), 0)
   return (
@@ -77,10 +71,6 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
                   <button className="btn sm" onClick={() => setViewId(r.id)}>查看</button>
                   <button className="btn sm" onClick={() => setEditId(r.id)}>编辑</button>
-                  {Number(r.is_won) === 1
-                    ? <button className="btn sm" disabled={busy} onClick={() => setOrderId(r.id)} title={`订单号 ${r.orderNo || '—'} · 成单日期 ${r.won_date || '—'}`}>订单</button>
-                    : <button className="btn sm pri" disabled={busy} onClick={() => setOrderId(r.id)}>生成销售订单</button>}
-                  <button className="btn sm danger" disabled={busy} onClick={() => void doDelete(r.id)}>删除</button>
                 </td>
               </tr>
             ))}
@@ -90,7 +80,6 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
       </div>
       {viewId && <DetailModal id={viewId} onClose={() => setViewId(null)} />}
       {editId && <EditModal id={editId} meta={meta} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); void load() }} />}
-      {orderId && <OrderModal inquiry={rows.find((x) => x.id === orderId) || null} onClose={() => setOrderId(null)} onSaved={() => { setOrderId(null); void load() }} />}
     </div>
   )
 }
@@ -104,73 +93,6 @@ function TagBlocks({ r }: { r: { is_key_customer?: number; is_key_project?: numb
       {kc && <span className="tag kc">重点客户</span>}
       {kp && <span className="tag kp">重点项目</span>}
     </>
-  )
-}
-function OrderModal({ inquiry, onClose, onSaved }: { inquiry: Row | null; onClose: () => void; onSaved: () => void }) {
-  const today = new Date().toISOString().slice(0, 10)
-  const editing = Number(inquiry?.is_won) === 1 && !!inquiry?.orderId
-  const [wonDate, setWonDate] = useState(editing ? (inquiry?.won_date || today) : today)
-  const [orderNo, setOrderNo] = useState(editing ? (inquiry?.orderNo || '') : '')
-  const [amount, setAmount] = useState('')
-  const [currency, setCurrency] = useState('USD')
-  const [note, setNote] = useState('')
-  const [err, setErr] = useState('')
-  const [busy, setBusy] = useState(false)
-  useEffect(() => {
-    if (!inquiry) return
-    setWonDate(editing ? (inquiry.won_date || today) : today)
-    setOrderNo(editing ? (inquiry.orderNo || '') : '')
-    setAmount(inquiry.hand_total != null ? String(inquiry.hand_total) : String(inquiry.usdApprox || ''))
-    setCurrency('USD')
-    setNote('')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inquiry?.id])
-  if (!inquiry) return null
-  const cycle = wonDate && inquiry.date ? Math.round((Date.parse(wonDate) - Date.parse(inquiry.date)) / 86400000) : null
-  const save = async () => {
-    if (!wonDate) return setErr('请选择成单日期')
-    if (inquiry.date && wonDate < inquiry.date) return setErr(`成单日期不能早于询价日期（${inquiry.date}）`)
-    setBusy(true); setErr('')
-    try {
-      if (editing && inquiry.orderId) {
-        await put(`/orders/${inquiry.orderId}`, { wonDate, orderNo: orderNo.trim() || undefined, amount: amount ? Number(amount) : undefined, currency, note })
-      } else {
-        await post('/orders', { inquiryId: inquiry.id, wonDate, orderNo: orderNo.trim() || undefined, amount: amount ? Number(amount) : undefined, currency, note })
-      }
-      onSaved()
-    } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
-  }
-  const remove = async () => {
-    if (!inquiry.orderId) return
-    if (!window.confirm(`删除订单 ${inquiry.orderNo || ''}？删除后该询价将自动变为“跟进中”。`)) return
-    setBusy(true); setErr('')
-    try { await del(`/orders/${inquiry.orderId}`); onSaved() } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
-  }
-  return (
-    <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 'min(560px, 96vw)' }} role="dialog" aria-modal="true" aria-label="销售订单">
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <h3 style={{ margin: 0 }}>{editing ? `订单详情 · ${inquiry.orderNo || ''}` : `生成销售订单 · ${inquiry.inquiry_no}`}</h3>
-          <button className="btn sm" onClick={onClose}>取消</button>
-        </div>
-        {err && <div className="msg err">{err}</div>}
-        <div className="hint" style={{ margin: '8px 0' }}>{inquiry.customer_name} · 询价日期 {inquiry.date} · 销售 {inquiry.sales} · 报价 ≈USD {money(inquiry.usdApprox)}</div>
-        <div className="row">
-          <div className="col w2"><label>成单日期 *</label><input className="sa" type="date" value={wonDate} onChange={(e) => setWonDate(e.target.value)} /></div>
-          <div className="col w2"><label>订单号 <span className="hint">（留空自动生成）</span></label><input className="sa" value={orderNo} onChange={(e) => setOrderNo(e.target.value)} placeholder="SO-YYYYMMDD-001" /></div>
-        </div>
-        <div className="row">
-          <div className="col w2"><label>订单金额</label><input className="sa" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
-          <div className="col w1"><label>币种</label><select className="sa" value={currency} onChange={(e) => setCurrency(e.target.value)}>{['USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}</select></div>
-          <span className="hint" style={{ alignSelf: 'center' }}>{cycle != null && cycle >= 0 ? `转化周期 ${cycle} 天` : ''}</span>
-        </div>
-        <div className="col"><label>备注</label><textarea className="sa" rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></div>
-        <div className="actions" style={{ marginTop: 10 }}>
-          <button className="btn pri" disabled={busy} onClick={() => void save()}>{editing ? '保存修改' : '确认生成订单'}{busy ? '…' : ''}</button>
-          {editing && <button className="btn danger" disabled={busy} onClick={() => void remove()}>删除订单</button>}
-        </div>
-      </div>
-    </div>
   )
 }
 function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
@@ -217,9 +139,37 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
 }
 
 function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onClose, onSaved }: { id: string; meta?: MetaLite; onClose: () => void; onSaved: () => void }) {
+  const [order, setOrder] = useState<{ id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null } | null>(null)
+  const [ord, setOrd] = useState({ wonDate: new Date().toISOString().slice(0, 10), orderNo: '', amount: '', currency: 'USD', note: '' })
+  const [ordErr, setOrdErr] = useState('')
+  const [ordBusy, setOrdBusy] = useState(false)
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
   const [form, setForm] = useState<{ inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; note: string; blockers: string; actionPlan: string; supportNeeded: string; keyCust: boolean; keyProj: boolean; won: boolean; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
   const set = (patch: Partial<typeof form>) => setForm((f) => (f ? { ...f, ...patch } : f))
+  useEffect(() => {
+    get<Detail>(`/inquiries/${id}`).then((d) => {
+      if (d.order) { setOrder(d.order); setOrd({ wonDate: d.order.won_date, orderNo: d.order.order_no, amount: d.order.amount == null ? '' : String(d.order.amount), currency: d.order.currency, note: d.order.note || '' }) }
+      else { setOrder(null) }
+    }).catch(() => { /* */ })
+  }, [id])
+  const genOrder = async () => {
+    setOrdErr(''); setOrdBusy(true)
+    try { await post('/orders', { inquiryId: id, wonDate: ord.wonDate, orderNo: ord.orderNo.trim() || undefined, amount: ord.amount ? Number(ord.amount) : undefined, currency: ord.currency, note: ord.note }); onSaved() }
+    catch (e) { setOrdErr((e as Error).message) } finally { setOrdBusy(false) }
+  }
+  const saveOrder = async () => {
+    if (!order) return
+    setOrdErr(''); setOrdBusy(true)
+    try { await put(`/orders/${order.id}`, { wonDate: ord.wonDate, orderNo: ord.orderNo.trim() || undefined, amount: ord.amount ? Number(ord.amount) : undefined, currency: ord.currency, note: ord.note }); onSaved() }
+    catch (e) { setOrdErr((e as Error).message) } finally { setOrdBusy(false) }
+  }
+  const delOrder = async () => {
+    if (!order) return
+    if (!window.confirm(`删除订单 ${order.order_no}？该询价将自动变为“跟进中”。`)) return
+    setOrdErr(''); setOrdBusy(true)
+    try { await del(`/orders/${order.id}`); onSaved() }
+    catch (e) { setOrdErr((e as Error).message) } finally { setOrdBusy(false) }
+  }
   useEffect(() => { get<Detail>(`/inquiries/${id}`).then((d) => setForm({ inquiryNo: d.inquiry_no, customerName: d.customer_name, date: d.date, country: d.country || '', useLoc: d.use_location || '', sales: d.sales, purchaser: d.purchaser, source: d.source, handTotal: d.hand_total == null ? '' : String(d.hand_total), note: d.note || '', blockers: d.blockers || '', actionPlan: d.action_plan || '', supportNeeded: d.support_needed || '', keyCust: Number(d.is_key_customer) === 1, keyProj: Number(d.is_key_project) === 1, won: Number(d.is_won) === 1, items: (d.items || []).map((it) => ({ productName: it.product_name, qty: it.qty == null ? '' : String(it.qty), amount: String(it.amount), currency: it.currency })) })).catch((e) => setErr((e as Error).message)) }, [id])
   const save = async () => {
     if (!form) return
@@ -287,6 +237,23 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
             </div>
             <div className="actions">
               <button className="btn pri" disabled={busy} onClick={() => void save()}>保存修改{busy ? '…' : ''}</button>
+            </div>
+
+            <div style={{ marginTop: 14, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>销售订单 {order ? <span className="tag won" style={{ marginLeft: 6 }}>已成单</span> : <span className="hint" style={{ fontWeight: 400 }}>（未生成；填写成单日期后点击生成，询价将自动判定为已成交）</span>}</div>
+              {ordErr && <div className="msg err">{ordErr}</div>}
+              <div className="row">
+                <div className="col w2"><label>成单日期 *</label><input className="sa" type="date" value={ord.wonDate} onChange={(e) => setOrd({ ...ord, wonDate: e.target.value })} /></div>
+                <div className="col w2"><label>订单号 <span className="hint">（留空自动）</span></label><input className="sa" value={ord.orderNo} onChange={(e) => setOrd({ ...ord, orderNo: e.target.value })} /></div>
+                <div className="col w2"><label>订单金额</label><input className="sa" type="number" value={ord.amount} onChange={(e) => setOrd({ ...ord, amount: e.target.value })} /></div>
+                <div className="col w1"><label>币种</label><select className="sa" value={ord.currency} onChange={(e) => setOrd({ ...ord, currency: e.target.value })}>{['USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}</select></div>
+              </div>
+              <div className="col"><label>订单备注</label><textarea className="sa" rows={2} value={ord.note} onChange={(e) => setOrd({ ...ord, note: e.target.value })} /></div>
+              <div className="actions" style={{ marginTop: 8 }}>
+                {order
+                  ? <><button className="btn pri" disabled={ordBusy} onClick={() => void saveOrder()}>保存订单修改</button><button className="btn danger" disabled={ordBusy} onClick={() => void delOrder()}>删除订单</button></>
+                  : <button className="btn pri" disabled={ordBusy} onClick={() => void genOrder()}>生成销售订单</button>}
+              </div>
             </div>
           </>
         )}

@@ -433,12 +433,8 @@ app.put('/api/inquiries/:id', (req, res) => {
   })()
   ok(res, { id: req.params.id })
 })
-app.delete('/api/inquiries/:id', (req, res) => {
-  const d = getDb()
-  const r = d.prepare('DELETE FROM inquiries WHERE id = ?').run(req.params.id)
-  if (!r.changes) return fail(res, '询价不存在', 404)
-  ok(res, { deleted: 1 })
-})
+// 询报价不允许删除（如需作废请在编辑中处理；成交以订单为准）
+app.delete('/api/inquiries/:id', (_req, res) => fail(res, '询报价不允许删除', 403))
 
 schema(); ensurePeople(); backfillProducts(); migrateWonToOrders()
 
