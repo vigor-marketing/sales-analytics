@@ -602,12 +602,44 @@ app.post('/api/followups', (req, res) => {
     d.prepare('INSERT INTO followups (id, inquiry_id, date, method, content, summary, detail, photos, attachments, next_followup_at, by_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(fid, inquiryId, date, str(req.body?.method) || '电话', detail, summary, detail, JSON.stringify(photos), JSON.stringify(attachments), nextAt, byName, t)
     // 询价上的「最近跟进 / 下次跟进」按**最新一条**跟进记录重算（补录历史日期不会覆盖最新状态）
-    d.prepare(`UPDATE inquiries SET
-        last_followup_at = (SELECT f2.date FROM followups f2 WHERE f2.inquiry_id = ? ORDER BY f2.date DESC, f2.created_at DESC, f2.rowid DESC LIMIT 1),
-        next_followup_at = (SELECT f3.next_followup_at FROM followups f3 WHERE f3.inquiry_id = ? ORDER BY f3.date DESC, f3.created_at DESC, f3.rowid DESC LIMIT 1),
-        updated_at = ? WHERE id = ?`).run(inquiryId, inquiryId, t, inquiryId)
+    syncInquiryFollowTimes(inquiryId, t)
   })()
   ok(res, { id: fid, inquiryId, date, nextFollowupAt: nextAt }, 201)
+})
+/** 按最新一条跟进重算询价上的「最近跟进 / 下次跟进」（新增、修改日期后都要调用） */
+function syncInquiryFollowTimes(inquiryId: string, t: string): void {
+  getDb().prepare(`UPDATE inquiries SET
+      last_followup_at = (SELECT f2.date FROM followups f2 WHERE f2.inquiry_id = ? ORDER BY f2.date DESC, f2.created_at DESC, f2.rowid DESC LIMIT 1),
+      next_followup_at = (SELECT f3.next_followup_at FROM followups f3 WHERE f3.inquiry_id = ? ORDER BY f3.date DESC, f3.created_at DESC, f3.rowid DESC LIMIT 1),
+      updated_at = ? WHERE id = ?`).run(inquiryId, inquiryId, t, inquiryId)
+}
+// 修改跟进记录：只有该项目「最新一条」允许改（旧的只读，保证历史可追溯）
+app.put('/api/followups/:id', (req, res) => {
+  const d = getDb()
+  const fid = str(req.params.id)
+  const old = d.prepare('SELECT * FROM followups WHERE id = ?').get(fid) as Record<string, unknown> | undefined
+  if (!old) return fail(res, '跟进记录不存在', 404)
+  const inquiryId = text(old.inquiry_id)
+  const latest = d.prepare('SELECT id FROM followups WHERE inquiry_id = ? ORDER BY date DESC, created_at DESC, rowid DESC LIMIT 1').get(inquiryId) as { id: string } | undefined
+  if (!latest || latest.id !== fid) return fail(res, '只能编辑该项目最新一条跟进记录；较早的记录只能查看', 409)
+  const date = req.body?.date !== undefined ? str(req.body.date) : str(old.date)
+  if (!isDate(date)) return fail(res, '跟进日期格式应为 YYYY-MM-DD（且为真实日期）')
+  const summary = req.body?.summary !== undefined ? (text(req.body.summary) || null) : (str(old.summary) || null)
+  const detail = req.body?.detail !== undefined ? (text(req.body.detail) || null) : (str(old.detail) || str(old.content) || null)
+  if (!summary && !detail) return fail(res, '请填写跟进简述或具体内容')
+  const method = req.body?.method !== undefined ? (str(req.body.method) || '电话') : (str(old.method) || '电话')
+  const nextAt = req.body?.nextFollowupAt !== undefined ? (str(req.body.nextFollowupAt) || null) : (str(old.next_followup_at) || null)
+  if (nextAt && !isDate(nextAt)) return fail(res, '下次跟进日期格式应为 YYYY-MM-DD（且为真实日期）')
+  const byName = req.body?.byName !== undefined ? (str(req.body.byName) || null) : (str(old.by_name) || null)
+  const tooLong = overLimit([[summary, 2000, '跟进简述'], [detail, 5000, '跟进内容'], [method, 40, '跟进方式']])
+  if (tooLong) return fail(res, tooLong)
+  const t = nowIso()
+  d.transaction(() => {
+    d.prepare('UPDATE followups SET date = ?, method = ?, content = ?, summary = ?, detail = ?, next_followup_at = ?, by_name = ? WHERE id = ?')
+      .run(date, method, detail, summary, detail, nextAt, byName, fid)
+    syncInquiryFollowTimes(inquiryId, t)
+  })()
+  ok(res, { id: fid, inquiryId, date, method, summary, detail, nextFollowupAt: nextAt, byName })
 })
 
 // —— 销售订单（成交的唯一来源；询价是否成交由是否存在订单自动判定） ——

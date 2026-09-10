@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get, post } from './api'
 import { StatusChip } from './StatusChip'
 import { KeyTags } from './KeyTags'
 import GuidanceNote from './Guidance'
 import GuidanceModal from './GuidanceModal'
+import FollowupRecordModal from './FollowupRecordModal'
 
 interface MetaLite { sales: { name: string; team: string }[]; methods?: string[] }
 interface Lookup {
@@ -36,6 +37,10 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   const [sales, setSales] = useState('')
   const [no, setNo] = useState('')
   const [hit, setHit] = useState<Lookup | null>(null)
+  // 项目行展开（多条跟进的项目：第一次点击先展开）
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // 单条记录弹窗：最新一条可编辑，较早的只读
+  const [recModal, setRecModal] = useState<{ record: Fu; editable: boolean } | null>(null)
   const [lookErr, setLookErr] = useState('')
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; text: string } | null>(null)
   const [f, setF] = useState({ date: today(), method: methods[0] ?? '电话', summary: '', detail: '', nextFollowupAt: '', byName: '' })
@@ -93,7 +98,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   // 同一个项目（同一条询价）的多条跟进记录，在前端合并成一行
   const groups = useMemo(() => {
     const m = new Map<string, {
-      key: string; rep: Fu; count: number
+      key: string; rep: Fu; count: number; records: Fu[]
       dates: string[]; nextAt: string | null; firstDate: string
       comments: { id: string; content: string; by_name: string | null; created_at: string }[]
       photos: string[]; atts: Att[]; methods: string[]; byNames: string[]
@@ -102,13 +107,14 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
       const g = m.get(r.inquiry_id)
       if (!g) {
         m.set(r.inquiry_id, {
-          key: r.inquiry_id, rep: r, count: 1, dates: [r.date], nextAt: r.next_followup_at, firstDate: r.date,
+          key: r.inquiry_id, rep: r, count: 1, records: [r], dates: [r.date], nextAt: r.next_followup_at, firstDate: r.date,
           comments: [...(r.comments ?? [])], photos: [...(r.photos ?? [])], atts: [...(r.attachments ?? [])],
           methods: [r.method].filter(Boolean), byNames: r.by_name ? [r.by_name] : [],
         })
         return
       }
       g.count += 1
+      g.records.push(r)
       g.dates.push(r.date)
       // 列表按日期倒序返回，第一条即最新；下次跟进取最新一条有填写的那次
       if (!g.nextAt && r.next_followup_at) g.nextAt = r.next_followup_at
@@ -307,6 +313,11 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
         </div>
       )}
 
+      {recModal && (
+        <FollowupRecordModal record={recModal.record} editable={recModal.editable}
+          onClose={() => setRecModal(null)} onSaved={() => { void loadList() }} />
+      )}
+
       {commentOf && (
         // 未进入详情时可新增；已进入跟进详情则只读
         <GuidanceModal record={commentOf} people={meta.sales.map((x) => x.name)} readOnly={Boolean(hit)}
@@ -331,10 +342,10 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
             <thead><tr>{(hit
               ? ['跟进日期', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间']
               : ['最近跟进', '询价号 / 客户', '销售 / 跟进人', '方式', '跟进次数', '最近简述与内容', '跟进指导（全部）', '图片 / 附件', '下次跟进']
-            ).map((h) => <th key={h} className={h === '下次跟进' || h === '最近跟进' || h === '录入时间' ? 'cell-datetime' : undefined} title={h === '跟进次数' ? '同一个项目的多条跟进记录已在前端合并，点击整行可查看该项目全部记录' : undefined}>{h}</th>)}</tr></thead>
+            ).map((h) => <th key={h} className={h === '下次跟进' || h === '最近跟进' || h === '录入时间' ? 'cell-datetime' : (h === '询价号 / 客户' ? 'cell-left' : undefined)} title={h === '跟进次数' ? '同一个项目的多条跟进记录已在前端合并，点击整行可查看该项目全部记录' : undefined}>{h}</th>)}</tr></thead>
             <tbody>
               {(hit ? list.map((r) => ({
-                key: r.id, rep: r, count: 1, firstDate: r.date, dates: [r.date], nextAt: r.next_followup_at,
+                key: r.id, rep: r, count: 1, records: [r], firstDate: r.date, dates: [r.date], nextAt: r.next_followup_at,
                 comments: [...(r.comments ?? [])], photos: [...(r.photos ?? [])], atts: [...(r.attachments ?? [])],
                 methods: [r.method].filter(Boolean), byNames: r.by_name ? [r.by_name] : [],
               })) : groups).map((g) => {
@@ -344,17 +355,19 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                 const atts = g.atts
                 const merged = !hit && g.count > 1
                 const rangeTxt = g.firstDate === r.date ? r.date : `${g.firstDate} ~ ${r.date}`
+                const open = expanded.has(g.key)
                 return (
-                  <tr key={g.key} className="row-click" title={merged ? `同一个项目 ${g.count} 条跟进已合并 · 点击查看该项目全部记录` : '点击进入该询价的跟进'} style={{ borderBottom: '1px solid var(--line2)' }}
+                  <Fragment key={g.key}>
+                  <tr className={'row-click' + (open ? ' fu-open' : '')} title={merged ? `该项目 ${g.count} 条跟进：点击展开，再点最新一条可编辑、点较早的只能查看` : '点击查看/编辑这条跟进记录'}
                     onClick={(e) => {
-                      // 行内按钮（查看/追加指导）不触发进入跟进
+                      // 行内按钮（查看/追加指导）不触发展开
                       if ((e.target as HTMLElement).closest('button,a,input,select,textarea')) return
-                      keepNoRef.current = true
-                      setSales(r.sales); setNo(r.inquiry_no)
-                      window.scrollTo({ top: 0, behavior: 'smooth' })
+                      if (merged) { setExpanded((prev) => { const n = new Set(prev); if (n.has(g.key)) n.delete(g.key); else n.add(g.key); return n }); return }
+                      // 单条记录的项目：直接打开该记录（是该询价最新一条时可编辑，否则只读）
+                      setRecModal({ record: r, editable: hit ? list[0]?.id === r.id : true })
                     }}>
                     <td className="mono cell-datetime" title={merged ? `最近跟进 ${r.date}（首次 ${g.firstDate}）` : r.date}>{r.date}</td>
-                    <td title={`${r.inquiry_no} · ${r.customer_name || '—'}${Number(r.is_key_customer) === 1 ? ' · 重点客户' : ''}${Number(r.is_key_project) === 1 ? ' · 重点项目' : ''}`}>
+                    <td className="cell-left" title={`${r.inquiry_no} · ${r.customer_name || '—'}${Number(r.is_key_customer) === 1 ? ' · 重点客户' : ''}${Number(r.is_key_project) === 1 ? ' · 重点项目' : ''}`}>
                       <span className="mono" style={{ fontWeight: 600 }}>{r.inquiry_no}</span>
                       <span className="cell-note">{r.customer_name}</span>
                       {(Number(r.is_key_customer) === 1 || Number(r.is_key_project) === 1) && <span style={{ marginLeft: 6, display: 'inline-flex', verticalAlign: 'middle' }}><KeyTags kc={r.is_key_customer} kp={r.is_key_project} compact /></span>}
@@ -402,6 +415,66 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                     <td className="mono cell-datetime" title={g.nextAt ? String(g.nextAt).replace('T', ' ') : '未设置下次跟进'}>{g.nextAt ? String(g.nextAt).replace('T', ' ') : '—'}</td>
                     {hit && <td className="mono hint cell-datetime" title={String(r.created_at || '').slice(0, 19).replace('T', ' ')}>{String(r.created_at || '').slice(0, 16).replace('T', ' ')}</td>}
                   </tr>
+                  {/* 展开该项目下的每一条跟进记录：最新一条可编辑，较早的只能查看 */}
+                  {open && (g.records ?? []).map((rec, idx) => {
+                    const isLatest = idx === 0
+                    const recDetail = rec.detail || rec.content || ''
+                    const recPhotos = rec.photos || []
+                    const recAtts = rec.attachments || []
+                    return (
+                      <tr key={rec.id} className={'row-click fu-child' + (isLatest ? ' fu-child-latest' : '')}
+                        title={isLatest ? '该项目最新一条 · 点击编辑' : '较早的记录 · 点击查看（只读）'}
+                        onClick={() => setRecModal({ record: rec, editable: isLatest })}>
+                        <td className="mono cell-datetime">{rec.date}</td>
+                        <td className="cell-left"><span className="fu-indent">└</span><span className="mono" style={{ fontWeight: 600 }}>{rec.inquiry_no}</span><span className="cell-note">{rec.customer_name}</span></td>
+                        <td title={rec.by_name && rec.by_name !== rec.sales ? `销售 ${rec.sales || '—'} · 跟进人 ${rec.by_name}` : (rec.sales || '—')}>
+                          <span style={{ fontWeight: 600 }}>{rec.sales || '—'}</span>
+                          {rec.by_name && rec.by_name !== rec.sales && <span className="cell-note">跟进人 {rec.by_name}</span>}
+                        </td>
+                        <td style={{ textAlign: 'center' }}><span className="badge">{rec.method || '—'}</span></td>
+                        <td style={{ textAlign: 'center' }}>
+                          {isLatest ? <span className="badge new" title="最新一条：可编辑">最新 · 可编辑</span> : <span className="badge" title="较早的记录：只能查看">只读</span>}
+                        </td>
+                        <td title={[rec.summary, recDetail].filter(Boolean).join(' ｜ ') || '—'}>
+                          {rec.summary && <span style={{ fontWeight: 600 }}>{rec.summary}</span>}
+                          {recDetail && <span className={rec.summary ? 'cell-note' : ''}>{recDetail}</span>}
+                          {!rec.summary && !recDetail && <span className="hint">—</span>}
+                        </td>
+                        <td>
+                          {(rec.comments ?? []).length === 0 ? <span className="hint">—</span> : (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}>
+                              <GuidanceNote compact comments={rec.comments} />
+                              <button className="btn xs" style={{ flex: '0 0 auto' }} title="查看全部指导 / 继续追加" onClick={() => setCommentOf(rec)}>{hit ? '查看指导' : '查看/追加指导'}</button>
+                            </span>
+                          )}
+                        </td>
+                        <td title={[...recPhotos.map((_, i) => `图片 ${i + 1}`), ...recAtts.map((a) => a.name)].join('、') || '—'}>
+                          {recPhotos.length === 0 && recAtts.length === 0 ? <span className="hint">—</span> : (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              {recPhotos.length > 0 && <span className="badge">🖼 {recPhotos.length}</span>}
+                              {recAtts.length > 0 && <span className="filelink" style={{ maxWidth: 120 }}>📎 {recAtts.length} 个附件</span>}
+                            </span>
+                          )}
+                        </td>
+                        <td className="mono cell-datetime">{rec.next_followup_at ? String(rec.next_followup_at).replace('T', ' ') : '—'}</td>
+                      </tr>
+                    )
+                  })}
+                  {open && (
+                    <tr className="fu-child fu-child-add">
+                      <td colSpan={9}>
+                        <button className="btn xs" title="带出该询价信息并填写新的跟进记录"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            keepNoRef.current = true
+                            setSales(r.sales); setNo(r.inquiry_no)
+                            window.scrollTo({ top: 0, behavior: 'smooth' })
+                          }}>＋ 为该项目建立新的跟进</button>
+                        <span className="hint" style={{ marginLeft: 8 }}>最新一条可点击编辑，较早的记录只能查看</span>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 )
               })}
               {list.length === 0 && <tr><td colSpan={9} className="hint" style={{ textAlign: 'center' }}>暂无跟进记录</td></tr>}

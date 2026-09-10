@@ -188,6 +188,20 @@ tr.row-click:hover>td{background:#eef5ff !important}
 /* ===== 全部表格内容居中（表头 + 单元格，含徽标/按钮/金额，覆盖行内左右对齐设置） ===== */
 table.grid > thead > tr > th, table.grid > tbody > tr > td { text-align: center !important }
 table.grid > tbody > tr > td > .badge, table.grid > tbody > tr > td > .tag, table.grid > tbody > tr > td > .btn { margin-left: 3px; margin-right: 3px }
+/* 通用左对齐列（询价号 / 客户 等需要逐行对齐的列） */
+table.grid > thead > tr > th.cell-left, table.grid > tbody > tr > td.cell-left { text-align: left !important }
+
+/* 跟进记录：展开后的子行（该项目下的每一条记录） */
+tr.fu-open > td { background: #f2f8ff !important }
+tr.fu-child > td { background: #fbfdff !important }
+tr.fu-child:hover > td { background: #eef5ff !important }
+tr.fu-child .fu-indent { display: inline-block; width: 20px; color: var(--brand); font-weight: 700; margin-left: 6px }
+tr.fu-child-latest > td:first-child { box-shadow: inset 3px 0 0 var(--brand) }
+
+/* 跟进记录编辑/查看弹窗 */
+.fu-modal{width:760px;max-width:96vw}
+.fu-modal .fu-input{width:100%;height:120px;min-height:120px;max-height:120px;resize:none;overflow:auto}
+
 /* 日期时间类列（最近跟进/下次跟进/录入时间）：整列左边缘对齐，逐行数字对齐，且完整显示不截断 */
 table.grid > thead > tr > th.cell-datetime, table.grid > tbody > tr > td.cell-datetime { text-align: left !important }
 table.grid > tbody > tr > td.cell-datetime { white-space: nowrap; overflow: visible; text-overflow: clip }

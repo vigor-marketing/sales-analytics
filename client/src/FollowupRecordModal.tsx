@@ -1,0 +1,120 @@
+import { useState } from 'react'
+import { put } from './api'
+import GuidanceNote, { type GuidanceItem } from './Guidance'
+
+export interface FuRecord {
+  id: string; inquiry_id: string; inquiry_no: string; customer_name: string; sales: string; date: string
+  method: string; content: string | null; summary: string | null; detail: string | null
+  photos: string[]; attachments: { url: string; name: string; size?: number }[]
+  next_followup_at: string | null; by_name: string | null; created_at: string
+  comments?: GuidanceItem[]
+}
+
+interface Form { date: string; method: string; summary: string; detail: string; nextAt: string; byName: string }
+const METHODS = ['电话', '邮件', '微信', '拜访', '展会', '其他', '视频会议']
+const today = () => new Date().toISOString().slice(0, 10)
+
+/**
+ * 单条跟进记录弹窗：
+ * - editable=true（该项目最新一条）→ 可编辑并保存
+ * - editable=false（较早的记录）→ 只能查看
+ */
+export default function FollowupRecordModal({ record, editable, onClose, onSaved }: {
+  record: FuRecord
+  editable: boolean
+  onClose: () => void
+  onSaved?: () => void
+}) {
+  const [f, setF] = useState<Form>({
+    date: record.date || today(), method: record.method || '电话',
+    summary: record.summary || '', detail: record.detail || record.content || '',
+    nextAt: record.next_followup_at ? String(record.next_followup_at).slice(0, 10) : '', byName: record.by_name || record.sales || '',
+  })
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [okMsg, setOkMsg] = useState('')
+  const save = async () => {
+    if (!f.summary.trim() && !f.detail.trim()) return setErr('请填写跟进简述或具体内容')
+    setBusy(true); setErr(''); setOkMsg('')
+    try {
+      await put(`/followups/${record.id}`, {
+        date: f.date, method: f.method, summary: f.summary.trim() || undefined, detail: f.detail.trim() || undefined,
+        nextFollowupAt: f.nextAt || undefined, byName: f.byName.trim() || undefined,
+      })
+      setOkMsg('已保存修改')
+      onSaved?.()
+    } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
+  const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN'))
+  return (
+    <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal fu-modal" style={{ maxHeight: '88vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label={editable ? '编辑跟进记录' : '查看跟进记录'}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0 }}>{editable ? '编辑跟进记录' : '查看跟进记录（只读）'} · {record.inquiry_no}</h3>
+          <button className="btn sm" onClick={onClose}>关闭</button>
+        </div>
+        <div className="hint" style={{ marginTop: 6 }}>
+          {record.customer_name} · 销售 {record.sales} · 录入时间 {String(record.created_at).slice(0, 16).replace('T', ' ')}
+          {editable ? ' · 该项目最新一条，可修改' : ' · 较早的记录，只能查看'}
+        </div>
+
+        {editable ? (
+          <>
+            <div className="row" style={{ marginTop: 8 }}>
+              <div className="col w1"><label>跟进日期 *</label><input className="sa" type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
+              <div className="col w1"><label>方式</label>
+                <select className="sa" value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>
+                  {METHODS.map((m) => <option key={m}>{m}</option>)}
+                  {f.method && !METHODS.includes(f.method) && <option value={f.method}>{f.method}</option>}
+                </select>
+              </div>
+              <div className="col w1"><label>跟进人</label><input className="sa" value={f.byName} onChange={(e) => setF({ ...f, byName: e.target.value })} /></div>
+              <div className="col w1"><label>下次跟进</label><input className="sa" type="date" value={f.nextAt} onChange={(e) => setF({ ...f, nextAt: e.target.value })} /></div>
+            </div>
+            <div className="col"><label>跟进简述</label><input className="sa" value={f.summary} onChange={(e) => setF({ ...f, summary: e.target.value })} placeholder="一句话概括本次跟进" /></div>
+            <div className="col" style={{ marginTop: 6 }}><label>跟进内容</label><textarea className="sa fu-input" value={f.detail} onChange={(e) => setF({ ...f, detail: e.target.value })} placeholder="沟通内容、客户反馈、异议与应对、下一步计划…" /></div>
+          </>
+        ) : (
+          <>
+            <div className="row" style={{ marginTop: 8 }}>
+              <div className="col w1"><label>跟进日期</label><div className="ro mono">{record.date}</div></div>
+              <div className="col w1"><label>方式</label><div className="ro">{record.method || '—'}</div></div>
+              <div className="col w1"><label>跟进人</label><div className="ro">{record.by_name || record.sales || '—'}</div></div>
+              <div className="col w1"><label>下次跟进</label><div className="ro mono">{record.next_followup_at ? String(record.next_followup_at).replace('T', ' ') : '—'}</div></div>
+            </div>
+            <div className="col"><label>跟进简述</label><div className="ro">{record.summary || '—'}</div></div>
+            <div className="col" style={{ marginTop: 6 }}><label>跟进内容</label><div className="ro area fu-input" style={{ overflow: 'auto' }}>{record.detail || record.content || '—'}</div></div>
+          </>
+        )}
+
+        {(record.photos || []).length > 0 || (record.attachments || []).length > 0 ? (
+          <div style={{ marginTop: 8 }}>
+            <label>图片 / 附件（不可在弹窗内修改）</label>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+              {(record.photos || []).map((u) => (
+                <a key={u} href={u} target="_blank" rel="noreferrer" title="查看原图"><img src={u} alt="跟进图片" style={{ height: 34, width: 46, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line)' }} /></a>
+              ))}
+              {(record.attachments || []).map((a) => (
+                <a key={a.url} className="filelink" href={a.url} target="_blank" rel="noreferrer" title={a.name}>📎 {a.name}{a.size != null ? `（${money(Math.round(a.size / 1024))}KB）` : ''}</a>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <div style={{ marginTop: 10 }}>
+          <label>跟进指导（{(record.comments ?? []).length} 条 · 只读）</label>
+          <div style={{ marginTop: 4 }}>
+            {(record.comments ?? []).length === 0 ? <span className="hint">暂无跟进指导</span> : <GuidanceNote comments={record.comments} />}
+          </div>
+        </div>
+
+        {err && <div className="msg err" style={{ marginTop: 8 }}>{err}</div>}
+        {okMsg && <div className="msg ok" style={{ marginTop: 8 }}>{okMsg}</div>}
+        <div className="modal-foot">
+          <button className="btn" onClick={onClose}>{editable ? '取消' : '关闭'}</button>
+          {editable && <button className="btn pri" disabled={busy} onClick={() => void save()}>{busy ? '保存中…' : '保存修改'}</button>}
+        </div>
+      </div>
+    </div>
+  )
+}
