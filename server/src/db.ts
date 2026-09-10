@@ -1,5 +1,5 @@
 /** 数据层：SQLite（WAL）。v3 起步：询报价录入最小闭环 */
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,9 +8,24 @@ import { randomUUID } from 'node:crypto'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 mkdirSync(path.resolve(__dirname, '../data'), { recursive: true })
 export const DB_FILE = process.env.DB_PATH ?? path.resolve(__dirname, '../data/sales-analytics.db')
-const db = new Database(DB_FILE)
-db.pragma('journal_mode = WAL')
-db.pragma('foreign_keys = ON')
+const raw = new DatabaseSync(DB_FILE)
+raw.exec('PRAGMA journal_mode = WAL')
+raw.exec('PRAGMA foreign_keys = ON')
+// 语句缓存：复用 prepared statement，避免频繁创建/回收（也规避驱动层 GC 问题）
+const stmtCache = new Map<string, ReturnType<DatabaseSync['prepare']>>()
+const db = {
+  exec: (sql: string) => { raw.exec(sql) },
+  prepare: (sql: string) => {
+    let st = stmtCache.get(sql)
+    if (!st) { st = raw.prepare(sql); stmtCache.set(sql, st) }
+    return st
+  },
+  transaction: <T extends (...args: unknown[]) => unknown>(fn: T) => (...args: Parameters<T>): ReturnType<T> => {
+    raw.exec('BEGIN')
+    try { const r = fn(...args) as ReturnType<T>; raw.exec('COMMIT'); return r } catch (e) { try { raw.exec('ROLLBACK') } catch { /* */ } throw e }
+  },
+  close: () => raw.close(),
+}
 
 export const nowIso = () => new Date().toISOString()
 export const todayStr = () => nowIso().slice(0, 10)
@@ -21,7 +36,7 @@ export const text = (v: unknown): string => (typeof v === 'string' && v.trim() ?
 export function schema(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS customers (
-      id TEXT PRIMARY KEY, name TEXT NOT NULL, country TEXT, use_location TEXT, source TEXT,
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, country TEXT, use_location TEXT, source TEXT, stars INTEGER,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       UNIQUE(name COLLATE NOCASE));
     CREATE TABLE IF NOT EXISTS inquiries (
@@ -30,7 +45,7 @@ export function schema(): void {
       sales TEXT, purchaser TEXT, source TEXT, hand_total REAL, note TEXT,
       is_key_customer INTEGER NOT NULL DEFAULT 0, is_key_project INTEGER NOT NULL DEFAULT 0,
       is_won INTEGER NOT NULL DEFAULT 0, won_date TEXT,
-      blockers TEXT, action_plan TEXT, support_needed TEXT,
+      customer_stars INTEGER, blockers TEXT, action_plan TEXT, support_needed TEXT,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS inquiry_items (
       id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL REFERENCES inquiries(id) ON DELETE CASCADE,
@@ -63,25 +78,14 @@ export function schema(): void {
   try { db.exec('ALTER TABLE inquiries ADD COLUMN blockers TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN action_plan TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN support_needed TEXT') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE inquiries ADD COLUMN customer_stars INTEGER') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE customers ADD COLUMN stars INTEGER') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN won_date TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN last_followup_at TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN next_followup_at TEXT') } catch { /* 已存在 */ }
 }
-// 语句缓存：避免每次请求/每行都新建 prepared statement（Node 24 下大量 Statement 回收会触发原生断言崩溃）
-const stmtCache = new Map<string, Database.Statement>()
-function cachedPrepare(sql: string): Database.Statement {
-  let st = stmtCache.get(sql)
-  if (!st) { st = db.prepare(sql); stmtCache.set(sql, st) }
-  return st
-}
-const dbProxy = new Proxy(db, {
-  get(target, prop, receiver) {
-    if (prop === 'prepare') return cachedPrepare
-    const v = Reflect.get(target, prop, receiver)
-    return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v
-  },
-}) as Database.Database
-export const getDb = () => dbProxy
+export const getDb = () => db
+
 
 export function getSetting(k: string, dft = ''): string {
   const r = db.prepare('SELECT v FROM settings WHERE k = ?').get(k) as { v: string } | undefined

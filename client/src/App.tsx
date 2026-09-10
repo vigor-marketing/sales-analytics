@@ -87,6 +87,7 @@ export default function App() {
   const [supportNeeded, setSupportNeeded] = useState('')
   const [keyCust, setKeyCust] = useState<'' | '1' | '0'>('')
   const [keyProj, setKeyProj] = useState<'' | '1' | '0'>('')
+  const [stars, setStars] = useState<'' | '1' | '2' | '3' | '4' | '5'>('')
   const [products, setProducts] = useState<{ id: string; name: string; currency: string; last_amount: number | null; use_count: number }[]>([])
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -137,7 +138,7 @@ export default function App() {
     return Array.from(map.entries())
   }, [meta])
 
-  const valid = Boolean(no.trim() && !noTaken && date && ((custId && custId !== '__new__') || customer.trim()) && sales && purchaser && source && keyCust !== '' && keyProj !== '') && items.some((it) => it.productName.trim() && (Number(it.amount) || 0) > 0)
+  const valid = Boolean(no.trim() && !noTaken && date && ((custId && custId !== '__new__') || customer.trim()) && sales && purchaser && source && stars !== '' && keyCust !== '' && keyProj !== '') && items.some((it) => it.productName.trim() && (Number(it.amount) || 0) > 0)
 
   const save = async (again: boolean) => {
     setMsg(null)
@@ -146,6 +147,7 @@ export default function App() {
     if (custId === '__new__' ? !customer.trim() : !custId) return setMsg({ t: 'err', text: '请选择客户档案中的客户，或选择“＋ 新客户”并填写名称' })
     if (!purchaser) return setMsg({ t: 'err', text: '请选择采购人员' })
     if (!source) return setMsg({ t: 'err', text: '请选择询价来源（可在来源设置中维护）' })
+    if (stars === '') return setMsg({ t: 'err', text: '请选择客户星级（1-5 星，基本信息必填）' })
     if (keyCust === '') return setMsg({ t: 'err', text: '请选择是否为重点客户（基本信息必填）' })
     if (keyProj === '') return setMsg({ t: 'err', text: '请选择是否为重点项目（询价明细必填）' })
     if (!items.some((it) => it.productName.trim() && Number(it.amount) > 0)) return setMsg({ t: 'err', text: '至少一行询价明细：填写产品名称且金额>0' })
@@ -156,12 +158,12 @@ export default function App() {
         items: items.filter((it) => it.productName.trim() && Number(it.amount) > 0).map((it) => ({ productName: it.productName.trim(), qty: it.qty ? Number(it.qty) : undefined, amount: Number(it.amount), currency: it.currency })),
         sales, purchaser, source, totalAmount: handTotal ? Number(handTotal) : undefined, note: note.trim() || undefined,
         useLocation: useLoc.trim() || undefined, isKeyCustomer: keyCust === '1', isKeyProject: keyProj === '1',
-        blockers: blockers.trim() || undefined, actionPlan: actionPlan.trim() || undefined, supportNeeded: supportNeeded.trim() || undefined,
+        blockers: blockers.trim() || undefined, actionPlan: actionPlan.trim() || undefined, supportNeeded: supportNeeded.trim() || undefined, customerStars: stars ? Number(stars) : undefined,
       })
       setMsg({ t: 'ok', text: `已保存询价 ${res.inquiryNo}` })
       if (again) {
-        setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setBlockers(''); setActionPlan(''); setSupportNeeded(''); setKeyCust(''); setKeyProj(''); setCustId(''); setCustomer(''); noT.current?.focus()
-      } else { setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setBlockers(''); setActionPlan(''); setSupportNeeded(''); setKeyCust(''); setKeyProj(''); setCustId(''); setCustomer(''); setCountry(''); setUseLoc(''); setLocTouched(false); setSource('') }
+        setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setBlockers(''); setActionPlan(''); setSupportNeeded(''); setStars(''); setKeyCust(''); setKeyProj(''); setCustId(''); setCustomer(''); noT.current?.focus()
+      } else { setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setNote(''); setBlockers(''); setActionPlan(''); setSupportNeeded(''); setStars(''); setKeyCust(''); setKeyProj(''); setCustId(''); setCustomer(''); setCountry(''); setUseLoc(''); setLocTouched(false); setSource('') }
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) } finally { setBusy(false) }
   }
 
@@ -237,7 +239,16 @@ export default function App() {
           <div className="hint" style={{ marginTop: 6 }}>已选客户档案：<b>{customer}</b>{country ? ` · 国别 ${country}` : ''}{useLoc ? ` · 使用地 ${useLoc}` : ''}</div>
         )}
 
-        <div className="row" style={{ alignItems: 'center', gap: 18, marginTop: 10 }}>
+        <div className="row" style={{ alignItems: 'center', gap: 10, marginTop: 10 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>客户星级 *</span>
+          <select className="sa" style={{ width: 150 }} value={stars} onChange={(e) => setStars(e.target.value as '' | '1' | '2' | '3' | '4' | '5')}>
+            <option value="">— 请选择 —</option>
+            {[1, 2, 3, 4, 5].map((n) => <option key={n} value={String(n)}>{'★'.repeat(n)}{'☆'.repeat(5 - n)}（{n} 星）</option>)}
+          </select>
+          {stars && <span className="hint" style={{ color: '#e3a008', fontWeight: 700 }}>{'★'.repeat(Number(stars))}{'☆'.repeat(5 - Number(stars))}</span>}
+          <span className="hint">必选；代表客户重要度/合作价值</span>
+        </div>
+        <div className="row" style={{ alignItems: 'center', gap: 18 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>重点客户 *</span>
           <label className="chk"><input type="radio" name="kc" checked={keyCust === '1'} onChange={() => setKeyCust('1')} /> <span className="tag kc">是</span></label>
           <label className="chk"><input type="radio" name="kc" checked={keyCust === '0'} onChange={() => setKeyCust('0')} /> 否</label>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { get } from './api'
 
-interface CustRow { id: string; name: string; country: string | null; use_location: string | null; source: string | null; inquiryCount: number; lastDate: string | null; usdTotal: number; wonCount: number; winRate: number; keyCustomer: number; keyProjectCount: number }
+interface CustRow { id: string; name: string; country: string | null; use_location: string | null; source: string | null; inquiryCount: number; lastDate: string | null; usdTotal: number; wonCount: number; winRate: number; keyCustomer: number; keyProjectCount: number; stars?: number | null }
 interface InqRow { id: string; inquiry_no: string; date: string; sales: string; purchaser: string; source: string; is_key_customer: number; is_key_project: number; is_won: number; totals: { currency: string; total: number }[]; usdApprox: number; itemCount: number }
 interface CustDetail extends CustRow { inquiries: InqRow[]; summary: { inquiryCount: number; usdTotal: number; wonCount: number; winRate: number; wonUsd: number; keyProjectCount: number } }
 
@@ -37,12 +37,13 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
       <div className="hint" style={{ margin: '8px 0' }}>共 {rows.length} 个客户 · 询价 {totals.n} 条 · 累计折USD ≈ {money(totals.usd)}</div>
       <div className="tablewrap" style={{ overflow: 'auto', maxHeight: '62vh' }}>
         <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-          <thead><tr>{['客户名称', '国别', '标签', '询价数', '累计金额(USD)', '成交率', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+          <thead><tr>{['客户名称', '国别', '星级', '标签', '询价数', '累计金额(USD)', '成交率', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} style={{ borderBottom: '1px solid var(--line2)' }}>
                 <td style={{ padding: '6px 8px', fontWeight: 600 }}>{r.name}</td>
                 <td style={{ padding: '6px 8px' }}>{r.country || '—'}</td>
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap', color: '#e3a008', fontWeight: 700 }}>{r.stars ? '★'.repeat(Number(r.stars)) : '—'}</td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><Tags kc={r.keyCustomer} kp={r.keyProjectCount} /></td>
                 <td style={{ padding: '6px 8px' }}>{r.inquiryCount}</td>
                 <td style={{ padding: '6px 8px' }} className="mono">{money(r.usdTotal)}</td>
@@ -52,7 +53,7 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无客户档案（先到「询报价录入」录一单，即自动建档）</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无客户档案（先到「询报价录入」录一单，即自动建档）</td></tr>}
           </tbody>
         </table>
       </div>
