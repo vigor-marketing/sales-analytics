@@ -180,6 +180,9 @@ tr.row-click:hover>td{background:#eef5ff !important}
 /* ===== 全部表格内容居中（表头 + 单元格，含徽标/按钮/金额，覆盖行内左右对齐设置） ===== */
 table.grid > thead > tr > th, table.grid > tbody > tr > td { text-align: center !important }
 table.grid > tbody > tr > td > .badge, table.grid > tbody > tr > td > .tag, table.grid > tbody > tr > td > .btn { margin-left: 3px; margin-right: 3px }
+/* 例外：询报价管理的「状态」列（未成单的丢单原因）保持原来的左对齐位置，不参与居中 */
+table.grid > tbody > tr > td.cell-status { text-align: left !important }
+table.grid > tbody > tr > td.cell-status .lost-line { margin-left: 0 }
 
 /* ===== 统一标准：所有列表/详情表格固定行高 38px + 固定列宽（colgroup 百分比）+ 表头吸顶 ===== */
 .grid.fixed-table{table-layout:fixed;width:100%}
