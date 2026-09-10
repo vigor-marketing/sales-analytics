@@ -264,11 +264,18 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                       {r.by_name && r.by_name !== r.sales && <div className="hint" style={{ fontSize: 11 }}>跟进人 {r.by_name}</div>}
                     </td>
                     <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}><span className="badge">{r.method || '—'}</span></td>
-                    {/* 简述与详情合并在一列：简述加粗一行，详情紧随其后完整换行显示 */}
+                    {/* 简述与详情合并在一列：简述加粗一行、详情紧随其后；右侧「查看详情」按钮打开完整记录 */}
                     <td style={{ padding: '7px 8px' }} title={[r.summary, detail].filter(Boolean).join(' ｜ ') || '—'}>
-                      {r.summary && <div style={{ fontWeight: 600 }}>{r.summary}</div>}
-                      {detail && <div style={{ marginTop: r.summary ? 3 : 0, whiteSpace: 'pre-wrap' }}>{detail}</div>}
-                      {!r.summary && !detail && <span className="hint">—</span>}
+                      <span style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                        <span style={{ flex: '1 1 auto', minWidth: 0 }}>
+                          {r.summary && <div style={{ fontWeight: 600 }}>{r.summary}</div>}
+                          {detail && <div style={{ marginTop: r.summary ? 3 : 0, whiteSpace: 'pre-wrap' }}>{detail}</div>}
+                          {!r.summary && !detail && <span className="hint">—</span>}
+                        </span>
+                        <button className="btn xs" style={{ flex: '0 0 auto' }}
+                          title={Number(r.seq) === Number(r.seq_total) ? '查看/编辑这条跟进详情（该项目最新一条）' : '查看这条跟进详情（较早的记录，只读）'}
+                          onClick={(e) => { e.stopPropagation(); setRecOf(r) }}>查看详情</button>
+                      </span>
                     </td>
                     <td style={{ padding: '7px 8px' }}>
                       {(() => {
