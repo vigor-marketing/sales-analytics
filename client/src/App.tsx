@@ -28,12 +28,12 @@ type PageKey = 'entry' | 'manage' | 'contracts' | 'customers' | 'products' | 'se
 const NAV: { key: PageKey; label: string; icon: JSX.Element }[] = [
   { key: 'entry', label: '询报价录入', icon: <EditIcon /> },
   { key: 'manage', label: '询报价管理', icon: <ArticleIcon /> },
-  { key: 'contracts', label: '销售订单', icon: <ChartBarIcon /> },
+  { key: 'contracts', label: '销售订单管理', icon: <ChartBarIcon /> },
   { key: 'customers', label: '客户档案', icon: <UserIcon /> },
   { key: 'products', label: '产品档案', icon: <CartIcon /> },
   { key: 'settings', label: '字段与选项设置', icon: <SettingIcon /> },
 ]
-const TITLES: Record<PageKey, string> = { entry: '询报价录入', manage: '询报价管理', contracts: '销售订单', customers: '客户档案', products: '产品档案', settings: '字段与选项设置' }
+const TITLES: Record<PageKey, string> = { entry: '询报价录入', manage: '询报价管理', contracts: '销售订单管理', customers: '客户档案', products: '产品档案', settings: '字段与选项设置' }
 function Shell({ page, onNav, children }: { page: PageKey; onNav: (p: PageKey) => void; children: React.ReactNode }) {
   return (
     <div className="sa-layout">

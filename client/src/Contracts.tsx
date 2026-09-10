@@ -37,7 +37,7 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
   return (
     <div className="card">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <h3 style={{ margin: 0 }}>销售订单</h3>
+        <h3 style={{ margin: 0 }}>销售订单管理</h3>
         <span className="hint">成交以订单为准：询价是否成交由是否存在订单自动判定；订单在「询报价管理」中生成</span>
         <span style={{ flex: 1 }} />
         <input className="sa" style={{ width: 170 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="订单号/询价号/客户" />
