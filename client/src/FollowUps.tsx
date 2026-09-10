@@ -34,6 +34,7 @@ export default function FollowUps({ meta }: { meta: MetaLite }) {
   const [files, setFiles] = useState<Att[]>([])
   const [uploading, setUploading] = useState(false)
   const [dragP, setDragP] = useState(false); const [dragF, setDragF] = useState(false)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const photoInput = useRef<HTMLInputElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const [list, setList] = useState<Fu[]>([])
@@ -231,26 +232,67 @@ export default function FollowUps({ meta }: { meta: MetaLite }) {
       <div style={{ marginTop: 14 }}>
         <div style={{ fontWeight: 700, marginBottom: 6 }}>跟进记录{hit ? `（本询价 ${list.length} 条）` : sales ? `（${sales} 名下 ${list.length} 条）` : ''}</div>
         <div className="tablewrap" style={{ overflowX: 'auto' }}>
-          <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-            <thead><tr>{['跟进日期', '询价号', '客户', '标签', '销售', '方式', '简述', '具体内容', '图片', '附件', '下次跟进', '跟进人'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+          <table className="grid follow-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <thead><tr>{['跟进日期', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '图片 / 附件', '下次跟进', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
             <tbody>
-              {list.map((r) => (
-                <tr key={r.id} style={{ borderBottom: '1px solid var(--line2)' }}>
-                  <td style={{ padding: '6px 8px' }} className="mono">{r.date}</td>
-                  <td style={{ padding: '6px 8px' }} className="mono">{r.inquiry_no}</td>
-                  <td style={{ padding: '6px 8px' }}>{r.customer_name}</td>
-                  <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><KeyTags kc={r.is_key_customer} kp={r.is_key_project} compact /></td>
-                  <td style={{ padding: '6px 8px' }}>{r.sales}</td>
-                  <td style={{ padding: '6px 8px' }}>{r.method}</td>
-                  <td style={{ padding: '6px 8px', minWidth: 160 }}>{r.summary || '—'}</td>
-                  <td style={{ padding: '6px 8px', minWidth: 240, whiteSpace: 'pre-wrap' }}>{r.detail || r.content || '—'}</td>
-                  <td style={{ padding: '6px 8px' }}>{(r.photos || []).length ? (r.photos || []).map((p) => <a key={p} href={p} target="_blank" rel="noreferrer"><img src={p} alt="图" style={{ width: 40, height: 32, objectFit: 'cover', borderRadius: 4, marginRight: 4, border: '1px solid var(--line)' }} /></a>) : '—'}</td>
-                  <td style={{ padding: '6px 8px' }}>{(r.attachments || []).length ? (r.attachments || []).map((a) => <a key={a.url} className="mono" href={a.url} target="_blank" rel="noreferrer" style={{ display: 'block' }}>{a.name}</a>) : '—'}</td>
-                  <td style={{ padding: '6px 8px' }} className="mono">{r.next_followup_at || '—'}</td>
-                  <td style={{ padding: '6px 8px' }}>{r.by_name || '—'}</td>
-                </tr>
-              ))}
-              {list.length === 0 && <tr><td colSpan={11} style={{ textAlign: 'center', padding: 20, color: 'var(--sub)' }}>暂无跟进记录</td></tr>}
+              {list.map((r) => {
+                const detail = r.detail || r.content || ''
+                const longText = detail.length > 90
+                const opened = expanded.has(r.id)
+                const photos = r.photos || []
+                const atts = r.attachments || []
+                return (
+                  <tr key={r.id} style={{ borderBottom: '1px solid var(--line2)' }}>
+                    <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.date}</td>
+                    <td style={{ padding: '7px 8px' }}>
+                      <div className="mono" style={{ fontWeight: 600 }}>{r.inquiry_no}</div>
+                      <div style={{ marginTop: 2 }}>{r.customer_name}</div>
+                      {(Number(r.is_key_customer) === 1 || Number(r.is_key_project) === 1) && (
+                        <div style={{ marginTop: 3 }}><KeyTags kc={r.is_key_customer} kp={r.is_key_project} compact /></div>
+                      )}
+                    </td>
+                    <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontWeight: 600 }}>{r.sales || '—'}</div>
+                      {r.by_name && r.by_name !== r.sales && <div className="hint" style={{ fontSize: 11 }}>跟进人 {r.by_name}</div>}
+                    </td>
+                    <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}><span className="badge">{r.method || '—'}</span></td>
+                    <td style={{ padding: '7px 8px', minWidth: 260, maxWidth: 460 }}>
+                      {r.summary && <div style={{ fontWeight: 600 }}>{r.summary}</div>}
+                      {detail
+                        ? <div className={'hint follow-detail' + (longText && !opened ? ' clamp2' : '')} style={{ marginTop: r.summary ? 2 : 0, whiteSpace: 'pre-wrap' }}>{detail}</div>
+                        : (!r.summary && <span className="hint">—</span>)}
+                      {longText && (
+                        <button className="linkbtn" onClick={() => setExpanded((prev) => { const n = new Set(prev); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n })}>
+                          {opened ? '收起' : `展开全文（${detail.length} 字）`}
+                        </button>
+                      )}
+                    </td>
+                    <td style={{ padding: '7px 8px', minWidth: 150 }}>
+                      {photos.length === 0 && atts.length === 0 ? <span className="hint">—</span> : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          {photos.map((p) => (
+                            <a key={p} href={p} target="_blank" rel="noreferrer" title="查看原图">
+                              <img src={p} alt="图" style={{ width: 44, height: 34, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line)', display: 'block' }} />
+                            </a>
+                          ))}
+                          {atts.length > 0 && (
+                            <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                              {atts.map((a) => (
+                                <a key={a.url} className="filelink" href={a.url} target="_blank" rel="noreferrer" title={a.name}>
+                                  📎 {a.name}{a.size != null ? `（${(a.size / 1024).toFixed(0)}KB）` : ''}
+                                </a>
+                              ))}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.next_followup_at ? r.next_followup_at.replace('T', ' ') : '—'}</td>
+                    <td className="mono hint" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{String(r.created_at || '').slice(0, 16).replace('T', ' ')}</td>
+                  </tr>
+                )
+              })}
+              {list.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 20, color: 'var(--sub)' }}>暂无跟进记录</td></tr>}
             </tbody>
           </table>
         </div>
