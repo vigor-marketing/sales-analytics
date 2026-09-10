@@ -285,7 +285,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                       {(() => {
                         const cs = r.comments ?? []
                         return (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center', textAlign: 'center' }}>
                             {/* 表格内保持紧凑（悬停可看全部），完整展开在跟进详情弹窗里 */}
                             <GuidanceNote compact comments={cs} />
                             {/* 跟进列表里可查看并新增指导；进入某个询价的跟进详情后只查看 */}

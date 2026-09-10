@@ -821,9 +821,17 @@ app.get('/api/dashboard', (_req, res) => {
 
   // 每条询价最近一条跟进记录 id（指导评论挂在该记录上）
   const lastFollowupOf = new Map<string, string>()
-  rowsOf('SELECT id, inquiry_id FROM followups ORDER BY date DESC, created_at DESC').forEach((f) => {
+  // 同时带出该条跟进的日期/方式/简述/详情/跟进人，供仪表盘「查看指导」弹窗查看跟进详情
+  const lastFuInfo = new Map<string, { date: string; method: string | null; summary: string | null; detail: string | null; by_name: string | null }>()
+  rowsOf('SELECT id, inquiry_id, date, method, summary, detail, by_name FROM followups ORDER BY date DESC, created_at DESC').forEach((f) => {
     const k = text(f.inquiry_id)
-    if (!lastFollowupOf.has(k)) lastFollowupOf.set(k, text(f.id))
+    if (!lastFollowupOf.has(k)) {
+      lastFollowupOf.set(k, text(f.id))
+      lastFuInfo.set(k, {
+        date: text(f.date), method: str(f.method) || null, summary: str(f.summary) || null,
+        detail: str(f.detail) || null, by_name: str(f.by_name) || null,
+      })
+    }
   })
 
   const brief = (r: Record<string, unknown>) => ({
@@ -833,6 +841,11 @@ app.get('/api/dashboard', (_req, res) => {
     lastFollowupId: lastFollowupOf.get(text(r.id)) ?? null,
     commentCount: guidanceByInquiry.get(text(r.id))?.count ?? 0,
     comments: guidanceByInquiry.get(text(r.id))?.list ?? [],
+    last_followup_date: lastFuInfo.get(text(r.id))?.date ?? null,
+    last_followup_method: lastFuInfo.get(text(r.id))?.method ?? null,
+    last_followup_summary: lastFuInfo.get(text(r.id))?.summary ?? null,
+    last_followup_detail: lastFuInfo.get(text(r.id))?.detail ?? null,
+    last_followup_by: lastFuInfo.get(text(r.id))?.by_name ?? null,
   })
   const open = openRows.filter((r) => Number(r.has_order) === 0)
   const dateOf = (v: unknown) => String(str(v) || '').slice(0, 10)

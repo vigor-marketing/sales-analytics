@@ -11,6 +11,11 @@ interface Brief {
   lastFollowupId?: string | null
   commentCount?: number
   comments?: { id: string; content: string; by_name: string | null; created_at: string }[]
+  last_followup_date?: string | null
+  last_followup_method?: string | null
+  last_followup_summary?: string | null
+  last_followup_detail?: string | null
+  last_followup_by?: string | null
 }
 interface Guidance { id: string; inquiry_no: string; customer_name: string; sales: string; content: string; by_name: string | null; created_at: string }
 interface Kpi {
@@ -32,7 +37,12 @@ const fmt = (v: string | null) => (v ? String(v).slice(0, 16).replace('T', ' ') 
 export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t: { sales: string; no: string }) => void; people?: string[] }) {
   const [d, setD] = useState<Dash | null>(null)
   // 管理端：为某条提醒的最近跟进记录写指导
-  const [guideOf, setGuideOf] = useState<{ id: string; inquiry_no: string; customer_name: string; sales: string } | null>(null)
+  // 弹窗数据直接取自该提醒行（含最近一条跟进的简述/详情与该询价的全部指导），打开即可看到，不用再跳转
+  const [guideOf, setGuideOf] = useState<{
+    id: string; inquiry_no: string; customer_name: string; sales: string
+    date: string; method: string | null; summary: string | null; detail: string | null; by_name: string | null
+    comments: { id: string; content: string; by_name: string | null; created_at: string }[]
+  } | null>(null)
   const [err, setErr] = useState('')
   // 分组选择记忆（与其它页面一致：刷新后保持）
   const [group, setGroup] = useState<'all' | 'overdue' | 'dueSoon' | 'stale'>(() => {
@@ -81,7 +91,11 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
 
       {guideOf && (
         <GuidanceModal
-          record={{ id: guideOf.id, inquiry_no: guideOf.inquiry_no, customer_name: guideOf.customer_name, sales: guideOf.sales, date: '' }}
+          record={{
+            id: guideOf.id, inquiry_no: guideOf.inquiry_no, customer_name: guideOf.customer_name, sales: guideOf.sales,
+            date: guideOf.date, method: guideOf.method, summary: guideOf.summary, detail: guideOf.detail,
+            by_name: guideOf.by_name, comments: guideOf.comments,
+          }}
           people={people}
           onClose={() => setGuideOf(null)}
           onSaved={() => { void load() }}
@@ -145,13 +159,23 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
                       title={(r.comments ?? []).map((c) => `${c.by_name || '—'}：${c.content}`).join('\n') || '暂无跟进指导'}
                       onClick={(e) => {
                         e.stopPropagation()   // 不触发行点击（避免跳到询报价跟进页）
-                        if (r.lastFollowupId) setGuideOf({ id: r.lastFollowupId, inquiry_no: r.inquiry_no, customer_name: r.customer_name, sales: r.sales })
+                        if (r.lastFollowupId) setGuideOf({
+                          id: r.lastFollowupId, inquiry_no: r.inquiry_no, customer_name: r.customer_name, sales: r.sales,
+                          date: r.last_followup_date || r.date || '', method: r.last_followup_method ?? null,
+                          summary: r.last_followup_summary ?? null, detail: r.last_followup_detail ?? null,
+                          by_name: r.last_followup_by ?? null, comments: r.comments ?? [],
+                        })
                       }}>
                       {r.comments && r.comments.length
-                        ? <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 8, maxWidth: '100%' }}>
+                        ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, maxWidth: '100%' }}>
                             <GuidanceNote comments={r.comments} />
                             <button className="btn xs" style={{ flex: '0 0 auto' }} title="在本页弹窗查看全部指导 / 继续追加（不跳转页面）"
-                              onClick={(e) => { e.stopPropagation(); if (r.lastFollowupId) setGuideOf({ id: r.lastFollowupId, inquiry_no: r.inquiry_no, customer_name: r.customer_name, sales: r.sales }) }}>查看指导</button>
+                              onClick={(e) => { e.stopPropagation(); if (r.lastFollowupId) setGuideOf({
+                          id: r.lastFollowupId, inquiry_no: r.inquiry_no, customer_name: r.customer_name, sales: r.sales,
+                          date: r.last_followup_date || r.date || '', method: r.last_followup_method ?? null,
+                          summary: r.last_followup_summary ?? null, detail: r.last_followup_detail ?? null,
+                          by_name: r.last_followup_by ?? null, comments: r.comments ?? [],
+                        }) }}>查看指导</button>
                           </span>
                         : <span className="hint">—</span>}
                     </td>
@@ -159,7 +183,12 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
                       <button className="btn xs pri" onClick={() => onGoFollow?.({ sales: r.sales, no: r.inquiry_no })}>去跟进</button>
                       <button className="btn xs" style={{ marginLeft: 4 }} disabled={!r.lastFollowupId}
                         title={r.lastFollowupId ? '为这条提醒写跟进指导（管理端）' : '该询价还没有跟进记录，无法写指导'}
-                        onClick={() => { if (r.lastFollowupId) setGuideOf({ id: r.lastFollowupId, inquiry_no: r.inquiry_no, customer_name: r.customer_name, sales: r.sales }) }}>＋指导</button>
+                        onClick={() => { if (r.lastFollowupId) setGuideOf({
+                          id: r.lastFollowupId, inquiry_no: r.inquiry_no, customer_name: r.customer_name, sales: r.sales,
+                          date: r.last_followup_date || r.date || '', method: r.last_followup_method ?? null,
+                          summary: r.last_followup_summary ?? null, detail: r.last_followup_detail ?? null,
+                          by_name: r.last_followup_by ?? null, comments: r.comments ?? [],
+                        }) }}>＋指导</button>
                     </td>
                   </tr>
                 )

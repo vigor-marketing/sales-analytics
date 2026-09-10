@@ -152,7 +152,7 @@ tr.row-click{cursor:pointer}
 tr.row-click:hover>td{background:#eef5ff !important}
 /* 跟进指导：只读展示 + 醒目标注（淡黄底、左侧琥珀色条） */
 .gd-note{display:block;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:6px;padding:4px 8px}
-.gd-compact{display:inline-flex;align-items:center;gap:5px;max-width:100%;min-width:0;vertical-align:middle;padding:0 6px}
+.gd-compact{display:inline-flex;align-items:center;justify-content:center;gap:5px;max-width:100%;min-width:0;vertical-align:middle;padding:0 6px}
 .gd-compact .gd-txt{display:inline-block;font-size:11.5px;color:#92400e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;min-width:0}
 .gd-compact .gd-tag{flex:0 0 auto}
 .gd-tag{display:inline-block;background:#fde68a;color:#92400e;border-radius:999px;padding:0 7px;font-size:10.5px;font-weight:700;margin-right:5px;line-height:1.7}
@@ -203,8 +203,8 @@ table.fit-table > tbody > tr > td.cell-datetime { white-space: nowrap !important
 table.grid > thead > tr > th, table.grid > tbody > tr > td { text-align: center !important }
 table.grid > tbody > tr > td > .badge, table.grid > tbody > tr > td > .tag, table.grid > tbody > tr > td > .btn { margin-left: 3px; margin-right: 3px }
 /* 跟进指导列：完整显示全部指导（可换行、按内容撑高，不截断） */
-table.grid > thead > tr > th.cell-guidance { text-align: left !important }
-table.grid > tbody > tr > td.cell-guidance { text-align: left !important; white-space: normal !important; overflow: hidden !important; overflow-wrap: anywhere !important; text-overflow: clip !important; height: auto !important; line-height: 1.45 !important; padding: 6px 10px !important; vertical-align: middle }
+table.grid > thead > tr > th.cell-guidance { text-align: center !important }
+table.grid > tbody > tr > td.cell-guidance { text-align: center !important; white-space: normal !important; overflow: hidden !important; overflow-wrap: anywhere !important; text-overflow: clip !important; height: auto !important; line-height: 1.45 !important; padding: 6px 10px !important; vertical-align: middle }
 table.grid > tbody > tr > td.cell-guidance .gd-all { display: block; width: 100% }
 table.grid > tbody > tr > td.cell-guidance .gd-item + .gd-item { margin-top: 4px }
 
@@ -444,3 +444,31 @@ input.sa:disabled, select.sa:disabled { background: #f6f8fb; color: var(--sub) }
 .sa-item { position: relative; transition: background .15s, color .15s }
 .sa-item.on::before { content: ''; position: absolute; left: -10px; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--brand) }
 .sa-brand { padding: 16px 16px 12px }
+
+
+/* ===== 跟进指导 / 跟进详情：统一居中显示（表格单元格、详情弹窗、指导块） ===== */
+.grid > tbody > tr > td.cell-guidance .gd-note,
+.grid > tbody > tr > td.cell-guidance .gd-all,
+.grid > tbody > tr > td.cell-guidance .gd-item,
+.grid > tbody > tr > td.cell-guidance .gd-txt,
+.grid > tbody > tr > td.cell-guidance .gd-txt-full { text-align: center !important }
+.grid > tbody > tr > td.cell-guidance .gd-compact { justify-content: center }
+.fu-list-modal .fu-card { text-align: center }
+.fu-list-modal .fu-card-head { justify-content: center; row-gap: 6px }
+.fu-list-modal .fu-card-sec > label { text-align: center }
+.fu-list-modal .fu-card-val { text-align: center }
+.fu-list-modal .fu-files { justify-content: center }
+.fu-list-modal .gd-note,
+.fu-list-modal .gd-note .gd-head,
+.fu-list-modal .gd-note .gd-body,
+.fu-list-modal .gd-all .gd-item,
+.fu-list-modal .gd-all .gd-txt-full { text-align: center }
+.fu-list-modal .gd-note.gd-all { align-items: center }
+.fu-list-modal .gd-item + .gd-item { margin-top: 6px }
+.gd-modal .gd-list .gd-item-box { text-align: center }
+
+/* 跟进指导块内部为 flex 的行：标题行也需要居中（否则仍贴左） */
+.grid > tbody > tr > td.cell-guidance .gd-block .gd-head { justify-content: center; text-align: center }
+.fu-list-modal .gd-block .gd-head { justify-content: center; text-align: center }
+/* 仪表盘「查看指导」弹窗：详情与指导意见居中 */
+.gd-modal .gd-list .gd-item-box, .gd-modal .ro { text-align: center }

@@ -42,7 +42,10 @@ export default function GuidanceModal({ record, people, readOnly, onClose, onSav
           {record.date} · {record.method || '—'} · {record.customer_name} · 跟进人 {record.by_name || record.sales}
           {record.summary ? ` ｜ ${record.summary}` : ''}
         </div>
-        {record.detail && <div className="ro" style={{ marginTop: 6, maxHeight: 120, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{record.detail}</div>}
+        {record.detail && (<>
+          <h4 className="sec-title" style={{ marginTop: 12, textAlign: 'center' }}>跟进详情</h4>
+          <div className="ro" style={{ marginTop: 6, maxHeight: 120, overflow: 'auto', whiteSpace: 'pre-wrap', textAlign: 'center' }}>{record.detail}</div>
+        </>)}
 
         <h4 className="sec-title" style={{ marginTop: 12 }}>指导意见（{list.length} 条）</h4>
         {/* 固定高度 + 内部滚动：指导意见再多也不改变弹窗尺寸 */}
