@@ -38,27 +38,21 @@ function Panel({ title, hint, children, extra, style }: { title: string; hint?: 
 }
 
 /** 图文结合：左边名称、中间条形、右边数值与备注 */
-function BarList({
-  items, tone = 'blue', empty = '暂无数据', labelW = 132,
-}: {
-  items: { key: string; label: string; value: number; text: string; note?: string; tone?: 'blue' | 'green' | 'red' }[]
-  tone?: 'blue' | 'green' | 'red'
-  empty?: string
-  labelW?: number
-}) {
-  const max = Math.max(1, ...items.map((x) => x.value))
-  const color = (t: string) => (t === 'green' ? 'linear-gradient(90deg,#059669,#34d399)' : t === 'red' ? 'linear-gradient(90deg,#dc2626,#f87171)' : 'linear-gradient(90deg,#0052d9,#5b92f5)')
-  if (!items.length) return <div className="hint" style={{ fontSize: 12 }}>{empty}</div>
+/** 纯数据表格：这些分析板块只保留数字，不做条形/色块图 */
+function DataTable({ cols, rows, empty = '暂无数据' }: { cols: string[]; rows: React.ReactNode[][]; empty?: string }) {
   return (
-    <div>
-      {items.map((x) => (
-        <div key={x.key} className="bar-row">
-          <span className="bl" style={{ width: labelW }} title={x.label}>{x.label}</span>
-          <div className="bt"><div style={{ width: `${Math.max(2, Math.round((x.value / max) * 100))}%`, background: color(x.tone ?? tone) }} /></div>
-          <span className="bv mono">{x.text}</span>
-          <span className="bn hint" title={x.note}>{x.note ?? ''}</span>
-        </div>
-      ))}
+    <div className="tablewrap" style={{ overflowX: 'auto' }}>
+      <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+        <thead><tr>{cols.map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} style={{ borderBottom: '1px solid var(--line2)' }}>
+              {r.map((c, j) => <td key={j} style={{ padding: '6px 8px' }}>{c}</td>)}
+            </tr>
+          ))}
+          {rows.length === 0 && <tr><td colSpan={cols.length} className="hint" style={{ padding: 12, textAlign: 'center' }}>{empty}</td></tr>}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -223,7 +217,6 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
     meta.sales.forEach((x) => m.set(x.name, x.team || '未分组'))
     return m
   }, [meta.sales])
-  const teamColors = ['#0052d9', '#059669', '#ef4f0b', '#7c3aed', '#0891b2', '#a35c00', '#dc2626', '#0f766e']
 
   /** 月度 × 小组：每月各组的订单数与金额（折USD），以及月度合计 */
   const monthTeams = useMemo(() => {
@@ -247,12 +240,27 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
     const ordered = meta.sales.map((x) => x.team || '未分组').filter((t, i, a) => a.indexOf(t) === i)
     return ordered.filter((t) => names.has(t)).concat(Array.from(names).filter((n) => !ordered.includes(n)))
   }, [monthTeams, meta.sales])
-  const monthTeamMax = Math.max(1, ...monthTeams.map((mo) => mo.total.usd))
 
   const topCustomers = useMemo(() => {
     const m = new Map<string, { usd: number; n: number }>()
     rows.forEach((r) => { const a = m.get(r.customer_name) ?? { usd: 0, n: 0 }; a.usd += r.usdApprox || 0; a.n += 1; m.set(r.customer_name, a) })
     return Array.from(m.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.usd - a.usd).slice(0, 10)
+  }, [rows])
+
+  /** 按销售：成单次数、金额折USD、平均转化周期 */
+  const salesRows = useMemo(() => {
+    const m = new Map<string, { n: number; usd: number; cycles: number[] }>()
+    rows.forEach((r) => {
+      const k = r.sales || '未指定'
+      const a = m.get(k) ?? { n: 0, usd: 0, cycles: [] }
+      a.n += 1; a.usd += r.usdApprox || 0
+      if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
+      m.set(k, a)
+    })
+    return Array.from(m.entries()).map(([name, v]) => ({
+      name, n: v.n, usd: Math.round(v.usd),
+      avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
+    })).sort((a, b) => b.usd - a.usd)
   }, [rows])
 
   const sumUsd = rows.reduce((s, r) => s + (r.usdApprox || 0), 0)
@@ -313,21 +321,21 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         </Panel>
 
         <Panel title="按产品" hint={`${product ? `已筛「${product}」· ` : ''}${productRows.length} 个产品 · 合计 ${productRows.reduce((a, b) => a + b.count, 0)} 次`}>
-          <BarList
-            labelW={118}
-            items={productRows.slice(0, 6).map((p) => ({
-              key: p.name, label: p.name, value: p.count, text: `${p.count} 次`, note: `${money(p.usd)} USD · ${p.avgCycle == null ? '—' : `${p.avgCycle} 天`}`,
-            }))}
+          <DataTable
+            cols={['产品', '成单次数', '金额（折USD）', '平均转化周期']}
             empty="暂无成单产品"
+            rows={productRows.slice(0, 15).map((p) => [
+              p.name, `${p.count} 次`, money(p.usd), p.avgCycle == null ? '—' : `${p.avgCycle} 天`,
+            ])}
           />
-          {productRows.length > 6 && <div className="hint" style={{ fontSize: 11 }}>仅显示前 6 个产品</div>}
+          {productRows.length > 15 && <div className="hint" style={{ fontSize: 11 }}>仅显示前 15 个产品</div>}
         </Panel>
 
-        <Panel title="按销售" hint="成单次数 · 平均周期">
-          <BarList
-            labelW={118}
-            items={(stats?.bySales ?? []).map((p) => ({ key: p.name || '—', label: p.name || '未指定', value: p.count, text: `${p.count} 单`, note: `平均 ${p.avgCycle} 天` }))}
+        <Panel title="按销售" hint="成单次数 · 金额 · 平均周期">
+          <DataTable
+            cols={['销售', '成单次数', '金额（折USD）', '平均转化周期']}
             empty="暂无成单销售"
+            rows={salesRows.map((p) => [p.name, `${p.n} 单`, money(p.usd), p.avgCycle == null ? '—' : `${p.avgCycle} 天`])}
           />
         </Panel>
 
@@ -339,27 +347,6 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         >
           {monthTeams.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
             <>
-              {/* 月度小组构成条：每行一个月，色块为该组当月金额占比 */}
-              <div style={{ marginBottom: 8 }}>
-                {monthTeams.map((mo) => (
-                  <div key={mo.month} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' }}>
-                    <span className="mono" style={{ width: 62, fontSize: 12, fontWeight: 700 }}>{mo.month}</span>
-                    <div style={{ flex: 1, display: 'flex', height: 14, borderRadius: 5, overflow: 'hidden', background: '#eef1f6', minWidth: 120 }}>
-                      {activeTeams.filter((t) => mo.teams.has(t)).map((t) => {
-                        const v = mo.teams.get(t)!
-                        return (
-                          <div key={t} title={`${t}：${money(v.usd)} USD · ${v.n} 单`}
-                            style={{ width: `${(v.usd / Math.max(1, mo.total.usd)) * 100}%`, background: teamColors[activeTeams.indexOf(t) % teamColors.length] }} />
-                        )
-                      })}
-                    </div>
-                    <span className="mono" style={{ width: 150, textAlign: 'right', fontSize: 12 }}>
-                      {money(mo.total.usd)} USD · {mo.total.n} 单
-                    </span>
-                    <span className="hint" style={{ width: 62, fontSize: 11 }}>{Math.round((mo.total.usd / monthTeamMax) * 100)}%</span>
-                  </div>
-                ))}
-              </div>
               <div className="tablewrap" style={{ overflowX: 'auto' }}>
                 <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                   <thead><tr>{['月份', ...activeTeams, '合计'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
@@ -375,9 +362,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                             return (
                               <td key={t} style={{ padding: '6px 8px', whiteSpace: 'nowrap', background: isBest ? '#f2f8ff' : undefined }}>
                                 {v ? <>
-                                  <span style={{ color: teamColors[activeTeams.indexOf(t) % teamColors.length], fontWeight: 700 }}>{money(v.usd)}</span>
+                                  <span style={{ fontWeight: isBest ? 700 : 400 }}>{money(v.usd)}</span>
                                   <span className="hint" style={{ marginLeft: 4 }}>（{v.n} 单）</span>
-                                  {isBest && <span className="badge new" style={{ marginLeft: 4 }}>最高</span>}
                                 </> : <span className="hint">—</span>}
                               </td>
                             )
@@ -398,41 +384,33 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                   </tbody>
                 </table>
               </div>
-              <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
-                色块对应小组：{activeTeams.map((t, i) => <span key={t} style={{ marginRight: 10 }}><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: teamColors[i % teamColors.length], marginRight: 3 }} />{t}</span>)}
-              </div>
+              <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>小组：{activeTeams.join(' · ')}（未匹配到小组的销售归入「未分组」）</div>
             </>
           )}
         </Panel>
 
         <Panel title="成交原因分析" hint={`${winSum?.total ?? 0} 单 · ${money(winSum?.usdTotal ?? 0)} USD`}
           extra={winSum && winSum.missing > 0 ? <span className="hint" style={{ color: '#a35c00', fontSize: 11 }}>{winSum.missing} 笔未填</span> : undefined}>
-          <BarList
-            labelW={118}
-            items={(winSum?.items ?? []).slice(0, 6).map((x) => ({
-              key: x.reason, label: x.reason, value: x.count, tone: x.reason === '未填写' ? 'blue' : 'green',
-              text: `${x.count} 单 · ${x.share}%`, note: `${money(x.usd)} USD · ${x.avgCycle == null ? '—' : `${x.avgCycle} 天`}`,
-            }))}
+          <DataTable
+            cols={['成交原因', '订单数', '占比', '金额（折USD）', '金额占比', '平均转化周期']}
             empty="暂无成交原因（生成/编辑销售订单时填写）"
+            rows={(winSum?.items ?? []).map((x) => [x.reason, `${x.count} 单`, `${x.share}%`, money(x.usd), `${x.usdShare}%`, x.avgCycle == null ? '—' : `${x.avgCycle} 天`])}
           />
         </Panel>
 
         <Panel title="丢单原因分析" hint={`${lostSum?.total ?? 0} 单 · ${money(lostSum?.usdTotal ?? 0)} USD`}>
-          <BarList
-            labelW={118}
-            items={(lostSum?.items ?? []).slice(0, 6).map((x) => ({
-              key: x.reason, label: x.reason, value: x.count, tone: 'red',
-              text: `${x.count} 单 · ${x.share}%`, note: `${money(x.usd)} USD · ${x.avgCycle == null ? '—' : `${x.avgCycle} 天`}`,
-            }))}
+          <DataTable
+            cols={['丢单原因', '丢单数', '占比', '丢单金额（折USD）', '金额占比', '平均丢单周期']}
             empty="暂无丢单记录（在询报价管理里标记未成单）"
+            rows={(lostSum?.items ?? []).map((x) => [x.reason, `${x.count} 单`, `${x.share}%`, money(x.usd), `${x.usdShare}%`, x.avgCycle == null ? '—' : `${x.avgCycle} 天`])}
           />
         </Panel>
 
         <Panel title="客户 Top10" hint={`合计 ${money(sumUsd)} USD`} style={{ gridColumn: '1 / -1' }}>
-          <div className="two-col">
-            <BarList labelW={150} items={topCustomers.slice(0, 5).map((c) => ({ key: c.name, label: c.name, value: c.usd, text: `${money(c.usd)}`, note: `${c.n} 单 · ${sumUsd ? Math.round((c.usd / sumUsd) * 100) : 0}%` }))} empty="暂无数据" />
-            <BarList labelW={150} items={topCustomers.slice(5, 10).map((c) => ({ key: c.name, label: c.name, value: c.usd, text: `${money(c.usd)}`, note: `${c.n} 单 · ${sumUsd ? Math.round((c.usd / sumUsd) * 100) : 0}%` }))} empty="" />
-          </div>
+          <DataTable
+            cols={['排名', '客户', '金额（折USD）', '订单数', '金额占比']}
+            rows={topCustomers.map((c, i) => [`${i + 1}`, c.name, money(c.usd), `${c.n} 单`, `${sumUsd ? Math.round((c.usd / sumUsd) * 100) : 0}%`])}
+          />
         </Panel>
       </div>
     </>
