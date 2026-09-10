@@ -69,7 +69,7 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
                 <td style={{ padding: '6px 8px' }} className="mono">{r.order_no}</td>
                 <td style={{ padding: '6px 8px' }} className="mono">{r.inquiry_no}</td>
                 <td style={{ padding: '6px 8px' }}>{r.customer_name}</td>
-                <td style={{ padding: '6px 8px', maxWidth: 200 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.productNames}>{r.productNames || '—'}</div></td>
+                <td style={{ padding: '6px 8px', maxWidth: 260, whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.productNames || '—'}</td>
                 <td style={{ padding: '6px 8px' }} className="mono">{r.date}</td>
                 <td style={{ padding: '6px 8px' }} className="mono">{r.won_date}</td>
                 <td style={{ padding: '6px 8px', fontWeight: 700, color: cycleTone(r.cycleDays) }}>{r.cycleDays == null ? '—' : r.cycleDays + ' 天'}</td>

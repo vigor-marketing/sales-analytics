@@ -269,14 +269,28 @@ export default function App() {
           <div key={i} className="item-row">
             <div className="col w-idx"><label>序号</label><div className="idx-cell">{i + 1}</div></div>
             <div className="col grow1">
-              <label>产品名称 <span className="hint">（输入即联动产品档案，可直接下拉选择）</span></label>
-              <input className="sa" style={{ width: '100%' }} list="prod-list" value={it.productName} placeholder="如：可溶桥塞"
-                onChange={(e) => {
-                  const v = e.target.value
-                  const hit = products.find((pp) => pp.name.toLowerCase() === v.trim().toLowerCase())
-                  setItems((a) => a.map((x, j) => j === i ? { ...x, productName: v, currency: hit ? hit.currency : x.currency } : x))
-                }} />
-              {(() => { const hit = products.find((pp) => pp.name.toLowerCase() === it.productName.trim().toLowerCase()); return hit ? <span className="hint">档案：参考金额 {hit.last_amount == null ? '—' : Number(hit.last_amount).toLocaleString()} {hit.currency} · 已用 {hit.use_count} 次</span> : null })()}
+              <label>产品名称 <span className="hint">（可从产品档案选择，或选“＋ 自定义”自由填写）</span></label>
+              {(() => {
+                const hit = products.find((pp) => pp.name.toLowerCase() === it.productName.trim().toLowerCase())
+                const custom = !hit
+                return (
+                  <>
+                    <select className="sa" style={{ width: '100%' }} value={hit ? hit.name : (it.productName ? '__custom__' : '')}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        if (v === '__custom__') { setItems((a) => a.map((x, j) => j === i ? { ...x, productName: hit ? '' : x.productName } : x)); return }
+                        const p2 = products.find((pp) => pp.name === v)
+                        setItems((a) => a.map((x, j) => j === i ? { ...x, productName: v, currency: p2 ? p2.currency : x.currency } : x))
+                      }}>
+                      <option value="">— 请选择档案产品或自定义 —</option>
+                      {products.map((pp) => <option key={pp.id} value={pp.name}>{pp.name}</option>)}
+                      <option value="__custom__">＋ 自定义产品名称</option>
+                    </select>
+                    {custom && <textarea className="sa" rows={2} style={{ width: '100%' }} value={it.productName} placeholder="填写完整产品名称（可换行，不会被截断）" onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, productName: e.target.value } : x))} />}
+                    {hit && <span className="hint">档案：参考金额 {hit.last_amount == null ? '—' : Number(hit.last_amount).toLocaleString()} {hit.currency} · 已用 {hit.use_count} 次</span>}
+                  </>
+                )
+              })()}
             </div>
             <div className="col w1"><label>数量</label><input className="sa" type="number" min="0" value={it.qty} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} /></div>
             <div className="col w1"><label>金额 *</label><input className="sa" type="number" min="0" value={it.amount} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} /></div>
@@ -293,7 +307,6 @@ export default function App() {
         <button className="add-row" onClick={() => setItems((a) => [...a, emptyRow()])}>
           <span className="plus">＋</span> 添加产品
         </button>
-        <datalist id="prod-list">{products.map((pp) => <option key={pp.id} value={pp.name} />)}</datalist>
 
         <div style={{ marginTop: 14, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
           <div className="totals">

@@ -274,7 +274,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
             <div style={{ margin: '6px 0', fontWeight: 600 }}>产品明细</div>
             {form.items.map((it, i) => (
               <div key={i} className="row" style={{ marginBottom: 6 }}>
-                <input className="sa grow1" value={it.productName} placeholder="产品名称" onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, productName: e.target.value } : x) })} />
+                <textarea className="sa grow1" rows={2} value={it.productName} placeholder="产品名称（可换行）" onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, productName: e.target.value } : x) })} />
                 <input className="sa w1" type="number" placeholder="数量" value={it.qty} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, qty: e.target.value } : x) })} />
                 <input className="sa w1" type="number" placeholder="金额" value={it.amount} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, amount: e.target.value } : x) })} />
                 <select className="sa w1" value={it.currency} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, currency: e.target.value } : x) })}>{CURS.map((c) => <option key={c}>{c}</option>)}</select>
