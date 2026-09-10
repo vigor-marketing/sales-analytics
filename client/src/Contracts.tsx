@@ -8,7 +8,6 @@ interface OrderRow {
   customer_name: string; hand_total: number | null; usdApprox: number; totals: { currency: string; total: number }[]
   productNames: string; itemCount: number; items: Item[]; cycleDays: number | null
 }
-interface Stats { contractCount: number; cycleCount: number; avgCycle: number | null; medianCycle: number | null; minCycle: number | null; maxCycle: number | null; usdTotal: number; byProduct: { name: string; count: number; avgCycle: number }[]; bySales: { name: string; count: number; avgCycle: number }[] }
 interface MetaLite { sales: { name: string; team: string }[] }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Math.round(Number(n)).toLocaleString('zh-CN'))
@@ -16,15 +15,15 @@ const cycleTone = (d: number | null) => (d == null ? 'var(--sub)' : d <= 30 ? '#
 
 export default function Contracts({ meta }: { meta: MetaLite }) {
   const [q, setQ] = useState(''); const [sales, setSales] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [product, setProduct] = useState('')
-  const [rows, setRows] = useState<OrderRow[]>([]); const [stats, setStats] = useState<Stats | null>(null)
+  const [rows, setRows] = useState<OrderRow[]>([])
   const [msg, setMsg] = useState(''); const [viewId, setViewId] = useState<string | null>(null); const [editId, setEditId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const load = useCallback(async () => {
     try {
       const p = new URLSearchParams()
       if (q) p.set('q', q); if (sales) p.set('sales', sales); if (from) p.set('from', from); if (to) p.set('to', to); if (product) p.set('product', product)
-      const d = await get<{ rows: OrderRow[]; stats: Stats }>(`/orders?${p.toString()}`)
-      setRows(d.rows); setStats(d.stats)
+      const d = await get<{ rows: OrderRow[] }>(`/orders?${p.toString()}`)
+      setRows(d.rows)
     } catch (e) { setMsg((e as Error).message) }
   }, [q, sales, from, to, product])
   useEffect(() => { void load() }, [load])
@@ -49,16 +48,6 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
         <button className="btn" onClick={() => { setQ(''); setSales(''); setFrom(''); setTo(''); setProduct('') }}>重置</button>
       </div>
       {msg && <div className="msg ok">{msg}</div>}
-
-      {stats && (
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '10px 0' }}>
-          <div style={card}><div className="hint">销售订单</div><div style={{ fontSize: 20, fontWeight: 800 }}>{stats.contractCount}</div></div>
-          <div style={card}><div className="hint">平均转化周期</div><div style={{ fontSize: 20, fontWeight: 800, color: cycleTone(stats.avgCycle) }}>{stats.avgCycle == null ? '—' : stats.avgCycle + ' 天'}</div></div>
-          <div style={card}><div className="hint">中位转化周期</div><div style={{ fontSize: 20, fontWeight: 800 }}>{stats.medianCycle == null ? '—' : stats.medianCycle + ' 天'}</div></div>
-          <div style={card}><div className="hint">最短 ~ 最长</div><div style={{ fontSize: 20, fontWeight: 800 }}>{stats.minCycle == null ? '—' : `${stats.minCycle} ~ ${stats.maxCycle} 天`}</div></div>
-          <div style={card}><div className="hint">订单金额（折USD）</div><div style={{ fontSize: 20, fontWeight: 800, color: 'var(--brand)' }}>{money(stats.usdTotal)}</div></div>
-        </div>
-      )}
 
       <div className="tablewrap" style={{ overflow: 'auto', maxHeight: '56vh' }}>
         <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
@@ -86,35 +75,6 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
           </tbody>
         </table>
       </div>
-
-      {stats && (
-        <div className="dash-cols2" style={{ marginTop: 12 }}>
-          <div>
-            <h4 style={{ margin: '0 0 6px' }}>按产品：转化周期统计</h4>
-            <div className="tablewrap" style={{ maxHeight: 260, overflow: 'auto' }}>
-              <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                <thead><tr>{['产品', '成单次数', '平均周期'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: 6, textAlign: 'left', borderBottom: '1px solid var(--line)' }}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {stats.byProduct.map((p) => <tr key={p.name} style={{ borderBottom: '1px solid var(--line2)' }}><td style={{ padding: 6 }}>{p.name}</td><td style={{ padding: 6 }}>{p.count}</td><td style={{ padding: 6, color: cycleTone(p.avgCycle), fontWeight: 700 }}>{p.avgCycle} 天</td></tr>)}
-                  {stats.byProduct.length === 0 && <tr><td colSpan={3} className="hint" style={{ padding: 12, textAlign: 'center' }}>暂无数据</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <div>
-            <h4 style={{ margin: '0 0 6px' }}>按销售：转化周期统计</h4>
-            <div className="tablewrap" style={{ maxHeight: 260, overflow: 'auto' }}>
-              <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                <thead><tr>{['销售', '成单次数', '平均周期'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: 6, textAlign: 'left', borderBottom: '1px solid var(--line)' }}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {stats.bySales.map((p) => <tr key={p.name} style={{ borderBottom: '1px solid var(--line2)' }}><td style={{ padding: 6 }}>{p.name || '—'}</td><td style={{ padding: 6 }}>{p.count}</td><td style={{ padding: 6, color: cycleTone(p.avgCycle), fontWeight: 700 }}>{p.avgCycle} 天</td></tr>)}
-                  {stats.bySales.length === 0 && <tr><td colSpan={3} className="hint" style={{ padding: 12, textAlign: 'center' }}>暂无数据</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
 
       {viewId && <OrderView id={viewId} onClose={() => setViewId(null)} />}
       {editId && <OrderEdit id={editId} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); void load() }} />}
