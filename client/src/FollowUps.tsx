@@ -46,17 +46,20 @@ export default function FollowUps({ meta, target }: { meta: MetaLite; target?: {
   const [optLoading, setOptLoading] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  // 从仪表盘「去跟进」进入：预选销售与询价号
+  // 进入跟进（仪表盘跳转 / 点击跟进记录行）时保留已选询价，仅手动切换销售才清空
+  const keepNoRef = useRef(false)
   useEffect(() => {
     if (!target?.sales || !target?.no) return
+    keepNoRef.current = true
     setSales(target.sales); setNo(target.no)
   }, [target])
 
   useEffect(() => {
-    // 手动切换销售时清空已选询价；由仪表盘带入时保留（等待目标销售生效期间也不清）
-    const targeting = Boolean(target?.sales && target.no)
-    const keepNo = targeting && (sales === '' || sales === target!.sales)
-    if (!keepNo) { setNo(''); setHit(null); setLookErr('') }
+    // 保留条件：来自仪表盘跳转（销售等于目标或尚未生效）／刚点了跟进记录行；仅手动换销售才清空
+    const keepFromTarget = Boolean(target?.no && target.sales && (sales === target.sales || sales === ''))
+    if (keepNoRef.current || keepFromTarget) { /* 保留已选询价 */ }
+    else { setNo(''); setHit(null); setLookErr('') }
+    keepNoRef.current = false
     if (!sales) { setOptions([]); return }
     setOptLoading(true)
     get<{ id: string; inquiry_no: string; customer_name: string; date: string }[] | { rows: { id: string; inquiry_no: string; customer_name: string; date: string }[] }>(`/inquiries?sales=${encodeURIComponent(sales)}`)
@@ -268,7 +271,14 @@ export default function FollowUps({ meta, target }: { meta: MetaLite; target?: {
                 const photos = r.photos || []
                 const atts = r.attachments || []
                 return (
-                  <tr key={r.id} style={{ borderBottom: '1px solid var(--line2)' }}>
+                  <tr key={r.id} className="row-click" title="点击进入该询价的跟进" style={{ borderBottom: '1px solid var(--line2)' }}
+                    onClick={(e) => {
+                      // 行内按钮（查看/追加指导）不触发进入跟进
+                      if ((e.target as HTMLElement).closest('button,a,input,select,textarea')) return
+                      keepNoRef.current = true
+                      setSales(r.sales); setNo(r.inquiry_no)
+                      window.scrollTo({ top: 0, behavior: 'smooth' })
+                    }}>
                     <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.date}</td>
                     <td style={{ padding: '7px 8px' }}>
                       <div className="mono" style={{ fontWeight: 600 }}>{r.inquiry_no}</div>

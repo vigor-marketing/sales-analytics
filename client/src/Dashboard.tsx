@@ -111,7 +111,8 @@ export default function Dashboard({ onGoFollow }: { onGoFollow?: (t: { sales: st
               {list.map((r) => {
                 const t = kindTone(r.kind)
                 return (
-                  <tr key={r.id + (r.kind ?? '')}>
+                  <tr key={r.id + (r.kind ?? '')} className="row-click" title="点击进入该询价的跟进"
+                    onClick={(e) => { if ((e.target as HTMLElement).closest('button,a,input,select,textarea')) return; onGoFollow?.({ sales: r.sales, no: r.inquiry_no }) }}>
                     <td style={{ padding: '0 8px' }}>
                       <span className="rem-kind" style={{ background: t.bg, color: t.color }}>{r.kindLabel ?? '—'}</span>
                     </td>
