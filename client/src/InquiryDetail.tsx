@@ -185,37 +185,43 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                 <span className="hint">来自「询报价跟进」页：按销售 + 询价号录入的记录会实时显示在这里</span>
               </div>
               {fus.length > 0 ? (
-                <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 8 }}>
-                  <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                    <thead><tr>{['跟进日期', '方式', '简述', '具体内容', '图片', '附件', '跟进指导', '下次跟进', '跟进人', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+                <div className="tablewrap" style={{ marginTop: 8 }}>
+                  <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
+                    <colgroup>
+                      <col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '12%' }} /><col style={{ width: '20%' }} /><col style={{ width: '7%' }} />
+                      <col style={{ width: '9%' }} /><col style={{ width: '16%' }} /><col style={{ width: '10%' }} /><col style={{ width: '6%' }} /><col style={{ width: '6%' }} />
+                    </colgroup>
+                    <thead><tr>{['跟进日期', '方式', '简述', '具体内容', '图片', '附件', '跟进指导', '下次跟进', '跟进人', '录入时间'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
                     <tbody>
                       {fus.map((f) => (
-                        <tr key={f.id} style={{ borderBottom: '1px solid var(--line2)' }}>
-                          <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.date}</td>
-                          <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.method || '—'}</td>
-                          <td style={{ padding: '6px 8px', minWidth: 150 }}>{f.summary || '—'}</td>
-                          <td style={{ padding: '6px 8px', minWidth: 220, whiteSpace: 'pre-wrap' }}>{f.detail || '—'}</td>
-                          <td style={{ padding: '6px 8px' }}>
+                        <tr key={f.id}>
+                          <td className="mono" title={f.date}>{f.date}</td>
+                          <td title={f.method || '—'}>{f.method || '—'}</td>
+                          <td title={f.summary || '—'}>{f.summary || '—'}</td>
+                          <td title={f.detail || '—'}>{f.detail || '—'}</td>
+                          <td title={(f.photos || []).length ? `${(f.photos || []).length} 张图片` : '—'}>
                             {(f.photos || []).length === 0 ? '—' : (
-                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                {f.photos.map((u) => (
+                              <span style={{ display: 'inline-flex', gap: 4 }}>
+                                {(f.photos || []).map((u) => (
                                   <a key={u} href={u} target="_blank" rel="noreferrer" title="点击查看原图">
-                                    <img src={u} alt="跟进图片" style={{ width: 46, height: 34, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line)' }} />
+                                    <img src={u} alt="跟进图片" style={{ height: 26, width: 34, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line)' }} />
                                   </a>
                                 ))}
-                              </div>
+                              </span>
                             )}
                           </td>
-                          <td style={{ padding: '6px 8px' }}>
-                            {(f.attachments || []).length === 0 ? '—' : f.attachments.map((a) => (
-                              <div key={a.url}><a className="mono" href={a.url} target="_blank" rel="noreferrer">{a.name || '附件'}</a></div>
+                          <td title={(f.attachments || []).map((a) => a.name || '附件').join('、') || '—'}>
+                            {(f.attachments || []).length === 0 ? '—' : (f.attachments || []).map((a) => (
+                              <a key={a.url} className="mono" href={a.url} target="_blank" rel="noreferrer" style={{ marginRight: 6 }}>{a.name || '附件'}</a>
                             ))}
                           </td>
                           {/* 跟进指导：此处只读查看，醒目标注；新增/追加在「询报价跟进」页 */}
-                          <td style={{ padding: '6px 8px', minWidth: 200 }}><GuidanceNote comments={f.comments} /></td>
-                          <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.next_followup_at || '—'}</td>
-                          <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.by_name || '—'}</td>
-                          <td className="mono hint" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{String(f.created_at || '').slice(0, 16).replace('T', ' ')}</td>
+                          <td title={(f.comments ?? []).map((c) => `${c.by_name || '—'}：${c.content}`).join('\n') || '暂无指导'}>
+                            {(f.comments ?? []).length === 0 ? <span className="hint">—</span> : <GuidanceNote compact comments={f.comments} />}
+                          </td>
+                          <td className="mono" title={f.next_followup_at || '未设置下次跟进'}>{f.next_followup_at ? String(f.next_followup_at).replace('T', ' ') : '—'}</td>
+                          <td title={f.by_name || '—'}>{f.by_name || '—'}</td>
+                          <td className="mono hint" title={String(f.created_at || '').slice(0, 19).replace('T', ' ')}>{String(f.created_at || '').slice(0, 16).replace('T', ' ')}</td>
                         </tr>
                       ))}
                     </tbody>

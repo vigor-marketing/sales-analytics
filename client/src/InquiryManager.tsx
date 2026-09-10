@@ -51,6 +51,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
   const fmtT = (r: Row) => (r.totals ?? []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'
   const sumUsd = rows.reduce((s, r) => s + (r.usdApprox || 0), 0)
   return (
+    <div className="page-fit">
     <div className="card">
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 style={{ margin: 0 }}>询报价管理</h3>
@@ -84,36 +85,42 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
         <button className="btn" onClick={() => void load()}>查询</button>
         <button className="btn" onClick={() => { setQ(''); setRange(''); setSales(''); setPur(''); setSrc(''); setSt(''); void load() }}>重置</button>
       </div>
-      <div className="tablewrap" style={{ overflowX: 'auto' }}>
-        <table className="grid" style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12.5 }}>
-          <thead><tr>{['询价号', '日期', '客户', '状态', '标签', '报价合计', '销售', '采购', '来源', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+      <div className="tablewrap">
+        <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
+          {/* 列宽固定：变更列宽只改这里 */}
+          <colgroup>
+            <col style={{ width: '12%' }} /><col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '11%' }} /><col style={{ width: '9%' }} />
+            <col style={{ width: '13%' }} /><col style={{ width: '8%' }} /><col style={{ width: '7%' }} /><col style={{ width: '9%' }} /><col style={{ width: 130 }} />
+          </colgroup>
+          <thead><tr>{['询价号', '日期', '客户', '状态', '标签', '报价合计', '销售', '采购', '来源', '操作'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className={r.status === 'lost' ? 'row-lost' : undefined} style={{ borderBottom: '1px solid var(--line2)' }}>
-                <td className="mono" style={{ padding: '6px 8px' }}>{r.inquiry_no}</td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.date}</td>
-                <td style={{ padding: '6px 8px' }}>{r.customer_name}</td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }} title={r.status === 'lost' ? `丢单原因：${r.lost_reason || '—'}${r.lost_date ? `（${r.lost_date}）` : ''}` : undefined}>
+              <tr key={r.id} className={r.status === 'lost' ? 'row-lost' : undefined}>
+                <td className="mono" title={r.inquiry_no}>{r.inquiry_no}</td>
+                <td className="mono" title={r.date}>{r.date}</td>
+                <td title={r.customer_name}>{r.customer_name}</td>
+                <td title={r.status === 'lost' ? `丢单原因：${r.lost_reason || '—'}${r.lost_date ? `（${r.lost_date}）` : ''}` : undefined}>
                   <StatusTag status={r.status} />
-                  {r.status === 'lost' && <div className="lost-line">丢单原因：{r.lost_reason || '—'}{r.lost_date ? `（${r.lost_date}）` : ''}</div>}
+                  {r.status === 'lost' && <span className="cell-note">丢单原因见悬停提示</span>}
                 </td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><TagBlocks r={r} /></td>
-                <td style={{ padding: '6px 8px' }} title={fmtT(r)}>≈USD {money(r.usdApprox)}<div className="hint">{fmtT(r)}</div></td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.sales}</td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.purchaser || '—'}</td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><span className="badge">{r.source || '—'}</span></td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+                <td title={[Number(r.is_key_customer) === 1 ? '重点客户' : null, Number(r.is_key_project) === 1 ? '重点项目' : null].filter(Boolean).join('、') || '无标签'}><TagBlocks r={r} /></td>
+                <td className="mono" title={fmtT(r) || '—'}>≈USD {money(r.usdApprox)}<span className="cell-note">{fmtT(r)}</span></td>
+                <td title={r.sales}>{r.sales}</td>
+                <td title={r.purchaser || '—'}>{r.purchaser || '—'}</td>
+                <td title={r.source || '—'}><span className="badge">{r.source || '—'}</span></td>
+                <td>
                   <button className="btn sm" onClick={() => setViewId(r.id)}>查看</button>
                   <button className="btn sm" onClick={() => setEditId(r.id)}>编辑</button>
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无询报价记录（先到「询报价录入」录一单）</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={10} className="hint" style={{ textAlign: 'center' }}>暂无询报价记录（先到「询报价录入」录一单）</td></tr>}
           </tbody>
         </table>
       </div>
       {viewId && <InquiryDetailModal id={viewId} onClose={() => setViewId(null)} />}
       {editId && <EditModal id={editId} meta={meta} products={products} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); void load() }} />}
+    </div>
     </div>
   )
 }

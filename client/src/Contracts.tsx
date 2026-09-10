@@ -51,6 +51,7 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
   useEffect(() => { void load() }, [load])
   const card: React.CSSProperties = { flex: '1 1 150px', minWidth: 150, background: '#fff', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px' }
   return (
+    <div className="page-fit">
     <div className="card">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0 }}>销售订单管理</h3>
@@ -78,37 +79,43 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
       </div>
       {msg && <div className="msg err">{msg}</div>}
 
-      <div className="tablewrap" style={{ overflow: 'auto', maxHeight: '56vh' }}>
-        <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-          <thead><tr>{['订单号', '询价号', '客户', '标签', '产品', '采购', '来源', '询价日期', '成单日期', '转化周期', '销售', '订单金额', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+      <div className="tablewrap">
+        <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
+          <colgroup>
+            <col style={{ width: '11%' }} /><col style={{ width: '9%' }} /><col style={{ width: '9%' }} /><col style={{ width: '8%' }} /><col style={{ width: '12%' }} />
+            <col style={{ width: '6%' }} /><col style={{ width: '6%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} />
+            <col style={{ width: '6%' }} /><col style={{ width: '7%' }} /><col style={{ width: 124 }} />
+          </colgroup>
+          <thead><tr>{['订单号', '询价号', '客户', '标签', '产品', '采购', '来源', '询价日期', '成单日期', '转化周期', '销售', '订单金额', '操作'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.order_id} style={{ borderBottom: '1px solid var(--line2)' }}>
-                <td style={{ padding: '6px 8px' }} className="mono">{r.order_no}</td>
-                <td style={{ padding: '6px 8px' }} className="mono">{r.inquiry_no}</td>
-                <td style={{ padding: '6px 8px' }}>{r.customer_name}</td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><KeyTags kc={r.is_key_customer} kp={r.is_key_project} /></td>
-                <td style={{ padding: '6px 8px', maxWidth: 260, whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.productNames || '—'}</td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.purchaser || '—'}</td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><span className="badge">{r.source || '—'}</span></td>
-                <td style={{ padding: '6px 8px' }} className="mono">{r.date}</td>
-                <td style={{ padding: '6px 8px' }} className="mono">{r.won_date}</td>
-                <td style={{ padding: '6px 8px', fontWeight: 700, color: cycleTone(r.cycleDays) }}>{r.cycleDays == null ? '—' : r.cycleDays + ' 天'}</td>
-                <td style={{ padding: '6px 8px' }}>{r.sales}</td>
-                <td style={{ padding: '6px 8px' }} className="mono">{r.order_amount == null ? `≈USD ${money(r.usdApprox)}` : `${money(r.order_amount)} ${r.order_currency}`}</td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+              <tr key={r.order_id}>
+                <td className="mono" title={r.order_no}>{r.order_no}</td>
+                <td className="mono" title={r.inquiry_no}>{r.inquiry_no}</td>
+                <td title={r.customer_name}>{r.customer_name}</td>
+                <td title={[Number(r.is_key_customer) === 1 ? '重点客户' : null, Number(r.is_key_project) === 1 ? '重点项目' : null].filter(Boolean).join('、') || '无标签'}><KeyTags kc={r.is_key_customer} kp={r.is_key_project} /></td>
+                <td title={r.productNames || '—'}>{r.productNames || '—'}</td>
+                <td title={r.purchaser || '—'}>{r.purchaser || '—'}</td>
+                <td title={r.source || '—'}><span className="badge">{r.source || '—'}</span></td>
+                <td className="mono" title={r.date}>{r.date}</td>
+                <td className="mono" title={r.won_date}>{r.won_date}</td>
+                <td className="mono" style={{ fontWeight: 700, color: cycleTone(r.cycleDays) }} title={r.cycleDays == null ? '无转化周期' : `询价到成单 ${r.cycleDays} 天`}>{r.cycleDays == null ? '—' : r.cycleDays + ' 天'}</td>
+                <td title={r.sales}>{r.sales}</td>
+                <td className="mono" title={r.order_amount == null ? `按报价合计折 USD ≈ ${money(r.usdApprox)}` : `${money(r.order_amount)} ${r.order_currency}`}>{r.order_amount == null ? `≈USD ${money(r.usdApprox)}` : `${money(r.order_amount)} ${r.order_currency}`}</td>
+                <td>
                   <button className="btn sm" onClick={() => setViewId(r.order_id)}>查看</button>
                   <button className="btn sm" onClick={() => setEditId(r.order_id)}>编辑</button>
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无销售订单（到「询报价管理」点“生成销售订单”并填写成单日期）</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={13} className="hint" style={{ textAlign: 'center' }}>暂无销售订单（到「询报价管理」点“生成销售订单”并填写成单日期）</td></tr>}
           </tbody>
         </table>
       </div>
 
       {viewId && <OrderView id={viewId} onClose={() => setViewId(null)} />}
       {editId && <OrderEdit id={editId} winReasons={meta.winReasons} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); void load() }} />}
+    </div>
     </div>
   )
 }
@@ -171,23 +178,24 @@ function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
 
             {/* 产品明细 */}
             <h4 className="sec-title" style={{ marginTop: 14 }}>产品明细（{d.items?.length ?? 0} 行）</h4>
-            <div className="tablewrap" style={{ overflowX: 'auto' }}>
-              <table className="grid data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <div className="tablewrap">
+              <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
+                <colgroup><col style={{ width: '8%' }} /><col style={{ width: '42%' }} /><col style={{ width: '12%' }} /><col style={{ width: '20%' }} /><col style={{ width: '18%' }} /></colgroup>
                 <thead><tr>{['序号', '产品名称', '数量', '金额', '币种'].map((h, i) => <th key={h} style={{ textAlign: i === 0 || i === 1 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {(d.items || []).map((it, i) => (
                     <tr key={i}>
-                      <td style={{ padding: '6px 8px' }}>{i + 1}</td>
-                      <td style={{ padding: '6px 8px' }}>{it.product_name}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'right' }}>{it.qty ?? '—'}</td>
-                      <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>{money(it.amount)}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'right' }}>{it.currency}</td>
+                      <td className="mono">{i + 1}</td>
+                      <td title={it.product_name}>{it.product_name}</td>
+                      <td className="mono" style={{ textAlign: 'right' }}>{it.qty ?? '—'}</td>
+                      <td className="mono" style={{ textAlign: 'right' }}>{money(it.amount)}</td>
+                      <td title={it.currency} style={{ textAlign: 'right' }}>{it.currency}</td>
                     </tr>
                   ))}
-                  <tr style={{ borderTop: '2px solid var(--line)' }}>
-                    <td colSpan={3} style={{ padding: '6px 8px', fontWeight: 700 }}>报价合计</td>
-                    <td className="mono" style={{ padding: '6px 8px', fontWeight: 800, textAlign: 'right' }}>{money(totalQuote)}</td>
-                    <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>{d.order_currency}</td>
+                  <tr>
+                    <td colSpan={3} style={{ fontWeight: 700 }}>报价合计</td>
+                    <td className="mono" style={{ fontWeight: 800, textAlign: 'right' }}>{money(totalQuote)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700 }}>{d.order_currency}</td>
                   </tr>
                 </tbody>
               </table>
@@ -213,18 +221,19 @@ function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
               <Info label="下次跟进" value={d.next_followup_at ? String(d.next_followup_at).replace('T', ' ') : '—'} mono />
             </div>
             {fus.length > 0 ? (
-              <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 6 }}>
-                <table className="grid data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                  <thead><tr>{['跟进日期', '方式', '简述', '具体内容', '下次跟进', '跟进人'].map((h, i) => <th key={h} style={{ textAlign: i === 3 ? 'left' : i === 0 || i === 2 || i === 4 ? 'left' : 'left' }}>{h}</th>)}</tr></thead>
+              <div className="tablewrap" style={{ marginTop: 6 }}>
+                <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
+                  <colgroup><col style={{ width: '11%' }} /><col style={{ width: '8%' }} /><col style={{ width: '20%' }} /><col style={{ width: '32%' }} /><col style={{ width: '15%' }} /><col style={{ width: '14%' }} /></colgroup>
+                  <thead><tr>{['跟进日期', '方式', '简述', '具体内容', '下次跟进', '跟进人'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
                   <tbody>
                     {fus.map((f) => (
                       <tr key={f.id}>
-                        <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.date}</td>
-                        <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.method || '—'}</td>
-                        <td style={{ padding: '6px 8px' }}>{f.summary || '—'}</td>
-                        <td style={{ padding: '6px 8px', minWidth: 260, whiteSpace: 'pre-wrap' }}>{f.detail || '—'}</td>
-                        <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.next_followup_at ? String(f.next_followup_at).replace('T', ' ') : '—'}</td>
-                        <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.by_name || '—'}</td>
+                        <td className="mono" title={f.date}>{f.date}</td>
+                        <td title={f.method || '—'}>{f.method || '—'}</td>
+                        <td title={f.summary || '—'}>{f.summary || '—'}</td>
+                        <td title={f.detail || '—'}>{f.detail || '—'}</td>
+                        <td className="mono" title={f.next_followup_at ? String(f.next_followup_at).replace('T', ' ') : '未设置'}>{f.next_followup_at ? String(f.next_followup_at).replace('T', ' ') : '—'}</td>
+                        <td title={f.by_name || '—'}>{f.by_name || '—'}</td>
                       </tr>
                     ))}
                   </tbody>

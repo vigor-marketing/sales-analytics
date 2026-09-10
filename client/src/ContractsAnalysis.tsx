@@ -53,8 +53,8 @@ function Section({ title, note }: { title: string; note?: string }) {
 /** 纯数据表格：这些分析板块只保留数字，不做条形/色块图 */
 function DataTable({ cols, rows, empty = '暂无数据', widths, topCol, topLabel }: { cols: string[]; rows: React.ReactNode[][]; empty?: string; widths?: string[]; topCol?: number; topLabel?: string }) {
   return (
-    <div className="tablewrap" style={{ overflowX: 'auto' }}>
-      <table className="grid data-table fixed-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+    <div className="tablewrap h240">
+      <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
         {widths && <colgroup>{widths.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>}
         <thead><tr>{cols.map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
         <tbody>
@@ -70,7 +70,7 @@ function DataTable({ cols, rows, empty = '暂无数据', widths, topCol, topLabe
               ))}
             </tr>
           ))}
-          {rows.length === 0 && <tr><td colSpan={cols.length} className="hint" style={{ padding: 12, textAlign: 'center' }}>{empty}</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={cols.length} className="hint" style={{ textAlign: 'center' }}>{empty}</td></tr>}
         </tbody>
       </table>
     </div>
@@ -360,9 +360,9 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   const lostSum = reasons?.lost
 
   return (
-    <>
+    <div className="page-fit scroll">
       {/* 筛选条 */}
-      <section className="card panel-tight">
+      <section className="card panel-tight auto">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <h3 style={{ margin: 0, fontSize: 16 }}>销售订单分析</h3>
           <span className="hint" style={{ flex: 1, minWidth: 180 }}>{RANGE_LABEL[range]} · 成交金额、转化周期、小组/产品/销售/客户与成交·丢单原因（全部跟随筛选）</span>
@@ -492,8 +492,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         {tab === 'group' && (<>
         <Panel title="小组内成员分析" hint={`${teamFilter ? `已筛「${teamFilter}」· ` : ''}每个小组下各成员的成单金额与占比（含本期无成单的成员）`} style={{ gridColumn: '1 / -1' }}>
           {shownTeams.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
-            <div className="tablewrap" style={{ overflowX: 'auto' }}>
-              <table className="grid data-table fixed-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <div className="tablewrap h300">
+              <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
                 <colgroup><col style={{ width: '28%' }} /><col style={{ width: '14%' }} /><col style={{ width: '18%' }} /><col style={{ width: '13%' }} /><col style={{ width: '16%' }} /><col style={{ width: '11%' }} /></colgroup>
                 <thead><tr>{['小组 / 成员', '订单数', '金额（折USD）', '组内占比', '平均转化周期', '组内排名'].map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
                 <tbody>
@@ -556,8 +556,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         >
           {monthTeams.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
             <>
-              <div className="tablewrap" style={{ overflowX: 'auto' }}>
-                <table className="grid data-table fixed-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <div className="tablewrap h240">
+                <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
                   <colgroup><col style={{ width: '14%' }} />{[...activeTeams, '合计'].map((t) => <col key={t} style={{ width: `${Math.round(86 / (activeTeams.length + 1))}%` }} />)}</colgroup>
                   <thead><tr>{['月份', ...activeTeams, '合计'].map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
                   <tbody>
@@ -636,6 +636,6 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         </Panel>
         )}
       </div>
-    </>
+    </div>
   )
 }

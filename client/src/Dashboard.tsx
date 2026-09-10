@@ -60,8 +60,8 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
   const kindTone = (k?: string) => (k === 'overdue' ? { bg: '#fee2e2', color: '#b91c1c' } : k === 'dueSoon' ? { bg: '#fef3c7', color: '#92400e' } : { bg: '#ede9fe', color: '#5b21b6' })
 
   return (
-    <>
-      <section className="card panel-tight">
+    <div className="page-fit">
+      <section className="card panel-tight auto">
         <div className="panel-head">
           <h4 className="panel-title">仪表盘</h4>
           <span className="hint panel-hint">{d ? `${d.month} 本月数据与跟进提醒 · 今天 ${d.today}` : '加载中…'}</span>
@@ -88,7 +88,7 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
         />
       )}
 
-      <section className="card panel-tight" style={{ marginTop: 12 }}>
+      <section className="card panel-tight">
         <div className="panel-head">
           <h4 className="panel-title">跟进提醒与指导</h4>
           <span className="hint panel-hint">
@@ -112,11 +112,11 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
         </div>
         <div className="hint" style={{ marginTop: 6 }}>{cur.note}</div>
 
-        <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 8 }}>
+        <div className="tablewrap" style={{ marginTop: 8 }}>
           <table className="grid data-table fixed-table rem-table rem-data-table" style={{ width: '100%', minWidth: 940, borderCollapse: 'collapse', fontSize: 12.5 }}>
             <colgroup>
-              <col style={{ width: '7%' }} /><col style={{ width: '10%' }} /><col style={{ width: '12%' }} /><col style={{ width: '7%' }} /><col style={{ width: '7%' }} />
-              <col style={{ width: '9%' }} /><col style={{ width: '9%' }} /><col style={{ width: '8%' }} /><col style={{ width: '24%' }} /><col style={{ width: 132 }} />
+              <col style={{ width: '9%' }} /><col style={{ width: '10%' }} /><col style={{ width: '11%' }} /><col style={{ width: '6%' }} /><col style={{ width: '6%' }} />
+              <col style={{ width: '10%' }} /><col style={{ width: '10%' }} /><col style={{ width: '8%' }} /><col style={{ width: '21%' }} /><col style={{ width: 132 }} />
             </colgroup>
             <thead><tr>
               <th style={{ textAlign: 'left' }}>类型</th><th style={{ textAlign: 'left' }}>询价号</th><th style={{ textAlign: 'left' }}>客户</th>
@@ -130,19 +130,19 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
                 return (
                   <tr key={r.id + (r.kind ?? '')} className="row-click" title="点击进入该询价的跟进"
                     onClick={(e) => { if ((e.target as HTMLElement).closest('button,a,input,select,textarea')) return; onGoFollow?.({ sales: r.sales, no: r.inquiry_no }) }}>
-                    <td style={{ padding: '0 8px' }}>
+                    <td style={{ padding: '0 8px' }} title={r.kindLabel ?? '—'}>
                       <span className="rem-kind" style={{ background: t.bg, color: t.color }}>{r.kindLabel ?? '—'}</span>
                     </td>
-                    <td className="mono ellip" style={{ padding: '0 8px' }} title={r.inquiry_no}>{r.inquiry_no}</td>
+                    <td className="mono" style={{ padding: '0 8px' }} title={r.inquiry_no}>{r.inquiry_no}</td>
                     <td className="ellip" style={{ padding: '0 8px' }} title={r.customer_name}>{r.customer_name || '—'}</td>
-                    <td className="ellip" style={{ padding: '0 8px' }}>{r.sales || '—'}</td>
-                    <td className="ellip" style={{ padding: '0 8px' }}>{r.purchaser || '—'}</td>
-                    <td className="mono" style={{ padding: '0 8px' }}>{fmt(r.last_followup_at)}</td>
-                    <td className="mono" style={{ padding: '0 8px', fontWeight: r.kind === 'overdue' ? 700 : 400, color: r.kind === 'overdue' ? 'var(--danger)' : undefined }}>{fmt(r.next_followup_at)}</td>
-                    <td className="mono cell-top" style={{ padding: '0 8px', textAlign: 'right' }}>{money(r.usd)}</td>
-                    <td style={{ padding: '6px 8px', whiteSpace: 'normal' }}>
-                      {/* 没有跟进指导时留空，不显示占位文字 */}
-                      {r.comments && r.comments.length ? <GuidanceNote all comments={r.comments} /> : null}
+                    <td className="ellip" style={{ padding: '0 8px' }} title={r.sales || '—'}>{r.sales || '—'}</td>
+                    <td className="ellip" style={{ padding: '0 8px' }} title={r.purchaser || '—'}>{r.purchaser || '—'}</td>
+                    <td className="mono" style={{ padding: '0 8px' }} title={r.last_followup_at ? String(r.last_followup_at).replace('T', ' ') : '从未跟进'}>{fmt(r.last_followup_at)}</td>
+                    <td className="mono" style={{ padding: '0 8px', fontWeight: r.kind === 'overdue' ? 700 : 400, color: r.kind === 'overdue' ? 'var(--danger)' : undefined }} title={r.next_followup_at ? String(r.next_followup_at).replace('T', ' ') : '未设置下次跟进'}>{fmt(r.next_followup_at)}</td>
+                    <td className="mono cell-top" style={{ padding: '0 8px', textAlign: 'right' }} title={`报价合计折 USD ≈ ${money(r.usd)}`}>{money(r.usd)}</td>
+                    <td title={(r.comments ?? []).map((c) => `${c.by_name || '—'}：${c.content}`).join('\n') || '暂无跟进指导'}>
+                      {/* 固定行高：这里只显示最近一条指导，完整内容在悬停提示与「＋指导」弹窗里 */}
+                      {r.comments && r.comments.length ? <GuidanceNote compact comments={r.comments} /> : <span className="hint">—</span>}
                     </td>
                     <td style={{ padding: '0 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <button className="btn xs pri" onClick={() => onGoFollow?.({ sales: r.sales, no: r.inquiry_no })}>去跟进</button>
@@ -164,26 +164,26 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
         </div>
       </section>
 
-      <div className="dash-grid" style={{ marginTop: 12 }}>
-        <section className="card panel-tight">
+      <div className="dash-grid" style={{ marginTop: 0 }}>
+        <section className="card panel-tight" style={{ marginBottom: 0, display: 'flex', flexDirection: 'column' }}>
           <div className="panel-head">
             <h4 className="panel-title">本月按销售</h4>
             <span className="hint panel-hint">本月成单金额排名（成交 ≈USD {money(d?.kpi.wonUsd)}）</span>
           </div>
-          <div style={{ marginTop: 8 }}>
-            <table className="grid data-table fixed-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+          <div className="tablewrap" style={{ marginTop: 8 }}>
+            <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
               <colgroup><col style={{ width: '34%' }} /><col style={{ width: '18%' }} /><col style={{ width: '26%' }} /><col style={{ width: '22%' }} /></colgroup>
               <thead><tr><th style={{ textAlign: 'left' }}>销售</th><th style={{ textAlign: 'right' }}>单数</th><th style={{ textAlign: 'right' }}>金额(USD)</th><th style={{ textAlign: 'right' }}>占比</th></tr></thead>
               <tbody>
                 {(d?.monthBySales ?? []).map((x, i) => (
                   <tr key={x.name} className={i === 0 ? 'row-top' : undefined}>
-                    <td className="ellip" style={{ padding: '0 10px' }} title={x.name}>{x.name}{i === 0 && <span className="top-badge">第一</span>}</td>
-                    <td style={{ padding: '0 10px', textAlign: 'right' }}>{x.n} 单</td>
-                    <td className={'mono' + (i === 0 ? ' cell-top' : '')} style={{ padding: '0 10px', textAlign: 'right' }}>{money(x.usd)}</td>
-                    <td style={{ padding: '0 10px', textAlign: 'right' }}>{d?.kpi.wonUsd ? `${Math.round((x.usd / d.kpi.wonUsd) * 1000) / 10}%` : '—'}</td>
+                    <td title={x.name}>{x.name}{i === 0 && <span className="top-badge">第一</span>}</td>
+                    <td className="mono" style={{ textAlign: 'right' }}>{x.n} 单</td>
+                    <td className={'mono' + (i === 0 ? ' cell-top' : '')} style={{ textAlign: 'right' }}>{money(x.usd)}</td>
+                    <td className="mono" style={{ textAlign: 'right' }}>{d?.kpi.wonUsd ? `${Math.round((x.usd / d.kpi.wonUsd) * 1000) / 10}%` : '—'}</td>
                   </tr>
                 ))}
-                {(d?.monthBySales ?? []).length === 0 && <tr><td colSpan={4} className="hint" style={{ padding: 14, textAlign: 'center' }}>本月暂无成单</td></tr>}
+                {(d?.monthBySales ?? []).length === 0 && <tr><td colSpan={4} className="hint" style={{ textAlign: 'center' }}>本月暂无成单</td></tr>}
               </tbody>
             </table>
           </div>
@@ -194,25 +194,25 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
             <h4 className="panel-title">本月按产品</h4>
             <span className="hint panel-hint">本月成单产品排名</span>
           </div>
-          <div style={{ marginTop: 8 }}>
-            <table className="grid data-table fixed-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+          <div className="tablewrap" style={{ marginTop: 8 }}>
+            <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
               <colgroup><col style={{ width: '34%' }} /><col style={{ width: '18%' }} /><col style={{ width: '26%' }} /><col style={{ width: '22%' }} /></colgroup>
               <thead><tr><th style={{ textAlign: 'left' }}>产品</th><th style={{ textAlign: 'right' }}>次数</th><th style={{ textAlign: 'right' }}>金额(USD)</th><th style={{ textAlign: 'right' }}>占比</th></tr></thead>
               <tbody>
                 {(d?.monthByProduct ?? []).map((x, i) => (
                   <tr key={x.name} className={i === 0 ? 'row-top' : undefined}>
-                    <td className="ellip" style={{ padding: '0 10px' }} title={x.name}>{x.name}{i === 0 && <span className="top-badge">最高</span>}</td>
-                    <td style={{ padding: '0 10px', textAlign: 'right' }}>{x.n} 次</td>
-                    <td className={'mono' + (i === 0 ? ' cell-top' : '')} style={{ padding: '0 10px', textAlign: 'right' }}>{money(x.usd)}</td>
-                    <td style={{ padding: '0 10px', textAlign: 'right' }}>{d?.kpi.wonUsd ? `${Math.round((x.usd / d.kpi.wonUsd) * 1000) / 10}%` : '—'}</td>
+                    <td title={x.name}>{x.name}{i === 0 && <span className="top-badge">最高</span>}</td>
+                    <td className="mono" style={{ textAlign: 'right' }}>{x.n} 次</td>
+                    <td className={'mono' + (i === 0 ? ' cell-top' : '')} style={{ textAlign: 'right' }}>{money(x.usd)}</td>
+                    <td className="mono" style={{ textAlign: 'right' }}>{d?.kpi.wonUsd ? `${Math.round((x.usd / d.kpi.wonUsd) * 1000) / 10}%` : '—'}</td>
                   </tr>
                 ))}
-                {(d?.monthByProduct ?? []).length === 0 && <tr><td colSpan={4} className="hint" style={{ padding: 14, textAlign: 'center' }}>本月暂无成单</td></tr>}
+                {(d?.monthByProduct ?? []).length === 0 && <tr><td colSpan={4} className="hint" style={{ textAlign: 'center' }}>本月暂无成单</td></tr>}
               </tbody>
             </table>
           </div>
         </section>
       </div>
-    </>
+    </div>
   )
 }

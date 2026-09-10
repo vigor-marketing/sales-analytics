@@ -43,7 +43,6 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   const [files, setFiles] = useState<Att[]>([])
   const [uploading, setUploading] = useState(false)
   const [dragP, setDragP] = useState(false); const [dragF, setDragF] = useState(false)
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [commentOf, setCommentOf] = useState<Fu | null>(null)
   const photoInput = useRef<HTMLInputElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -131,6 +130,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   }
 
   return (
+    <div className="page-fit">
     <div className="card">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0 }}>询报价跟进</h3>
@@ -280,14 +280,16 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
 
       <div style={{ marginTop: 14 }}>
         <div style={{ fontWeight: 700, marginBottom: 6 }}>跟进记录{hit ? `（本询价 ${list.length} 条）` : sales ? `（${sales} 名下 ${list.length} 条）` : ''}</div>
-        <div className="tablewrap" style={{ overflowX: 'auto' }}>
-          <table className="grid follow-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-            <thead><tr>{['跟进日期', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+        <div className="tablewrap">
+          <table className="grid data-table fixed-table follow-table" style={{ fontSize: 12.5 }}>
+            <colgroup>
+              <col style={{ width: '8%' }} /><col style={{ width: '11%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '22%' }} />
+              <col style={{ width: '21%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} />
+            </colgroup>
+            <thead><tr>{['跟进日期', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
             <tbody>
               {list.map((r) => {
                 const detail = r.detail || r.content || ''
-                const longText = detail.length > 90
-                const opened = expanded.has(r.id)
                 const photos = r.photos || []
                 const atts = r.attachments || []
                 return (
@@ -299,75 +301,56 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                       setSales(r.sales); setNo(r.inquiry_no)
                       window.scrollTo({ top: 0, behavior: 'smooth' })
                     }}>
-                    <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.date}</td>
-                    <td style={{ padding: '7px 8px' }}>
-                      <div className="mono" style={{ fontWeight: 600 }}>{r.inquiry_no}</div>
-                      <div style={{ marginTop: 2 }}>{r.customer_name}</div>
-                      {(Number(r.is_key_customer) === 1 || Number(r.is_key_project) === 1) && (
-                        <div style={{ marginTop: 3 }}><KeyTags kc={r.is_key_customer} kp={r.is_key_project} compact /></div>
-                      )}
+                    <td className="mono" title={r.date}>{r.date}</td>
+                    <td title={`${r.inquiry_no} · ${r.customer_name || '—'}${Number(r.is_key_customer) === 1 ? ' · 重点客户' : ''}${Number(r.is_key_project) === 1 ? ' · 重点项目' : ''}`}>
+                      <span className="mono" style={{ fontWeight: 600 }}>{r.inquiry_no}</span>
+                      <span className="cell-note">{r.customer_name}</span>
+                      {(Number(r.is_key_customer) === 1 || Number(r.is_key_project) === 1) && <span style={{ marginLeft: 6, display: 'inline-flex', verticalAlign: 'middle' }}><KeyTags kc={r.is_key_customer} kp={r.is_key_project} compact /></span>}
                     </td>
-                    <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>
-                      <div style={{ fontWeight: 600 }}>{r.sales || '—'}</div>
-                      {r.by_name && r.by_name !== r.sales && <div className="hint" style={{ fontSize: 11 }}>跟进人 {r.by_name}</div>}
+                    <td title={r.by_name && r.by_name !== r.sales ? `销售 ${r.sales || '—'} · 跟进人 ${r.by_name}` : (r.sales || '—')}>
+                      <span style={{ fontWeight: 600 }}>{r.sales || '—'}</span>
+                      {r.by_name && r.by_name !== r.sales && <span className="cell-note">跟进人 {r.by_name}</span>}
                     </td>
-                    <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}><span className="badge">{r.method || '—'}</span></td>
-                    <td style={{ padding: '7px 8px', minWidth: 260, maxWidth: 460 }}>
-                      {r.summary && <div style={{ fontWeight: 600 }}>{r.summary}</div>}
-                      {detail
-                        ? <div className={'hint follow-detail' + (longText && !opened ? ' clamp2' : '')} style={{ marginTop: r.summary ? 2 : 0, whiteSpace: 'pre-wrap' }}>{detail}</div>
-                        : (!r.summary && <span className="hint">—</span>)}
-                      {longText && (
-                        <button className="linkbtn" onClick={() => setExpanded((prev) => { const n = new Set(prev); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n })}>
-                          {opened ? '收起' : `展开全文（${detail.length} 字）`}
-                        </button>
-                      )}
+                    <td title={r.method || '—'}><span className="badge">{r.method || '—'}</span></td>
+                    <td title={[r.summary, detail].filter(Boolean).join(' ｜ ') || '—'}>
+                      {r.summary && <span style={{ fontWeight: 600 }}>{r.summary}</span>}
+                      {detail && <span className={r.summary ? 'cell-note' : ''}>{detail}</span>}
+                      {!r.summary && !detail && <span className="hint">—</span>}
                     </td>
-                    <td style={{ padding: '7px 8px', minWidth: 130 }}>
+                    <td>
                       {(() => {
                         const cs = r.comments ?? []
                         return (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}>
                             <GuidanceNote compact comments={cs} />
                             {/* 跟进列表里可查看并新增指导；进入某个询价的跟进详情后只查看 */}
-                            <button className="btn xs" onClick={() => setCommentOf(r)}
+                            <button className="btn xs" style={{ flex: '0 0 auto' }} onClick={() => setCommentOf(r)}
                               title={hit ? '查看全部跟进指导（详情内只读）' : cs.length ? '查看全部指导 / 继续追加' : '添加跟进指导'}>
                               {hit ? '查看指导' : cs.length ? '查看/追加指导' : '＋ 添加指导'}
                             </button>
-                          </div>
+                          </span>
                         )
                       })()}
                     </td>
-                    <td style={{ padding: '7px 8px', minWidth: 150 }}>
+                    <td title={[...photos.map((_, i) => `图片 ${i + 1}`), ...atts.map((a) => a.name)].join('、') || '—'}>
                       {photos.length === 0 && atts.length === 0 ? <span className="hint">—</span> : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          {photos.map((p) => (
-                            <a key={p} href={p} target="_blank" rel="noreferrer" title="查看原图">
-                              <img src={p} alt="图" style={{ width: 44, height: 34, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line)', display: 'block' }} />
-                            </a>
-                          ))}
-                          {atts.length > 0 && (
-                            <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                              {atts.map((a) => (
-                                <a key={a.url} className="filelink" href={a.url} target="_blank" rel="noreferrer" title={a.name}>
-                                  📎 {a.name}{a.size != null ? `（${(a.size / 1024).toFixed(0)}KB）` : ''}
-                                </a>
-                              ))}
-                            </span>
-                          )}
-                        </div>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          {photos.length > 0 && <span className="badge">🖼 {photos.length}</span>}
+                          {atts.length > 0 && <span className="filelink" style={{ maxWidth: 120 }}>📎 {atts.length} 个附件</span>}
+                        </span>
                       )}
                     </td>
-                    <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.next_followup_at ? r.next_followup_at.replace('T', ' ') : '—'}</td>
-                    <td className="mono hint" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{String(r.created_at || '').slice(0, 16).replace('T', ' ')}</td>
+                    <td className="mono" title={r.next_followup_at ? r.next_followup_at.replace('T', ' ') : '未设置下次跟进'}>{r.next_followup_at ? r.next_followup_at.replace('T', ' ') : '—'}</td>
+                    <td className="mono hint" title={String(r.created_at || '').slice(0, 19).replace('T', ' ')}>{String(r.created_at || '').slice(0, 16).replace('T', ' ')}</td>
                   </tr>
                 )
               })}
-              {list.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 20, color: 'var(--sub)' }}>暂无跟进记录</td></tr>}
+              {list.length === 0 && <tr><td colSpan={9} className="hint" style={{ textAlign: 'center' }}>暂无跟进记录</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
+    </div>
     </div>
   )
 }

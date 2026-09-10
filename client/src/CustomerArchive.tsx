@@ -27,6 +27,7 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
   useEffect(() => { void load() }, [load])
   const totals = rows.reduce((s, r) => ({ n: s.n + r.inquiryCount, usd: s.usd + r.usdTotal }), { n: 0, usd: 0 })
   return (
+    <div className="page-fit">
     <div className="card">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0 }}>客户档案</h3>
@@ -37,31 +38,36 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
       </div>
       {msg && <div className="msg err">{msg}</div>}
       <div className="hint" style={{ margin: '8px 0' }}>共 {rows.length} 个客户 · 询价 {totals.n} 条 · 累计折USD ≈ {money(totals.usd)}</div>
-      <div className="tablewrap" style={{ overflow: 'auto', maxHeight: '62vh' }}>
-        <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-          <thead><tr>{['客户名称', '国别', '星级', '标签', '询价数', '已成单', '未成单', '累计金额(USD)', '成交率', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+      <div className="tablewrap">
+        <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
+          <colgroup>
+            <col style={{ width: '16%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '11%' }} /><col style={{ width: '8%' }} />
+            <col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '8%' }} /><col style={{ width: 110 }} />
+          </colgroup>
+          <thead><tr>{['客户名称', '国别', '星级', '标签', '询价数', '已成单', '未成单', '累计金额(USD)', '成交率', '操作'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} style={{ borderBottom: '1px solid var(--line2)' }}>
-                <td style={{ padding: '6px 8px', fontWeight: 600 }}>{r.name}</td>
-                <td style={{ padding: '6px 8px' }}>{r.country || '—'}</td>
-                <td style={{ padding: '6px 8px', color: '#e3a008', fontWeight: 700, whiteSpace: 'nowrap' }} title={r.stars ? `${r.stars} 星` : ''}>{r.stars ? '★'.repeat(Number(r.stars)) : '—'}</td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><Tags kc={r.keyCustomer} kp={r.keyProjectCount} /></td>
-                <td style={{ padding: '6px 8px' }}>{r.inquiryCount}</td>
-                <td style={{ padding: '6px 8px', color: '#059669', fontWeight: 700 }}>{r.wonCount ?? 0}</td>
-                <td style={{ padding: '6px 8px', color: (r.lostCount ?? 0) > 0 ? '#dc2626' : 'var(--sub)', fontWeight: 700 }}>{r.lostCount ?? 0}</td>
-                <td style={{ padding: '6px 8px' }} className="mono">{money(r.usdTotal)}</td>
-                <td style={{ padding: '6px 8px', fontWeight: 700, color: r.winRate >= 50 ? '#059669' : r.winRate > 0 ? '#a35c00' : 'var(--sub)' }}>{r.winRate}%</td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+              <tr key={r.id}>
+                <td style={{ fontWeight: 600 }} title={r.name}>{r.name}</td>
+                <td title={r.country || '—'}>{r.country || '—'}</td>
+                <td style={{ color: '#e3a008', fontWeight: 700 }} title={r.stars ? `${r.stars} 星` : '未评级'}>{r.stars ? '★'.repeat(Number(r.stars)) : '—'}</td>
+                <td title={[Number(r.keyCustomer) === 1 ? '重点客户' : null, Number(r.keyProjectCount) > 0 ? `重点项目 ×${r.keyProjectCount}` : null].filter(Boolean).join('、') || '无标签'}><Tags kc={r.keyCustomer} kp={r.keyProjectCount} /></td>
+                <td className="mono">{r.inquiryCount}</td>
+                <td className="mono" style={{ color: '#059669', fontWeight: 700 }}>{r.wonCount ?? 0}</td>
+                <td className="mono" style={{ color: (r.lostCount ?? 0) > 0 ? '#dc2626' : 'var(--sub)', fontWeight: 700 }}>{r.lostCount ?? 0}</td>
+                <td className="mono" title={`累计折 USD ≈ ${money(r.usdTotal)}`}>{money(r.usdTotal)}</td>
+                <td className="mono" style={{ fontWeight: 700, color: r.winRate >= 50 ? '#059669' : r.winRate > 0 ? '#a35c00' : 'var(--sub)' }}>{r.winRate}%</td>
+                <td>
                   <button className="btn sm" onClick={() => setDetailId(r.id)}>查看</button>
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无客户档案（先到「询报价录入」录一单，即自动建档）</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={10} className="hint" style={{ textAlign: 'center' }}>暂无客户档案（先到「询报价录入」录一单，即自动建档）</td></tr>}
           </tbody>
         </table>
       </div>
       {detailId && <CustDetailModal id={detailId} onClose={() => setDetailId(null)} />}
+    </div>
     </div>
   )
 }
@@ -90,25 +96,29 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               <span>已成单 <b>{d.summary?.wonCount ?? 0}</b> 条（{money(d.summary?.wonUsd)} USD）</span><span>未成单 <b style={{ color: '#dc2626' }}>{d.summary?.lostCount ?? 0}</b> 条</span><span>成交率 <b style={{ color: '#059669' }}>{d.summary?.winRate ?? 0}%</b>（成交÷已成单+未成单）</span>
               <span>建档时间 <b className="mono">{((d as unknown as { created_at?: string }).created_at ?? '').slice(0, 16)}</b></span>
             </div>
-            <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead><tr>{['询价号', '日期', '销售', '采购', '来源', '状态', '丢单原因', '标签', '行数', '报价合计', '折USD'].map((h) => <th key={h} style={{ textAlign: 'left', padding: 6, borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+            <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
+              <colgroup>
+                <col style={{ width: '11%' }} /><col style={{ width: '8%' }} /><col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '7%' }} />
+                <col style={{ width: '9%' }} /><col style={{ width: '13%' }} /><col style={{ width: '11%' }} /><col style={{ width: '6%' }} /><col style={{ width: '13%' }} /><col style={{ width: '8%' }} />
+              </colgroup>
+              <thead><tr>{['询价号', '日期', '销售', '采购', '来源', '状态', '丢单原因', '标签', '行数', '报价合计', '折USD'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
               <tbody>
                 {(d.inquiries ?? []).map((i) => (
-                  <tr key={i.id} style={{ borderBottom: '1px solid var(--line2)' }}>
-                    <td style={{ padding: 6 }} className="mono"><button className="btn sm" onClick={() => setDetailInquiryId(i.id)} title="查看询价详情">{i.inquiry_no}</button></td>
-                    <td style={{ padding: 6 }}>{i.date}</td>
-                    <td style={{ padding: 6 }}>{i.sales}</td>
-                    <td style={{ padding: 6 }}>{i.purchaser}</td>
-                    <td style={{ padding: 6 }}>{i.source}</td>
-                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}><StatusChip status={i.status ?? (Number(i.is_won) === 1 ? 'won' : 'following')} /></td>
-                    <td style={{ padding: 6 }}>{i.lost_reason || '—'}{i.lost_date ? <span className="hint">（{i.lost_date}）</span> : null}</td>
-                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}><Tags kc={i.is_key_customer} kp={i.is_key_project} /></td>
-                    <td style={{ padding: 6 }}>{i.itemCount}</td>
-                    <td style={{ padding: 6 }}>{(i.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</td>
-                    <td style={{ padding: 6 }} className="mono">{money(i.usdApprox)}</td>
+                  <tr key={i.id}>
+                    <td className="mono"><button className="btn sm" onClick={() => setDetailInquiryId(i.id)} title="查看询价详情">{i.inquiry_no}</button></td>
+                    <td className="mono" title={i.date}>{i.date}</td>
+                    <td title={i.sales || '—'}>{i.sales}</td>
+                    <td title={i.purchaser || '—'}>{i.purchaser}</td>
+                    <td title={i.source || '—'}>{i.source}</td>
+                    <td><StatusChip status={i.status ?? (Number(i.is_won) === 1 ? 'won' : 'following')} /></td>
+                    <td title={i.lost_reason ? `${i.lost_reason}${i.lost_date ? `（${i.lost_date}）` : ''}` : '—'}>{i.lost_reason || '—'}{i.lost_date ? <span className="cell-note">（{i.lost_date}）</span> : null}</td>
+                    <td title={[Number(i.is_key_customer) === 1 ? '重点客户' : null, Number(i.is_key_project) === 1 ? '重点项目' : null].filter(Boolean).join('、') || '无标签'}><Tags kc={i.is_key_customer} kp={i.is_key_project} /></td>
+                    <td className="mono" title={`${i.itemCount} 行明细`}>{i.itemCount}</td>
+                    <td className="mono" title={(i.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}>{(i.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</td>
+                    <td className="mono" title={`折 USD ≈ ${money(i.usdApprox)}`}>{money(i.usdApprox)}</td>
                   </tr>
                 ))}
-                {(d.inquiries ?? []).length === 0 && <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', color: 'var(--sub)' }}>该客户暂无询价</td></tr>}
+                {(d.inquiries ?? []).length === 0 && <tr><td colSpan={11} className="hint" style={{ textAlign: 'center' }}>该客户暂无询价</td></tr>}
               </tbody>
             </table>
           </>
