@@ -177,6 +177,10 @@ tr.row-click:hover>td{background:#eef5ff !important}
 /* 统一尺寸的表格：单行截断 + 名称列限宽，行高一致、列宽规整（不再长长短短） */
 .fixed-table{table-layout:fixed}
 .fixed-table th,.fixed-table td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;height:32px;padding:0 10px}
+/* ===== 全部表格内容居中（表头 + 单元格，含徽标/按钮/金额，覆盖行内左右对齐设置） ===== */
+table.grid > thead > tr > th, table.grid > tbody > tr > td { text-align: center !important }
+table.grid > tbody > tr > td > .badge, table.grid > tbody > tr > td > .tag, table.grid > tbody > tr > td > .btn { margin-left: 3px; margin-right: 3px }
+
 /* ===== 统一标准：所有列表/详情表格固定行高 38px + 固定列宽（colgroup 百分比）+ 表头吸顶 ===== */
 .grid.fixed-table{table-layout:fixed;width:100%}
 .grid.fixed-table>thead>tr>th,.grid.fixed-table>tbody>tr>td{height:38px;line-height:20px;padding:0 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
