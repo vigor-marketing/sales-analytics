@@ -32,7 +32,7 @@ export default function GuidanceNote({ comments, compact, all }: { comments?: Gu
   }
   return (
     <div className="gd-note gd-block" title={allText}>
-      <div className="gd-head">💬 跟进指导{list.length > 1 ? ` · 共 ${list.length} 条（悬停查看全部）` : ''}<span className="gd-meta">{last.by_name || '—'} · {fmt(last.created_at)}</span></div>
+      <div className="gd-head">💬 最新指导{list.length > 1 ? ` · 共 ${list.length} 条` : ''}<span className="gd-meta">{last.by_name || '—'} · {fmt(last.created_at)}</span></div>
       <div className="gd-body">{last.content}</div>
     </div>
   )

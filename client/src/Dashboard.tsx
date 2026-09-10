@@ -122,7 +122,7 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
               <th style={{ textAlign: 'left' }}>类型</th><th style={{ textAlign: 'left' }}>询价号</th><th style={{ textAlign: 'left' }}>客户</th>
               <th style={{ textAlign: 'left' }}>销售</th><th style={{ textAlign: 'left' }}>采购</th><th style={{ textAlign: 'left' }}>上次跟进</th>
               <th style={{ textAlign: 'left' }}>下次跟进</th><th style={{ textAlign: 'right' }}>报价(USD)</th>
-              <th style={{ textAlign: 'left' }}>跟进指导（全部）</th><th style={{ textAlign: 'center' }}>操作</th>
+              <th style={{ textAlign: 'left' }} title="显示该项目最新一条跟进指导的完整内容（含指导人、时间）；较早的指导见悬停提示">最新指导</th><th style={{ textAlign: 'center' }}>操作</th>
             </tr></thead>
             <tbody>
               {list.map((r) => {
@@ -140,9 +140,9 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
                     <td className="mono" style={{ padding: '0 8px' }} title={r.last_followup_at ? String(r.last_followup_at).replace('T', ' ') : '从未跟进'}>{fmt(r.last_followup_at)}</td>
                     <td className="mono" style={{ padding: '0 8px', fontWeight: r.kind === 'overdue' ? 700 : 400, color: r.kind === 'overdue' ? 'var(--danger)' : undefined }} title={r.next_followup_at ? String(r.next_followup_at).replace('T', ' ') : '未设置下次跟进'}>{fmt(r.next_followup_at)}</td>
                     <td className="mono cell-top" style={{ padding: '0 8px', textAlign: 'right' }} title={`报价合计折 USD ≈ ${money(r.usd)}`}>{money(r.usd)}</td>
-                    <td title={(r.comments ?? []).map((c) => `${c.by_name || '—'}：${c.content}`).join('\n') || '暂无跟进指导'}>
-                      {/* 固定行高：这里只显示最近一条指导，完整内容在悬停提示与「＋指导」弹窗里 */}
-                      {r.comments && r.comments.length ? <GuidanceNote compact comments={r.comments} /> : <span className="hint">—</span>}
+                    {/* 展示最新一条指导的完整内容（指导人 · 时间 + 全文），较早的指导在悬停提示与「＋指导」弹窗里 */}
+                    <td className="cell-guidance" title={(r.comments ?? []).map((c) => `${c.by_name || '—'}：${c.content}`).join('\n') || '暂无跟进指导'}>
+                      {r.comments && r.comments.length ? <GuidanceNote comments={r.comments} /> : <span className="hint">—</span>}
                     </td>
                     <td style={{ padding: '0 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <button className="btn xs pri" onClick={() => onGoFollow?.({ sales: r.sales, no: r.inquiry_no })}>去跟进</button>
