@@ -78,9 +78,9 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                 <td className="mono" style={{ padding: '6px 8px' }}>{r.inquiry_no}</td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.date}</td>
                 <td style={{ padding: '6px 8px' }}>{r.customer_name}</td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
-                  {/* 列表只显示状态，丢单原因在「查看」里展示 */}
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }} title={r.status === 'lost' ? `丢单原因：${r.lost_reason || '—'}${r.lost_date ? `（${r.lost_date}）` : ''}` : undefined}>
                   <StatusTag status={r.status} />
+                  {r.status === 'lost' && <div className="lost-line">丢单原因：{r.lost_reason || '—'}{r.lost_date ? `（${r.lost_date}）` : ''}</div>}
                 </td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><TagBlocks r={r} /></td>
                 <td style={{ padding: '6px 8px' }} title={fmtT(r)}>≈USD {money(r.usdApprox)}<div className="hint">{fmtT(r)}</div></td>
