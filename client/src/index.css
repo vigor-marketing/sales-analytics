@@ -65,9 +65,9 @@ ul.sugs li:hover, ul.sugs li.on { background: var(--brand-light) }
 .sa-item .sa-ic svg{width:18px;height:18px}
 .sa-foot{padding:12px 16px;border-top:1px solid #eef0f5;font-size:11px;color:#9aa3b5}
 .sa-main{flex:1;min-width:0;background:#f4f6fb;padding:22px 24px 60px}
-.sa-page-head{display:flex;align-items:center;gap:10px;max-width:1180px;margin:0 auto 16px}
+.sa-page-head{display:flex;align-items:center;gap:10px;margin:0 0 16px}
 .sa-page-head h1{margin:0;font-size:20px;color:var(--text)}
-.sa-main .card{max-width:1180px;margin-left:auto;margin-right:auto}
+.sa-main .card{max-width:none;margin-left:0;margin-right:0}
 @media(max-width:900px){
   .sa-layout{flex-direction:column}
   .sa-sider{width:100%;flex:none;height:auto;position:static;flex-direction:row;align-items:center;overflow-x:auto;border-bottom:1px solid var(--line)}
