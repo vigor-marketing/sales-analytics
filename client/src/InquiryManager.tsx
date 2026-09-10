@@ -172,10 +172,13 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               <span className={Number(d.is_key_project) === 1 ? 'tag kp' : 'badge'}>{Number(d.is_key_project) === 1 ? '是' : '否'}</span>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)', marginLeft: 10 }}>状态</span>
               <StatusTag status={d.status} />
-              <span className="hint">（自动判定：有销售订单即为已成单，标记未成单后为未成单，其余为跟进中）</span>
               {Number(d.is_won) === 1 && <span className="hint">订单号 {d.orderNo || '—'} · 成单日期 {d.won_date || '—'}{cycle != null ? ` · 转化 ${cycle} 天` : ''}</span>}
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)', marginLeft: 10 }}>跟进</span>
-              <span className="hint">最近跟进 {d.last_followup_at || '—'} · 下次跟进 {d.next_followup_at || '—'}（下方为「询报价跟进」里录入的记录，实时联动）</span>
+              <span className="hint">最近跟进 {d.last_followup_at || '—'} · 下次跟进 {d.next_followup_at || '—'}</span>
+            </div>
+            {/* 提示词单独一行放在下方 */}
+            <div className="hint" style={{ display: 'block', marginTop: 4 }}>
+              状态为自动判定：有销售订单即为「已成单」，标记未成单后为「未成单」，其余为「跟进中」；跟进记录见下方「跟进记录」区块（与「询报价跟进」实时联动）。
             </div>
 
             {d.status === 'lost' && (
@@ -438,7 +441,10 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <span style={{ fontWeight: 700 }}>跟进状态</span>
                 <StatusTag status={order ? 'won' : form.isLost ? 'lost' : 'following'} />
-                <span className="hint">{order ? '已生成销售订单 → 自动判定为「已成单」' : form.isLost ? '已标记未成单（需填写原因，保存后生效）' : '无销售订单且未标未成单 → 自动判定为「跟进中」'}</span>
+              </div>
+              {/* 提示词单独一行放在下方，不跟在标签后面 */}
+              <div className="hint" style={{ display: 'block', marginTop: 4 }}>
+                {order ? '已生成销售订单 → 自动判定为「已成单」' : form.isLost ? '已标记未成单（需填写原因，保存后生效）' : '无销售订单且未标未成单 → 自动判定为「跟进中」'}
               </div>
               {order ? (
                 <div className="hint" style={{ marginTop: 6 }}>该询价已成单；若要改为未成单，请先在下方「销售订单」区块删除订单。</div>
