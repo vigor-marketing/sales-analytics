@@ -48,8 +48,8 @@ ul.sugs li { padding: 6px 10px; cursor: pointer; font-size: 13px }
 ul.sugs li:hover, ul.sugs li.on { background: var(--brand-light) }
 .modal-mask { position: fixed; inset: 0; background: rgba(13, 37, 61, .4); display: flex; justify-content: center; align-items: flex-start; padding: 8vh 16px; z-index: 20 }
 .modal { background: #fff; border-radius: 12px; width: min(560px, 96vw); padding: 16px; box-shadow: 0 12px 32px rgba(0, 55, 112, .2) }
-/* 弹窗底部操作条：位于内容最下方、按钮靠右下角；不悬浮，避免遮挡上方正在编辑的内容 */
-.modal-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 16px -16px -16px; padding: 10px 16px; background: #fafbfd; border-top: 1px solid var(--line); border-radius: 0 0 12px 12px }
+/* 弹窗底部操作区：只是内容末尾的一行按钮（右下角），不做白底条/不做悬浮，绝不会遮挡上方内容 */
+.modal-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 12px; background: transparent; border: 0; border-top: 1px dashed var(--line) }
 .grow1 { flex: 1 }
 
 /* ===== 左侧导航布局（参考：提成计算白色 208 侧栏） ===== */
