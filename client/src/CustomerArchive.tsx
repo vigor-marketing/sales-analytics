@@ -39,12 +39,12 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
       {msg && <div className="msg err">{msg}</div>}
       <div className="hint" style={{ margin: '8px 0' }}>共 {rows.length} 个客户 · 询价 {totals.n} 条 · 累计折USD ≈ {money(totals.usd)}</div>
       <div className="tablewrap">
-        <table className="grid data-table fixed-table" style={{ fontSize: 12.5, minWidth: 1240 }}>
+        <table className="grid data-table fixed-table" style={{ fontSize: 12.5, minWidth: 1340 }}>
           <colgroup>
-            <col style={{ width: 200 }} /><col style={{ width: 90 }} /><col style={{ width: 90 }} /><col style={{ width: 270 }} /><col style={{ width: 80 }} />
-            <col style={{ width: 90 }} /><col style={{ width: 90 }} /><col style={{ width: 140 }} /><col style={{ width: 90 }} /><col style={{ width: 100 }} />
+            <col style={{ width: 190 }} /><col style={{ width: 85 }} /><col style={{ width: 85 }} /><col style={{ width: 265 }} /><col style={{ width: 155 }} />
+            <col style={{ width: 75 }} /><col style={{ width: 85 }} /><col style={{ width: 85 }} /><col style={{ width: 135 }} /><col style={{ width: 85 }} /><col style={{ width: 100 }} />
           </colgroup>
-          <thead><tr>{['客户名称', '国别', '星级', '标签', '询价数', '已成单', '未成单', '累计金额(USD)', '成交率', '操作'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
+          <thead><tr>{['客户名称', '国别', '星级', '标签', '跟进状态', '询价数', '已成单', '未成单', '累计金额(USD)', '成交率', '操作'].map((h) => <th key={h} title={h === '跟进状态' ? '跟进中 = 既未成交也未丢单的询价数；徽标显示客户整体成交状态' : undefined}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id}>
@@ -52,6 +52,17 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
                 <td title={r.country || '—'}>{r.country || '—'}</td>
                 <td style={{ color: '#e3a008', fontWeight: 700 }} title={r.stars ? `${r.stars} 星` : '未评级'}>{r.stars ? '★'.repeat(Number(r.stars)) : '—'}</td>
                 <td title={[Number(r.wonCount) > 0 ? '已成单' : null, Number(r.keyCustomer) === 1 ? '重点客户' : null, Number(r.keyProjectCount) > 0 ? `重点项目 ×${r.keyProjectCount}` : null].filter(Boolean).join('、') || '无标签'}><Tags kc={r.keyCustomer} kp={r.keyProjectCount} won={Number(r.wonCount) > 0 ? 1 : 0} /></td>
+                {(() => {
+                  const won = Number(r.wonCount) || 0, lost = Number(r.lostCount) || 0
+                  const open = Math.max(0, (Number(r.inquiryCount) || 0) - won - lost)
+                  const status: 'won' | 'lost' | 'following' = won > 0 ? 'won' : (open === 0 && lost > 0 ? 'lost' : 'following')
+                  return (
+                    <td title={`跟进中 ${open} 条 · 已成单 ${won} 条 · 未成单 ${lost} 条 · 成交率 ${r.winRate}%`}>
+                      <StatusChip status={status} />
+                      <span className="cell-note">{open > 0 ? `跟进中 ${open}` : '无在跟进'}</span>
+                    </td>
+                  )
+                })()}
                 <td className="mono">{r.inquiryCount}</td>
                 <td className="mono" style={{ color: '#059669', fontWeight: 700 }}>{r.wonCount ?? 0}</td>
                 <td className="mono" style={{ color: (r.lostCount ?? 0) > 0 ? '#dc2626' : 'var(--sub)', fontWeight: 700 }}>{r.lostCount ?? 0}</td>
@@ -62,7 +73,7 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={10} className="hint" style={{ textAlign: 'center' }}>暂无客户档案（先到「询报价录入」录一单，即自动建档）</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={11} className="hint" style={{ textAlign: 'center' }}>暂无客户档案（先到「询报价录入」录一单，即自动建档）</td></tr>}
           </tbody>
         </table>
       </div>
