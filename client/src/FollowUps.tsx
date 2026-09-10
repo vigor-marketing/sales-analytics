@@ -4,7 +4,7 @@ import { StatusChip } from './StatusChip'
 import { KeyTags } from './KeyTags'
 import GuidanceNote from './Guidance'
 import GuidanceModal from './GuidanceModal'
-import FollowupRecordModal from './FollowupRecordModal'
+import InquiryFollowupsModal from './InquiryFollowupsModal'
 
 interface MetaLite { sales: { name: string; team: string }[]; methods?: string[] }
 interface Lookup {
@@ -52,8 +52,8 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   const [options, setOptions] = useState<{ id: string; inquiry_no: string; customer_name: string; date: string }[]>([])
   const [optLoading, setOptLoading] = useState(false)
   const [busy, setBusy] = useState(false)
-  // 查看某一条跟进详情（最新一条可编辑，较早的只读）
-  const [recOf, setRecOf] = useState<Fu | null>(null)
+  // 查看跟进详情：与「询报价管理」页的「查看详情」使用同一个弹窗（按条列出该询价全部跟进）
+  const [detailOf, setDetailOf] = useState<{ id: string; no: string; customer?: string } | null>(null)
   // 详情里默认只「查看多条跟进」；点击任意一条（或点「＋ 新建跟进」）才展开建立跟进表单
   const [formOpen, setFormOpen] = useState(false)
   const formRef = useRef<HTMLDivElement | null>(null)
@@ -202,11 +202,9 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
         </div>
       )}
 
-      {recOf && (
-        <FollowupRecordModal record={recOf as unknown as Parameters<typeof FollowupRecordModal>[0]['record']}
-          editable={Number(recOf.seq) === Number(recOf.seq_total)}
-          onClose={() => setRecOf(null)}
-          onSaved={() => { void loadList(); void lookup() }} />
+      {detailOf && (
+        <InquiryFollowupsModal inquiryId={detailOf.id} inquiryNo={detailOf.no} customerName={detailOf.customer}
+          onClose={() => setDetailOf(null)} />
       )}
 
       {commentOf && (
@@ -272,9 +270,8 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                           {detail && <div style={{ marginTop: r.summary ? 3 : 0, whiteSpace: 'pre-wrap' }}>{detail}</div>}
                           {!r.summary && !detail && <span className="hint">—</span>}
                         </span>
-                        <button className="btn xs" style={{ flex: '0 0 auto' }}
-                          title={Number(r.seq) === Number(r.seq_total) ? '查看/编辑这条跟进详情（该项目最新一条）' : '查看这条跟进详情（较早的记录，只读）'}
-                          onClick={(e) => { e.stopPropagation(); setRecOf(r) }}>查看详情</button>
+                        <button className="btn xs" style={{ flex: '0 0 auto' }} title="查看该询价的全部跟进详情（含简述、详情、图片、附件、跟进指导）"
+                          onClick={(e) => { e.stopPropagation(); setDetailOf({ id: r.inquiry_id, no: r.inquiry_no, customer: r.customer_name }) }}>查看详情</button>
                       </span>
                     </td>
                     <td style={{ padding: '7px 8px' }}>
@@ -317,8 +314,8 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                     <td className="mono hint" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{String(r.created_at || '').slice(0, 16).replace('T', ' ')}</td>
                     {/* 查看该条跟进详情：最新一条可编辑，较早的只读 */}
                     <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>
-                      <button className="btn xs" title={Number(r.seq) === Number(r.seq_total) ? '查看/编辑这条跟进详情（该项目最新一条）' : '查看这条跟进详情（较早的记录，只读）'}
-                        onClick={() => setRecOf(r)}>查看详情</button>
+                      <button className="btn xs" title="查看该询价的全部跟进详情（含简述、详情、图片、附件、跟进指导）"
+                        onClick={() => setDetailOf({ id: r.inquiry_id, no: r.inquiry_no, customer: r.customer_name })}>查看详情</button>
                     </td>
                   </tr>
                 )
