@@ -51,7 +51,7 @@ function Section({ title, note }: { title: string; note?: string }) {
 
 /** 图文结合：左边名称、中间条形、右边数值与备注 */
 /** 纯数据表格：这些分析板块只保留数字，不做条形/色块图 */
-function DataTable({ cols, rows, empty = '暂无数据', widths }: { cols: string[]; rows: React.ReactNode[][]; empty?: string; widths?: string[] }) {
+function DataTable({ cols, rows, empty = '暂无数据', widths, topCol, topLabel }: { cols: string[]; rows: React.ReactNode[][]; empty?: string; widths?: string[]; topCol?: number; topLabel?: string }) {
   return (
     <div className="tablewrap" style={{ overflowX: 'auto' }}>
       <table className="grid data-table fixed-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
@@ -59,10 +59,14 @@ function DataTable({ cols, rows, empty = '暂无数据', widths }: { cols: strin
         <thead><tr>{cols.map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i}>
+            // 首行即最高值：整行浅蓝底 + 关键数值加粗上色 + TOP 徽标，突出重点
+            <tr key={i} className={i === 0 && rows.length > 1 ? 'row-top' : undefined}>
               {r.map((c, j) => (
-                <td key={j} style={{ textAlign: j === 0 ? 'left' : 'right' }} className={j === 0 ? 'ellip' : undefined}
-                  title={typeof c === 'string' ? c : undefined}>{c}</td>
+                <td key={j} style={{ textAlign: j === 0 ? 'left' : 'right' }}
+                  className={(j === 0 ? 'ellip ' : '') + (i === 0 && rows.length > 1 && j === (topCol ?? 1) ? 'cell-top' : '')}
+                  title={typeof c === 'string' ? c : undefined}>
+                  {c}{i === 0 && rows.length > 1 && j === 0 && topLabel ? <span className="top-badge">{topLabel}</span> : null}
+                </td>
               ))}
             </tr>
           ))}
@@ -76,9 +80,9 @@ function DataTable({ cols, rows, empty = '暂无数据', widths }: { cols: strin
 function Kpi({ label, value, tone, note }: { label: string; value: string; tone?: string; note?: string }) {
   return (
     <div className="kpi-chip" style={tone ? { borderTopColor: tone } : undefined}>
-      <span className="hint" style={{ fontSize: 11.5 }}>{label}</span>
-      <b style={{ fontSize: 18, color: tone ?? 'var(--text)' }}>{value}</b>
-      {note && <span className="hint" style={{ fontSize: 11.5 }}>{note}</span>}
+      <span className="kpi-label">{label}</span>
+      <b className="kpi-value" style={{ color: tone ?? 'var(--brand)' }}>{value}</b>
+      {note && <span className="kpi-note">{note}</span>}
     </div>
   )
 }
@@ -419,7 +423,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
 
       <div className="dash-grid" style={{ marginTop: 10 }}>
         {tab === 'all' && (<>
-        <div className="dash-span2" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div className="dash-span2 kpi-grid">
           {stats && (<>
             <Kpi label="销售订单数" value={`${stats.contractCount} 单`} note={stats.contractCount ? `平均单值 ${money(stats.usdTotal / stats.contractCount)} USD` : ''} />
             <Kpi label="订单金额（折USD）" value={money(stats.usdTotal)} tone="var(--brand)" note={`成交 ${winSum?.total ?? 0} · 丢单 ${lostSum?.total ?? 0}`} />
@@ -456,6 +460,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           <DataTable
             cols={['产品', '成单次数', '金额（折USD）', '平均周期']}
             widths={['40%', '18%', '24%', '18%']}
+            topCol={2} topLabel="最高"
             empty="暂无成单产品"
             rows={productRows.slice(0, 15).map((p) => [
               p.name, `${p.count} 次`, money(p.usd), p.avgCycle == null ? '—' : `${p.avgCycle} 天`,
@@ -470,6 +475,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           <DataTable
             cols={['小组', '订单数', '金额（折USD）', '金额占比', '平均周期', '组内人数']}
             widths={['26%', '13%', '20%', '13%', '16%', '12%']}
+            topCol={2} topLabel="第一"
             empty="暂无成单小组"
             rows={teamRows.map((t) => [t.name, `${t.n} 单`, money(t.usd), `${t.share}%`, t.avgCycle == null ? '—' : `${t.avgCycle} 天`, `${t.people} 人`])}
           />
@@ -501,13 +507,14 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                         <td style={{ padding: '6px 8px', textAlign: 'right' }}>—</td>
                       </tr>
                       {t.rows.map((m, i) => (
-                        <tr key={t.team + m.name} style={{ borderBottom: '1px solid var(--line2)' }}>
+                        <tr key={t.team + m.name} className={i === 0 && m.n > 0 && t.rows.length > 1 ? 'row-top' : undefined} style={{ borderBottom: '1px solid var(--line2)' }}>
                           <td className="ellip" style={{ padding: '6px 8px', paddingLeft: 22 }} title={m.name}>
                             {m.name}
+                            {i === 0 && m.n > 0 && t.rows.length > 1 && <span className="top-badge">组内第一</span>}
                             {m.n === 0 && <span className="hint" style={{ marginLeft: 6 }}>本期无成单</span>}
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.n} 单</td>
-                          <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>{money(m.usd)}</td>
+                          <td className={'mono' + (i === 0 && m.n > 0 && t.rows.length > 1 ? ' cell-top' : '')} style={{ padding: '6px 8px', textAlign: 'right' }}>{money(m.usd)}</td>
                           <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.n === 0 ? '—' : `${m.share}%`}</td>
                           <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.avgCycle == null ? '—' : `${m.avgCycle} 天`}</td>
                           <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.n === 0 ? '—' : `第 ${i + 1} 名`}</td>
@@ -528,6 +535,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           <DataTable
             cols={['销售', '成单次数', '金额（折USD）', '平均周期']}
             widths={['40%', '18%', '24%', '18%']}
+            topCol={2} topLabel="第一"
             empty="暂无成单销售"
             rows={salesRows.map((p) => [p.name, `${p.n} 单`, money(p.usd), p.avgCycle == null ? '—' : `${p.avgCycle} 天`])}
           />
@@ -560,7 +568,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                             return (
                               <td key={t} style={{ padding: '6px 8px', whiteSpace: 'nowrap', textAlign: 'right', background: isBest ? '#f2f8ff' : undefined }}>
                                 {v ? <>
-                                  <span style={{ fontWeight: isBest ? 700 : 400 }}>{money(v.usd)}</span>
+                                  <span className={isBest ? 'cell-top mono' : 'mono'}>{money(v.usd)}</span>
                                   <span className="hint" style={{ marginLeft: 4 }}>（{v.n} 单）</span>
                                 </> : <span className="hint">—</span>}
                               </td>
@@ -595,6 +603,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           <DataTable
             cols={['成交原因', '订单数', '占比', '金额（折USD）', '金额占比', '平均周期']}
             widths={['26%', '13%', '12%', '18%', '13%', '18%']}
+            topCol={3} topLabel="最多"
             empty="暂无成交原因（生成/编辑销售订单时填写）"
             rows={(winSum?.items ?? []).map((x) => [x.reason, `${x.count} 单`, `${x.share}%`, money(x.usd), `${x.usdShare}%`, x.avgCycle == null ? '—' : `${x.avgCycle} 天`])}
           />
@@ -604,6 +613,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           <DataTable
             cols={['丢单原因', '丢单数', '占比', '丢单金额（折USD）', '金额占比', '丢单周期']}
             widths={['26%', '13%', '12%', '18%', '13%', '18%']}
+            topCol={3} topLabel="最多"
             empty="暂无丢单记录（在询报价管理里标记未成单）"
             rows={(lostSum?.items ?? []).map((x) => [x.reason, `${x.count} 单`, `${x.share}%`, money(x.usd), `${x.usdShare}%`, x.avgCycle == null ? '—' : `${x.avgCycle} 天`])}
           />
@@ -616,6 +626,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           <DataTable
             cols={['排名', '客户', '金额（折USD）', '订单数', '金额占比']}
             widths={['7%', '41%', '22%', '14%', '16%']}
+            topCol={2} topLabel="第一"
             rows={topCustomers.map((c, i) => [`${i + 1}`, c.name, money(c.usd), `${c.n} 单`, `${sumUsd ? Math.round((c.usd / sumUsd) * 100) : 0}%`])}
           />
         </Panel>
