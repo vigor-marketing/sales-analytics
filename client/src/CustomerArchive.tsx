@@ -39,10 +39,10 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
       {msg && <div className="msg err">{msg}</div>}
       <div className="hint" style={{ margin: '8px 0' }}>共 {rows.length} 个客户 · 询价 {totals.n} 条 · 累计折USD ≈ {money(totals.usd)}</div>
       <div className="tablewrap">
-        <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
+        <table className="grid data-table fixed-table" style={{ fontSize: 12.5, minWidth: 1240 }}>
           <colgroup>
-            <col style={{ width: '15%' }} /><col style={{ width: '7%' }} /><col style={{ width: '8%' }} /><col style={{ width: 196 }} /><col style={{ width: '7%' }} />
-            <col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '8%' }} /><col style={{ width: 110 }} />
+            <col style={{ width: 200 }} /><col style={{ width: 90 }} /><col style={{ width: 90 }} /><col style={{ width: 270 }} /><col style={{ width: 80 }} />
+            <col style={{ width: 90 }} /><col style={{ width: 90 }} /><col style={{ width: 140 }} /><col style={{ width: 90 }} /><col style={{ width: 100 }} />
           </colgroup>
           <thead><tr>{['客户名称', '国别', '星级', '标签', '询价数', '已成单', '未成单', '累计金额(USD)', '成交率', '操作'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
           <tbody>
@@ -51,7 +51,7 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
                 <td style={{ fontWeight: 600 }} title={r.name}>{r.name}</td>
                 <td title={r.country || '—'}>{r.country || '—'}</td>
                 <td style={{ color: '#e3a008', fontWeight: 700 }} title={r.stars ? `${r.stars} 星` : '未评级'}>{r.stars ? '★'.repeat(Number(r.stars)) : '—'}</td>
-                <td title={[Number(r.keyCustomer) === 1 ? '重点客户' : null, Number(r.keyProjectCount) > 0 ? `重点项目 ×${r.keyProjectCount}` : null].filter(Boolean).join('、') || '无标签'}><Tags kc={r.keyCustomer} kp={r.keyProjectCount} /></td>
+                <td title={[Number(r.wonCount) > 0 ? '已成单' : null, Number(r.keyCustomer) === 1 ? '重点客户' : null, Number(r.keyProjectCount) > 0 ? `重点项目 ×${r.keyProjectCount}` : null].filter(Boolean).join('、') || '无标签'}><Tags kc={r.keyCustomer} kp={r.keyProjectCount} won={Number(r.wonCount) > 0 ? 1 : 0} /></td>
                 <td className="mono">{r.inquiryCount}</td>
                 <td className="mono" style={{ color: '#059669', fontWeight: 700 }}>{r.wonCount ?? 0}</td>
                 <td className="mono" style={{ color: (r.lostCount ?? 0) > 0 ? '#dc2626' : 'var(--sub)', fontWeight: 700 }}>{r.lostCount ?? 0}</td>

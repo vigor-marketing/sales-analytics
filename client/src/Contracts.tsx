@@ -80,11 +80,11 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
       {msg && <div className="msg err">{msg}</div>}
 
       <div className="tablewrap">
-        <table className="grid data-table fixed-table" style={{ fontSize: 12.5, minWidth: 1420 }}>
+        <table className="grid data-table fixed-table" style={{ fontSize: 12.5, minWidth: 1560 }}>
           <colgroup>
-            <col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '8%' }} /><col style={{ width: '15%' }} /><col style={{ width: '9%' }} />
-            <col style={{ width: '5%' }} /><col style={{ width: '6%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '5%' }} />
-            <col style={{ width: '5%' }} /><col style={{ width: '7%' }} /><col style={{ width: '10%' }} />
+            <col style={{ width: '9%' }} /><col style={{ width: '8%' }} /><col style={{ width: '7%' }} /><col style={{ width: '14%' }} /><col style={{ width: '9%' }} />
+            <col style={{ width: '5%' }} /><col style={{ width: '7%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '4%' }} />
+            <col style={{ width: '5%' }} /><col style={{ width: '7%' }} /><col style={{ width: '9%' }} />
           </colgroup>
           <thead><tr>{['订单号', '询价号', '客户', '标签', '产品', '采购', '来源', '询价日期', '成单日期', '转化周期', '销售', '订单金额', '操作'].map((h) => <th key={h} style={{ textAlign: h === '来源' ? 'center' : 'left' }}>{h}</th>)}</tr></thead>
           <tbody>

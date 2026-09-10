@@ -52,10 +52,10 @@ export default function ProductArchive() {
       </div>
       <div className="hint" style={{ margin: '8px 0' }}>共 {rows.length} 个产品</div>
       <div className="tablewrap">
-        <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
+        <table className="grid data-table fixed-table" style={{ fontSize: 12.5, minWidth: 1110 }}>
           <colgroup>
-            <col style={{ width: '22%' }} /><col style={{ width: '6%' }} /><col style={{ width: '14%' }} /><col style={{ width: '11%' }} />
-            <col style={{ width: '9%' }} /><col style={{ width: '9%' }} /><col style={{ width: '12%' }} /><col style={{ width: 230 }} />
+            <col style={{ width: 240 }} /><col style={{ width: 75 }} /><col style={{ width: 140 }} /><col style={{ width: 110 }} />
+            <col style={{ width: 95 }} /><col style={{ width: 95 }} /><col style={{ width: 125 }} /><col style={{ width: 230 }} />
           </colgroup>
           <thead><tr>{['产品名称', '币种', '最近报价', '较上次', '最近数量', '使用次数', '最近使用', '操作'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
           <tbody>

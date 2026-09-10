@@ -37,8 +37,11 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   const [sales, setSales] = useState('')
   const [no, setNo] = useState('')
   const [hit, setHit] = useState<Lookup | null>(null)
-  // 项目行展开（多条跟进的项目：第一次点击先展开）
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // 项目行展开（多条跟进的项目：第一次点击先展开）；展开状态在切换页面后也保留
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    try { const raw = sessionStorage.getItem('sa:fuExpanded'); return new Set<string>(raw ? JSON.parse(raw) as string[] : []) } catch { return new Set<string>() }
+  })
+  useEffect(() => { try { sessionStorage.setItem('sa:fuExpanded', JSON.stringify([...expanded])) } catch { /* 忽略 */ } }, [expanded])
   // 单条记录弹窗：最新一条可编辑，较早的只读
   const [recModal, setRecModal] = useState<{ record: Fu; editable: boolean; create?: boolean } | null>(null)
   const [lookErr, setLookErr] = useState('')
@@ -55,14 +58,31 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   const [options, setOptions] = useState<{ id: string; inquiry_no: string; customer_name: string; date: string }[]>([])
   const [optLoading, setOptLoading] = useState(false)
   const [busy, setBusy] = useState(false)
+  const fitRef = useRef<HTMLDivElement | null>(null)
+  // 记住本页滚动位置（切换页面、展开项目、打开弹窗、保存后刷新都不跳回顶部）
+  const keepScroll = () => {
+    const el = fitRef.current
+    if (!el) return () => { /* 忽略 */ }
+    const top = el.scrollTop
+    return () => { requestAnimationFrame(() => { if (fitRef.current) fitRef.current.scrollTop = top }) }
+  }
+  const restoreScroll = () => {
+    const saved = Number(sessionStorage.getItem('sa:fuScroll') || '0')
+    if (saved > 0) requestAnimationFrame(() => { if (fitRef.current) fitRef.current.scrollTop = saved })
+  }
+  const onFitScroll = () => {
+    const el = fitRef.current
+    if (el) try { sessionStorage.setItem('sa:fuScroll', String(Math.round(el.scrollTop))) } catch { /* 忽略 */ }
+  }
 
   // 详情打开状态上报（用于页面右上角显示「返回询报价跟进」）
   useEffect(() => { onDetailChange?.(Boolean(hit)) }, [hit, onDetailChange])
   // 页面右上角点了「返回询报价跟进」：退出详情回到列表
   useEffect(() => {
     if (!resetSignal) return
+    const restore = keepScroll()
     setNo(''); setHit(null); setLookErr('')
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    restore()   // 返回列表时保持原来的滚动位置，不跳回顶部
   }, [resetSignal])
 
   // 进入跟进（仪表盘跳转 / 点击跟进记录行）时保留已选询价，仅手动切换销售才清空
@@ -135,6 +155,12 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
     catch { /* */ }
   }, [sales, hit])
   useEffect(() => { void loadList() }, [loadList])
+  // 页面（重新）挂载后、列表渲染完成再恢复上次的滚动位置
+  useEffect(() => {
+    if (!list.length) return
+    const t = setTimeout(restoreScroll, 60)
+    return () => clearTimeout(t)
+  }, [list.length])
 
   const upload = async (files2: FileList | null, kind: 'photo' | 'file') => {
     if (!files2?.length) return
@@ -170,7 +196,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   }
 
   return (
-    <div className="page-fit">
+    <div className="page-fit" ref={fitRef} onScroll={onFitScroll}>
     <div className="card">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0 }}>询报价跟进</h3>
@@ -207,7 +233,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
             <span className="hint">询价 {hit.inquiry_no}</span>
             <span style={{ flex: 1 }} />
             <button className="btn sm" title="返回询报价跟进列表"
-              onClick={() => { setNo(''); setHit(null); setLookErr(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>← 返回跟进列表</button>
+              onClick={() => { const restore = keepScroll(); setNo(''); setHit(null); setLookErr(''); restore() }}>← 返回跟进列表</button>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', fontSize: 13 }}>
             <span>询价号 <b className="mono">{hit.inquiry_no}</b></span>
@@ -317,8 +343,10 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
         <FollowupRecordModal record={recModal.record} editable={recModal.editable} create={recModal.create}
           onClose={() => setRecModal(null)}
           onSaved={() => {
+            const restore = keepScroll()
             void loadList()
             if (recModal.create) { setMsg({ t: 'ok', text: `已建立跟进（${recModal.record.inquiry_no}）` }); setRecModal(null) }
+            setTimeout(restore, 80)
           }} />
       )}
 
@@ -335,13 +363,13 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
             : `跟进记录（按项目合并：${groups.length} 个项目 / ${list.length} 条记录${sales ? ` · ${sales} 名下` : ''}）`}
         </div>
         <div className="tablewrap">
-          <table className="grid data-table fixed-table follow-table" style={{ fontSize: 12.5, minWidth: 1180 }}>
+          <table className="grid data-table fixed-table follow-table" style={{ fontSize: 12.5, minWidth: 1330 }}>
             <colgroup>
               {hit
-                ? <><col style={{ width: '8%' }} /><col style={{ width: '11%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '17%' }} />
-                  <col style={{ width: '18%' }} /><col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '11%' }} /></>
-                : <><col style={{ width: '8%' }} /><col style={{ width: '12%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '7%' }} />
-                  <col style={{ width: '17%' }} /><col style={{ width: '20%' }} /><col style={{ width: '9%' }} /><col style={{ width: '13%' }} /></>}
+                ? <><col style={{ width: 95 }} /><col style={{ width: 215 }} /><col style={{ width: 105 }} /><col style={{ width: 80 }} /><col style={{ width: 210 }} />
+                  <col style={{ width: 240 }} /><col style={{ width: 110 }} /><col style={{ width: 150 }} /><col style={{ width: 115 }} /></>
+                : <><col style={{ width: 95 }} /><col style={{ width: 215 }} /><col style={{ width: 105 }} /><col style={{ width: 80 }} /><col style={{ width: 140 }} />
+                  <col style={{ width: 200 }} /><col style={{ width: 240 }} /><col style={{ width: 110 }} /><col style={{ width: 150 }} /></>}
             </colgroup>
             <thead><tr>{(hit
               ? ['跟进日期', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间']
@@ -366,9 +394,15 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                     onClick={(e) => {
                       // 行内按钮（查看/追加指导）不触发展开
                       if ((e.target as HTMLElement).closest('button,a,input,select,textarea')) return
-                      if (merged) { setExpanded((prev) => { const n = new Set(prev); if (n.has(g.key)) n.delete(g.key); else n.add(g.key); return n }); return }
+                      const restore = keepScroll()
+                      if (merged) {
+                        setExpanded((prev) => { const n = new Set(prev); if (n.has(g.key)) n.delete(g.key); else n.add(g.key); return n })
+                        restore()
+                        return
+                      }
                       // 单条记录的项目：直接打开该记录（是该询价最新一条时可编辑，否则只读）
                       setRecModal({ record: r, editable: hit ? list[0]?.id === r.id : true })
+                      restore()
                     }}>
                     <td className="mono cell-datetime" title={merged ? `最近跟进 ${r.date}（首次 ${g.firstDate}）` : r.date}>{r.date}</td>
                     <td className="cell-left" title={`${r.inquiry_no} · ${r.customer_name || '—'}${Number(r.is_key_customer) === 1 ? ' · 重点客户' : ''}${Number(r.is_key_project) === 1 ? ' · 重点项目' : ''}`}>
@@ -381,7 +415,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                       {r.by_name && r.by_name !== r.sales && <span className="cell-note">跟进人 {r.by_name}</span>}
                     </td>
                     <td title={g.methods.length > 1 ? `该项目用过：${g.methods.join('、')}` : (r.method || '—')} style={{ textAlign: 'center' }}>
-                      <span className="badge">{hit ? (r.method || '—') : (g.methods[0] || '—')}{!hit && g.methods.length > 1 ? ` +${g.methods.length - 1}` : ''}</span>
+                      <span className="badge">{hit ? (r.method || '—') : (g.methods[0] || '—')}</span>
                     </td>
                     {!hit && (
                       <td style={{ textAlign: 'center' }} title={merged ? `同一个项目共 ${g.count} 条跟进记录（${rangeTxt}）` : '该项目目前 1 条跟进记录'}>
@@ -428,7 +462,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                     return (
                       <tr key={rec.id} className={'row-click fu-child' + (isLatest ? ' fu-child-latest' : '')}
                         title={isLatest ? '该项目最新一条 · 点击编辑' : '较早的记录 · 点击查看（只读）'}
-                        onClick={() => setRecModal({ record: rec, editable: isLatest })}>
+                        onClick={() => { const restore = keepScroll(); setRecModal({ record: rec, editable: isLatest }); restore() }}>
                         <td className="mono cell-datetime">{rec.date}</td>
                         <td className="cell-left"><span className="fu-indent">└</span><span className="mono" style={{ fontWeight: 600 }}>{rec.inquiry_no}</span><span className="cell-note">{rec.customer_name}</span></td>
                         <td title={rec.by_name && rec.by_name !== rec.sales ? `销售 ${rec.sales || '—'} · 跟进人 ${rec.by_name}` : (rec.sales || '—')}>
@@ -469,7 +503,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                       <td colSpan={9}>
                         {/* 直接弹窗建立跟进，不跳到页面顶部的建立跟进框 */}
                         <button className="btn xs" title="在弹窗里为该项目建立一条新跟进，不离开本页列表"
-                          onClick={(e) => { e.stopPropagation(); setRecModal({ record: r, editable: false, create: true }) }}>＋ 为该项目建立新的跟进</button>
+                          onClick={(e) => { e.stopPropagation(); const restore = keepScroll(); setRecModal({ record: r, editable: false, create: true }); restore() }}>＋ 为该项目建立新的跟进</button>
                         <span className="hint" style={{ marginLeft: 8 }}>最新一条可点击编辑，较早的记录只能查看</span>
                       </td>
                     </tr>
