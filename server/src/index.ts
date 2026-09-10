@@ -1007,6 +1007,10 @@ app.get('/api/inquiries', (req, res) => {
   const join = 'FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id'
   const rows = d.prepare(`SELECT i.id, i.inquiry_no, i.date, i.country, i.use_location, i.sales, i.purchaser, i.source, i.hand_total, i.note, i.blockers, i.action_plan, i.support_needed, i.customer_stars, i.is_key_customer, i.is_key_project, i.is_lost, i.lost_reason, i.lost_date, i.last_followup_at, i.next_followup_at, i.created_at,
       i.freight, i.tax, i.commission, i.other_fee, i.fee_currency, c.name AS customer_name,
+      (SELECT f.summary FROM followups f WHERE f.inquiry_id = i.id ORDER BY f.date DESC, f.created_at DESC, f.rowid DESC LIMIT 1) AS last_followup_summary,
+      (SELECT f.detail FROM followups f WHERE f.inquiry_id = i.id ORDER BY f.date DESC, f.created_at DESC, f.rowid DESC LIMIT 1) AS last_followup_detail,
+      (SELECT COALESCE(f.by_name, '') FROM followups f WHERE f.inquiry_id = i.id ORDER BY f.date DESC, f.created_at DESC, f.rowid DESC LIMIT 1) AS last_followup_by,
+      (SELECT COUNT(*) FROM followups f WHERE f.inquiry_id = i.id) AS followup_count,
       CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END AS _won, o.won_date AS _won_date, o.order_no AS _order_no, o.id AS _order_id
     ${join} LEFT JOIN orders o ON o.inquiry_id = i.id ${where} ORDER BY i.date DESC, i.created_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
   const ids = rows.map((r) => str(r.id))

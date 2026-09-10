@@ -44,7 +44,6 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   const [files, setFiles] = useState<Att[]>([])
   const [uploading, setUploading] = useState(false)
   const [dragP, setDragP] = useState(false); const [dragF, setDragF] = useState(false)
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [commentOf, setCommentOf] = useState<Fu | null>(null)
   const photoInput = useRef<HTMLInputElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -216,15 +215,14 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
         <div className="tablewrap" style={{ overflowX: 'auto' }}>
           <table className="grid follow-table fit-table" style={{ borderCollapse: 'collapse', fontSize: 12.5 }}>
             <colgroup>
-              <col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '8%' }} /><col style={{ width: '7%' }} />
-              <col style={{ width: '16%' }} /><col style={{ width: '18%' }} /><col style={{ width: '7%' }} /><col style={{ width: '8%' }} /><col style={{ width: '7%' }} />
+              <col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '11%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
+              <col style={{ width: '12%' }} /><col style={{ width: '18%' }} /><col style={{ width: '14%' }} /><col style={{ width: '6%' }} /><col style={{ width: '7%' }} />
+              <col style={{ width: '5%' }} />
             </colgroup>
-            <thead><tr>{['跟进日期', '第几次跟进', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+            <thead><tr>{['跟进日期', '第几次跟进', '询价号 / 客户', '销售 / 跟进人', '方式', '跟进简述', '跟进内容（详情）', '跟进指导', '图片 / 附件', '下次跟进', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
             <tbody>
               {list.map((r) => {
                 const detail = r.detail || r.content || ''
-                const longText = detail.length > 90
-                const opened = expanded.has(r.id)
                 const photos = r.photos || []
                 const atts = r.attachments || []
                 return (
@@ -256,17 +254,9 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                       {r.by_name && r.by_name !== r.sales && <div className="hint" style={{ fontSize: 11 }}>跟进人 {r.by_name}</div>}
                     </td>
                     <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}><span className="badge">{r.method || '—'}</span></td>
-                    <td style={{ padding: '7px 8px' }}>
-                      {r.summary && <div style={{ fontWeight: 600 }}>{r.summary}</div>}
-                      {detail
-                        ? <div className={'hint follow-detail' + (longText && !opened ? ' clamp2' : '')} style={{ marginTop: r.summary ? 2 : 0, whiteSpace: 'pre-wrap' }}>{detail}</div>
-                        : (!r.summary && <span className="hint">—</span>)}
-                      {longText && (
-                        <button className="linkbtn" onClick={() => setExpanded((prev) => { const n = new Set(prev); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n })}>
-                          {opened ? '收起' : `展开全文（${detail.length} 字）`}
-                        </button>
-                      )}
-                    </td>
+                    <td style={{ padding: '7px 8px', fontWeight: 600 }} title={r.summary || '—'}>{r.summary || <span className="hint">—</span>}</td>
+                    {/* 跟进详情单独一列完整展示 */}
+                    <td style={{ padding: '7px 8px', whiteSpace: 'pre-wrap' }} title={detail || '—'}>{detail || <span className="hint">—</span>}</td>
                     <td style={{ padding: '7px 8px' }}>
                       {(() => {
                         const cs = r.comments ?? []
@@ -307,7 +297,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                   </tr>
                 )
               })}
-              {list.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', padding: 20, color: 'var(--sub)' }}>暂无跟进记录</td></tr>}
+              {list.length === 0 && <tr><td colSpan={11} style={{ textAlign: 'center', padding: 20, color: 'var(--sub)' }}>暂无跟进记录</td></tr>}
             </tbody>
           </table>
         </div>

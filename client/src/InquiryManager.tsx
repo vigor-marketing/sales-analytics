@@ -11,7 +11,7 @@ import { RANGE_LABEL, rangeDates, type RangeKey } from './dateRange'
 import { COUNTRIES } from './countries'
 
 interface TotalItem { currency: string; total: number }
-interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; customer_stars?: number | null; won_date?: string | null; orderNo?: string | null; orderId?: string | null; last_followup_at?: string | null; next_followup_at?: string | null; is_lost?: number; lost_reason?: string | null; lost_date?: string | null; status?: Status; blockers?: string | null; action_plan?: string | null; support_needed?: string | null; freight?: number | null; tax?: number | null; commission?: number | null; other_fee?: number | null; fee_currency?: string | null; feeTotal?: number; grandTotals?: TotalItem[]; quoteUsdApprox?: number }
+interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; customer_stars?: number | null; won_date?: string | null; orderNo?: string | null; orderId?: string | null; last_followup_at?: string | null; next_followup_at?: string | null; is_lost?: number; lost_reason?: string | null; lost_date?: string | null; status?: Status; blockers?: string | null; action_plan?: string | null; support_needed?: string | null; last_followup_summary?: string | null; last_followup_detail?: string | null; last_followup_by?: string | null; followup_count?: number; freight?: number | null; tax?: number | null; commission?: number | null; other_fee?: number | null; fee_currency?: string | null; feeTotal?: number; grandTotals?: TotalItem[]; quoteUsdApprox?: number }
 interface Detail extends Row { feeVersions?: { id: string; version: number; is_latest?: boolean; total: number; fee_currency: string; created_at: string }[]; items: { product_name: string; qty: number | null; amount: number; currency: string }[]; order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null }
 interface MetaLite { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; lostReasons?: string[]; winReasons?: string[]; fx?: Record<string, number> }
 
@@ -89,10 +89,11 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
         {/* 自适应列宽：表格永远不超过屏幕宽度（长内容在单元格内换行/省略，悬停看全文） */}
         <table className="grid fit-table" style={{ borderCollapse: 'collapse', fontSize: 12.5 }}>
           <colgroup>
-            <col style={{ width: '11%' }} /><col style={{ width: '7%' }} /><col style={{ width: '11%' }} /><col style={{ width: '13%' }} /><col style={{ width: '9%' }} />
-            <col style={{ width: '12%' }} /><col style={{ width: '6%' }} /><col style={{ width: '6%' }} /><col style={{ width: '7%' }} /><col style={{ width: '18%' }} />
+            <col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '8%' }} /><col style={{ width: '10%' }} /><col style={{ width: '6%' }} />
+            <col style={{ width: '9%' }} /><col style={{ width: '6%' }} /><col style={{ width: '11%' }} /><col style={{ width: '11%' }} /><col style={{ width: '5%' }} />
+            <col style={{ width: '5%' }} /><col style={{ width: '5%' }} /><col style={{ width: '10%' }} />
           </colgroup>
-          <thead><tr>{['询价号', '日期', '客户', '状态', '标签', '报价合计（含费用）', '销售', '采购', '来源', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: h === '来源' ? 'center' : 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '报价合计（含费用）' ? '产品明细合计 ＋ 运费/税费/佣金/其他费用' : undefined}>{h}</th>)}</tr></thead>
+          <thead><tr>{['询价号', '日期', '客户', '状态', '标签', '报价合计（含费用）', '最近跟进', '跟进简述', '跟进详情', '销售', '采购', '来源', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: h === '来源' ? 'center' : 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '报价合计（含费用）' ? '产品明细合计 ＋ 运费/税费/佣金/其他费用' : (h === '跟进简述' || h === '跟进详情' ? '该询价最近一条跟进的简述 / 详情（悬停看全文）' : undefined)}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} className={r.status === 'lost' ? 'row-lost' : undefined} style={{ borderBottom: '1px solid var(--line2)' }}>
@@ -108,6 +109,18 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                   ≈USD {money(r.usdApprox)}
                   <div className="hint">{fmtT(r)}{(r.feeTotal ?? 0) > 0 ? ` ＋费用 ${money(r.feeTotal)} ${r.fee_currency || 'USD'}` : ''}</div>
                 </td>
+                {/* 最近跟进时间 + 该条跟进的简述/具体内容（悬停看全文） */}
+                <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }} title={r.last_followup_at ? `最近跟进：${r.last_followup_at}${r.followup_count ? `（共 ${r.followup_count} 次）` : ''}` : '还没有跟进记录'}>
+                  {r.last_followup_at || '—'}
+                </td>
+                <td style={{ padding: '6px 8px', fontWeight: 600 }} title={r.last_followup_summary || '还没有跟进记录'}>
+                  {r.last_followup_summary || <span className="hint">—</span>}
+                  {r.last_followup_by ? <span className="cell-note">（{r.last_followup_by}）</span> : null}
+                </td>
+                {/* 跟进详情单独一列 */}
+                <td style={{ padding: '6px 8px' }} title={r.last_followup_detail || '还没有跟进记录'}>
+                  {r.last_followup_detail || <span className="hint">—</span>}
+                </td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.sales}</td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.purchaser || '—'}</td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap', textAlign: 'center' }}><span className="badge">{r.source || '—'}</span></td>
@@ -117,7 +130,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无询报价记录（先到「询报价录入」录一单）</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无询报价记录（先到「询报价录入」录一单）</td></tr>}
           </tbody>
         </table>
       </div>

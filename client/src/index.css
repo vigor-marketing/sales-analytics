@@ -189,10 +189,14 @@ tr.row-click:hover>td{background:#eef5ff !important}
 .fixed-table th,.fixed-table td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;height:32px;padding:0 10px}
 /* ===== 表格宽度自适应屏幕：固定列宽按百分比分配，长内容换行/省略，绝不超出容器宽度 ===== */
 table.fit-table { table-layout: fixed; width: 100%; max-width: 100% }
-table.fit-table > thead > tr > th, table.fit-table > tbody > tr > td { overflow-wrap: anywhere; word-break: break-word }
-table.fit-table.fixed-table > tbody > tr > td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-/* 非固定行高的自适应表（跟进记录）：长内容换行显示，不撑破容器 */
-table.fit-table:not(.fixed-table) > tbody > tr > td { white-space: normal }
+/* 关键：单元格内容一律裁剪在单元格内，窗口变小时不会溢出到相邻列造成重叠 */
+table.fit-table > thead > tr > th, table.fit-table > tbody > tr > td { overflow: hidden !important; overflow-wrap: anywhere; word-break: break-word }
+table.fit-table.fixed-table > tbody > tr > td { white-space: nowrap; text-overflow: ellipsis }
+/* 非固定行高的自适应表（询报价管理/询报价跟进）：表头与内容换行显示，仍不溢出 */
+table.fit-table:not(.fixed-table) > thead > tr > th { white-space: normal !important; text-overflow: clip }
+table.fit-table:not(.fixed-table) > tbody > tr > td { white-space: normal !important; text-overflow: clip }
+/* 日期时间列：单行 + 省略号（不换行、不溢出） */
+table.fit-table > tbody > tr > td.cell-datetime { white-space: nowrap !important; text-overflow: ellipsis !important }
 .tablewrap { max-width: 100% }
 
 /* ===== 全部表格内容居中（表头 + 单元格，含徽标/按钮/金额，覆盖行内左右对齐设置） ===== */
@@ -200,7 +204,7 @@ table.grid > thead > tr > th, table.grid > tbody > tr > td { text-align: center 
 table.grid > tbody > tr > td > .badge, table.grid > tbody > tr > td > .tag, table.grid > tbody > tr > td > .btn { margin-left: 3px; margin-right: 3px }
 /* 跟进指导列：完整显示全部指导（可换行、按内容撑高，不截断） */
 table.grid > thead > tr > th.cell-guidance { text-align: left !important }
-table.grid > tbody > tr > td.cell-guidance { text-align: left !important; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; height: auto !important; line-height: 1.45 !important; padding: 6px 10px !important; vertical-align: middle }
+table.grid > tbody > tr > td.cell-guidance { text-align: left !important; white-space: normal !important; overflow: hidden !important; overflow-wrap: anywhere !important; text-overflow: clip !important; height: auto !important; line-height: 1.45 !important; padding: 6px 10px !important; vertical-align: middle }
 table.grid > tbody > tr > td.cell-guidance .gd-all { display: block; width: 100% }
 table.grid > tbody > tr > td.cell-guidance .gd-item + .gd-item { margin-top: 4px }
 
@@ -220,7 +224,7 @@ tr.fu-child-latest > td:first-child { box-shadow: inset 3px 0 0 var(--brand) }
 
 /* 日期时间类列（最近跟进/下次跟进/录入时间）：整列左边缘对齐，逐行数字对齐，且完整显示不截断 */
 table.grid > thead > tr > th.cell-datetime, table.grid > tbody > tr > td.cell-datetime { text-align: left !important }
-table.grid > tbody > tr > td.cell-datetime { white-space: nowrap; overflow: visible; text-overflow: clip }
+table.grid > tbody > tr > td.cell-datetime { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 
 /* 例外：询报价管理的「状态」列（未成单的丢单原因）保持原来的左对齐位置，不参与居中 */
 table.grid > tbody > tr > td.cell-status { text-align: left !important }
