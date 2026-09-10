@@ -6,6 +6,7 @@ import './index.css'
 /** 文本域随内容自动增高：保证任何情况下文字完整可见、不被截断 */
 function grow(t: HTMLTextAreaElement): void {
   if (!t.classList.contains('sa')) return
+  if (t.classList.contains('fixed-h')) return // 固定行高：不随内容增高
   const cs = getComputedStyle(t)
   // 上下边框会占用 border-box 高度，少补这 2px 会裁掉最后一行
   const border = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0)

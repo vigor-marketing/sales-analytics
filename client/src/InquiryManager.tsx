@@ -116,12 +116,12 @@ function TagBlocks({ r }: { r: { is_key_customer?: number; is_key_project?: numb
     </>
   )
 }
-function Field({ label, value, area, empty }: { label: string; value?: string | number | null; area?: boolean; empty?: boolean }) {
+function Field({ label, value, area, empty, fixed }: { label: string; value?: string | number | null; area?: boolean; empty?: boolean; fixed?: boolean }) {
   const txt = value === null || value === undefined || value === '' ? '—' : String(value)
   return (
-    <div className={'col' + (area ? ' box-fixed' : '')}>
+    <div className={'col' + (area ? ' box-fixed' : '') + (fixed ? ' fixed-h' : '')}>
       <label>{label}</label>
-      <div className={'ro' + (area ? ' area' : '') + (empty || txt === '—' ? ' empty' : '')}>{txt}</div>
+      <div className={'ro' + (area ? ' area' : '') + (fixed ? ' fixed-h' : '') + (empty || txt === '—' ? ' empty' : '')}>{txt}</div>
     </div>
   )
 }
@@ -224,9 +224,9 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
             {/* 卡点/行动计划/需要的支持/备注（与录入页一致） */}
             <div style={{ marginTop: 12, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
               <div className="grid-eq3">
-                <Field label="卡点/问题" value={(d as unknown as { blockers?: string }).blockers} area />
-                <Field label="行动计划" value={(d as unknown as { action_plan?: string }).action_plan} area />
-                <Field label="需要的支持" value={(d as unknown as { support_needed?: string }).support_needed} area />
+                <Field label="卡点/问题" value={(d as unknown as { blockers?: string }).blockers} area fixed />
+                <Field label="行动计划" value={(d as unknown as { action_plan?: string }).action_plan} area fixed />
+                <Field label="需要的支持" value={(d as unknown as { support_needed?: string }).support_needed} area fixed />
               </div>
               <div className="grid-1" style={{ marginTop: 10 }}>
                 <Field label="备注" value={d.note} area />
@@ -394,9 +394,9 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
             ))}
             <button className="btn sm" onClick={() => set({ items: [...form.items, { productName: '', qty: '', amount: '', currency: 'USD' }] })}>＋ 添加产品</button>
             <div className="grid-eq3" style={{ marginTop: 8 }}>
-              <div className="col"><label>卡点/问题</label><textarea className="sa" rows={3} value={form.blockers} onChange={(e) => set({ blockers: e.target.value })} /></div>
-              <div className="col"><label>行动计划</label><textarea className="sa" rows={3} value={form.actionPlan} onChange={(e) => set({ actionPlan: e.target.value })} /></div>
-              <div className="col"><label>需要的支持</label><textarea className="sa" rows={3} value={form.supportNeeded} onChange={(e) => set({ supportNeeded: e.target.value })} /></div>
+              <div className="col fixed-h"><label>卡点/问题</label><textarea className="sa fixed-h" value={form.blockers} onChange={(e) => set({ blockers: e.target.value })} /></div>
+              <div className="col fixed-h"><label>行动计划</label><textarea className="sa fixed-h" value={form.actionPlan} onChange={(e) => set({ actionPlan: e.target.value })} /></div>
+              <div className="col fixed-h"><label>需要的支持</label><textarea className="sa fixed-h" value={form.supportNeeded} onChange={(e) => set({ supportNeeded: e.target.value })} /></div>
             </div>
             <div className="row" style={{ marginTop: 8 }}>
               <div className="col grow1"><label>备注</label><textarea className="sa" rows={2} value={form.note} onChange={(e) => set({ note: e.target.value })} /></div>
