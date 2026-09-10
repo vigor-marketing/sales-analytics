@@ -13,13 +13,34 @@ app.use(express.json())
 
 const str = (v: unknown) => text(v)
 /** 录入/更新询价时把产品沉淀进产品档案 */
-function upsertProducts(items: { productName: string; qty: number | null; amount: number; currency: string }[], date: string, t: string): void {
+function upsertProducts(
+  items: { productName: string; qty: number | null; amount: number; currency: string }[],
+  date: string, t: string,
+  src: { inquiryId?: string; inquiryNo?: string; customerName?: string; sales?: string; source?: string } = {},
+): void {
   const d = getDb()
   const up = d.prepare(`INSERT INTO products (id, name, currency, last_amount, last_qty, use_count, last_used_at, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
     ON CONFLICT(name) DO UPDATE SET currency=excluded.currency, last_amount=excluded.last_amount, last_qty=excluded.last_qty,
       use_count=products.use_count+1, last_used_at=excluded.last_used_at, updated_at=excluded.updated_at`)
-  items.forEach((it) => up.run(newId(), it.productName, it.currency, it.amount, it.qty, date, t, t))
+  const find = d.prepare('SELECT * FROM products WHERE name = ? COLLATE NOCASE')
+  const insHist = d.prepare(`INSERT INTO product_prices (id, product_name, currency, amount, qty, prev_amount, prev_qty, prev_currency,
+      source, inquiry_id, inquiry_no, customer_name, sales, biz_date, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  items.forEach((it) => {
+    const before = find.get(it.productName) as { last_amount: number | null; last_qty: number | null; currency: string } | undefined
+    const changed = !before
+      || Number(before.last_amount ?? -1) !== Number(it.amount)
+      || Number(before.last_qty ?? -1) !== Number(it.qty ?? -1)
+      || String(before.currency) !== String(it.currency)
+    up.run(newId(), it.productName, it.currency, it.amount, it.qty, date, t, t)
+    // 首次录入或金额/数量/币种发生变化 → 在产品档案留下一条变动记录
+    if (changed) {
+      insHist.run(newId(), it.productName, it.currency, it.amount, it.qty ?? null,
+        before ? (before.last_amount ?? null) : null, before ? (before.last_qty ?? null) : null, before ? before.currency : null,
+        src.source ?? '询报价录入', src.inquiryId ?? null, src.inquiryNo ?? null, src.customerName ?? null, src.sales ?? null, date, t)
+    }
+  })
 }
 const ok = (res: express.Response, data: unknown, st = 200) => res.status(st).json({ ok: true, data })
 const fail = (res: express.Response, msg: string, st = 400) => res.status(st).json({ ok: false, error: msg })
@@ -36,11 +57,42 @@ app.get('/api/meta/bootstrap', (_req, res) => {
 
 // —— 产品档案：录入自动沉淀 + 查询/维护 ——
 app.get('/api/products', (req, res) => {
+  const d = getDb()
   const q = str(req.query.q)
   const like = `%${q}%`
   const rows = (q
-    ? getDb().prepare('SELECT * FROM products WHERE name LIKE ? ORDER BY use_count DESC, updated_at DESC LIMIT 500').all(like)
-    : getDb().prepare('SELECT * FROM products ORDER BY use_count DESC, updated_at DESC LIMIT 500').all())
+    ? d.prepare('SELECT * FROM products WHERE name LIKE ? ORDER BY use_count DESC, updated_at DESC LIMIT 500').all(like)
+    : d.prepare('SELECT * FROM products ORDER BY use_count DESC, updated_at DESC LIMIT 500').all()) as Record<string, unknown>[]
+  // 价格变动：最近一次记录里的“上一次金额/数量”，以及累计变动次数
+  const hist = d.prepare('SELECT product_name, prev_amount, prev_qty, prev_currency, amount, qty, currency, created_at FROM product_prices ORDER BY created_at DESC').all() as
+    { product_name: string; prev_amount: number | null; prev_qty: number | null; prev_currency: string | null; amount: number | null; qty: number | null; currency: string; created_at: string }[]
+  const latest = new Map<string, typeof hist[number]>()
+  const counts = new Map<string, number>()
+  hist.forEach((h) => {
+    const k = h.product_name.toLowerCase()
+    counts.set(k, (counts.get(k) ?? 0) + 1)
+    if (!latest.has(k)) latest.set(k, h)
+  })
+  ok(res, rows.map((r) => {
+    const k = String(r.name).toLowerCase()
+    const h = latest.get(k)
+    const prevAmount = h ? h.prev_amount : null
+    return {
+      ...r,
+      prev_amount: prevAmount,
+      prev_qty: h ? h.prev_qty : null,
+      prev_currency: h ? h.prev_currency : null,
+      amount_delta: (prevAmount == null || r.last_amount == null) ? null : Math.round((Number(r.last_amount) - Number(prevAmount)) * 100) / 100,
+      change_count: counts.get(k) ?? 0,
+    }
+  }))
+})
+
+// 单个产品的价格变动记录（谁改的、什么时候、从多少变到多少、来源询价）
+app.get('/api/products/history', (req, res) => {
+  const name = str(req.query.name)
+  if (!name) return fail(res, '请提供产品名称')
+  const rows = getDb().prepare('SELECT * FROM product_prices WHERE product_name = ? COLLATE NOCASE ORDER BY created_at DESC, biz_date DESC LIMIT 500').all(name)
   ok(res, rows)
 })
 app.post('/api/products', (req, res) => {
@@ -48,9 +100,17 @@ app.post('/api/products', (req, res) => {
   if (!name) return fail(res, '产品名称必填')
   const t = nowIso()
   const cur = ['USD', 'CNY', 'EUR'].includes(str(req.body?.currency)) ? str(req.body?.currency) : 'USD'
-  getDb().prepare(`INSERT INTO products (id, name, currency, last_amount, last_qty, use_count, last_used_at, created_at, updated_at)
+  const d = getDb()
+  const before = d.prepare('SELECT * FROM products WHERE name = ? COLLATE NOCASE').get(name) as { last_amount: number | null; last_qty: number | null; currency: string } | undefined
+  d.prepare(`INSERT INTO products (id, name, currency, last_amount, last_qty, use_count, last_used_at, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?) ON CONFLICT(name) DO UPDATE SET currency=excluded.currency, updated_at=excluded.updated_at`)
     .run(newId(), name, cur, num(req.body?.lastAmount), num(req.body?.lastQty), t, t)
+  const amt = num(req.body?.lastAmount)
+  if (amt != null && Number(before?.last_amount ?? -1) !== Number(amt)) {
+    d.prepare(`INSERT INTO product_prices (id, product_name, currency, amount, qty, prev_amount, prev_qty, prev_currency, source, biz_date, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(newId(), name, cur, amt, num(req.body?.lastQty), before?.last_amount ?? null, before?.last_qty ?? null, before?.currency ?? null, '手动维护', todayStr(), t)
+  }
   ok(res, getDb().prepare('SELECT * FROM products WHERE name = ? COLLATE NOCASE').get(name), 201)
 })
 app.put('/api/products/:id', (req, res) => {
@@ -60,7 +120,16 @@ app.put('/api/products/:id', (req, res) => {
   const cur = ['USD', 'CNY', 'EUR'].includes(str(req.body?.currency)) ? str(req.body?.currency) : null
   if (name) d.prepare('UPDATE products SET name = ?, updated_at = ? WHERE id = ?').run(name, nowIso(), req.params.id)
   if (cur) d.prepare('UPDATE products SET currency = ?, updated_at = ? WHERE id = ?').run(cur, nowIso(), req.params.id)
-  if (req.body?.lastAmount !== undefined) d.prepare('UPDATE products SET last_amount = ?, updated_at = ? WHERE id = ?').run(num(req.body?.lastAmount), nowIso(), req.params.id)
+  if (req.body?.lastAmount !== undefined) {
+    const cur2 = d.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id) as { name: string; last_amount: number | null; last_qty: number | null; currency: string }
+    const amt = num(req.body?.lastAmount)
+    d.prepare('UPDATE products SET last_amount = ?, updated_at = ? WHERE id = ?').run(amt, nowIso(), req.params.id)
+    if (Number(cur2.last_amount ?? -1) !== Number(amt)) {
+      d.prepare(`INSERT INTO product_prices (id, product_name, currency, amount, qty, prev_amount, prev_qty, prev_currency, source, biz_date, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(newId(), cur2.name, cur2.currency, amt, cur2.last_qty, cur2.last_amount, cur2.last_qty, cur2.currency, '手动维护', todayStr(), nowIso())
+    }
+  }
   ok(res, d.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id))
 })
 app.delete('/api/products/:id', (req, res) => {
@@ -275,7 +344,7 @@ app.post('/api/inquiries', (req, res) => {
       .run(iid, no, date, customerId, country || customerCountry || null, useLocation || country, sales, purchaser, source, handTotal, note, keyCust, keyProj, isWon, blockers, actionPlan, supportNeeded, customerStars, t, t)
     const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
     cleanItems.forEach((it) => ins.run(newId(), iid, it.productName, it.qty, it.amount, it.currency, it.sort))
-    upsertProducts(cleanItems, date, t)
+    upsertProducts(cleanItems, date, t, { inquiryId: iid, inquiryNo: no, customerName: text(customer.name), sales })
   })()
   ok(res, { id: iid, inquiryNo: no, customerId: customerId, createdCustomer, team: teamName || null }, 201)
 })
@@ -634,7 +703,8 @@ app.put('/api/inquiries/:id', (req, res) => {
       d.prepare('DELETE FROM inquiry_items WHERE inquiry_id = ?').run(req.params.id)
       const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
       clean.forEach((it) => ins.run(newId(), req.params.id, it.productName, it.qty, it.amount, it.currency, it.sort))
-      upsertProducts(clean, date, t)
+      const custForName = text(old.customer_id) ? d.prepare('SELECT name FROM customers WHERE id = ?').get(text(old.customer_id)) as { name: string } | undefined : undefined
+      upsertProducts(clean, date, t, { inquiryId: req.params.id, inquiryNo: str(old.inquiry_no), customerName: custForName?.name, sales })
     }
     // 客户档案同步：星级/国别/使用地/来源在询报价里改动后要跟着更新
     const custId = text(old.customer_id)

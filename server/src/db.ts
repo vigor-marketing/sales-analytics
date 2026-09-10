@@ -59,6 +59,11 @@ export function schema(): void {
       last_amount REAL, last_qty REAL, use_count INTEGER NOT NULL DEFAULT 0,
       last_used_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       UNIQUE(name COLLATE NOCASE));
+    CREATE TABLE IF NOT EXISTS product_prices (
+      id TEXT PRIMARY KEY, product_name TEXT NOT NULL, currency TEXT NOT NULL DEFAULT 'USD',
+      amount REAL, qty REAL, prev_amount REAL, prev_qty REAL, prev_currency TEXT,
+      source TEXT, inquiry_id TEXT, inquiry_no TEXT, customer_name TEXT, sales TEXT, biz_date TEXT,
+      created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS followups (
       id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL, date TEXT NOT NULL, method TEXT,
       content TEXT, summary TEXT, detail TEXT, photos TEXT, attachments TEXT,
@@ -92,6 +97,14 @@ export function schema(): void {
   try { db.exec('ALTER TABLE inquiries ADD COLUMN is_lost INTEGER NOT NULL DEFAULT 0') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN lost_reason TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN lost_date TEXT') } catch { /* 已存在 */ }
+  // 产品价格变动记录表（旧库补建）
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS product_prices (
+      id TEXT PRIMARY KEY, product_name TEXT NOT NULL, currency TEXT NOT NULL DEFAULT 'USD',
+      amount REAL, qty REAL, prev_amount REAL, prev_qty REAL, prev_currency TEXT,
+      source TEXT, inquiry_id TEXT, inquiry_no TEXT, customer_name TEXT, sales TEXT, biz_date TEXT,
+      created_at TEXT NOT NULL)`)
+  } catch { /* 已存在 */ }
   // 成交原因（成单时填写，用于成交原因分析）
   try { db.exec('ALTER TABLE orders ADD COLUMN win_reason TEXT') } catch { /* 已存在 */ }
   // 丢单原因下拉自带「其他（手动输入）」，历史字典里的裸「其他」属重复项，清理掉
