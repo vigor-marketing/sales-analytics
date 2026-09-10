@@ -5,13 +5,14 @@ import ReasonPicker from './ReasonPicker'
 import ProductPicker, { type ProductLite } from './ProductPicker'
 import { KeyTags } from './KeyTags'
 import PriceHistoryModal from './PriceHistory'
+import InquiryFollowupsModal from './InquiryFollowupsModal'
 import FeeHistoryModal from './FeeHistoryModal'
 import InquiryDetailModal from './InquiryDetail'
 import { RANGE_LABEL, rangeDates, type RangeKey } from './dateRange'
 import { COUNTRIES } from './countries'
 
 interface TotalItem { currency: string; total: number }
-interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; customer_stars?: number | null; won_date?: string | null; orderNo?: string | null; orderId?: string | null; last_followup_at?: string | null; next_followup_at?: string | null; is_lost?: number; lost_reason?: string | null; lost_date?: string | null; status?: Status; blockers?: string | null; action_plan?: string | null; support_needed?: string | null; last_followup_summary?: string | null; last_followup_detail?: string | null; last_followup_by?: string | null; followup_count?: number; freight?: number | null; tax?: number | null; commission?: number | null; other_fee?: number | null; fee_currency?: string | null; feeTotal?: number; grandTotals?: TotalItem[]; quoteUsdApprox?: number }
+interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; customer_stars?: number | null; won_date?: string | null; orderNo?: string | null; orderId?: string | null; last_followup_at?: string | null; next_followup_at?: string | null; is_lost?: number; lost_reason?: string | null; lost_date?: string | null; status?: Status; blockers?: string | null; action_plan?: string | null; support_needed?: string | null; last_followup_summary?: string | null; last_followup_detail?: string | null; last_followup_by?: string | null; followup_count?: number; last_followup_photos?: number; last_followup_files?: number; freight?: number | null; tax?: number | null; commission?: number | null; other_fee?: number | null; fee_currency?: string | null; feeTotal?: number; grandTotals?: TotalItem[]; quoteUsdApprox?: number }
 interface Detail extends Row { feeVersions?: { id: string; version: number; is_latest?: boolean; total: number; fee_currency: string; created_at: string }[]; items: { product_name: string; qty: number | null; amount: number; currency: string }[]; order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null }
 interface MetaLite { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; lostReasons?: string[]; winReasons?: string[]; fx?: Record<string, number> }
 
@@ -23,6 +24,7 @@ const LOST_REASONS = ['价格无优势', '交期太长', '技术方案不满足'
 const StatusTag = StatusChip
 
 export default function InquiryManager({ meta = { sales: [], purchasers: [], sources: [] } }: { meta?: MetaLite }) {
+  const [followOf, setFollowOf] = useState<{ id: string; no: string; customer?: string } | null>(null)
   const [q, setQ] = useState(''); const [range, setRange] = useState<RangeKey>('')
   const [sales, setSales] = useState(''); const [pur, setPur] = useState(''); const [src, setSrc] = useState(''); const [st, setSt] = useState('')
   const [rows, setRows] = useState<Row[]>([]); const [total, setTotal] = useState(0)
@@ -117,9 +119,20 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                   {r.last_followup_summary || <span className="hint">—</span>}
                   {r.last_followup_by ? <span className="cell-note">（{r.last_followup_by}）</span> : null}
                 </td>
-                {/* 跟进详情单独一列 */}
+                {/* 跟进详情单独一列：单元格只做摘要，完整内容点「查看详情」（含图片/附件） */}
                 <td style={{ padding: '6px 8px' }} title={r.last_followup_detail || '还没有跟进记录'}>
-                  {r.last_followup_detail || <span className="hint">—</span>}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.last_followup_detail || <span className="hint">—</span>}</span>
+                    {r.followup_count ? (
+                      <button className="btn xs" style={{ flex: '0 0 auto' }} title="查看该询价全部跟进详情（含简述、详情、图片、附件、跟进指导）"
+                        onClick={() => setFollowOf({ id: r.id, no: r.inquiry_no, customer: r.customer_name })}>查看详情{r.followup_count > 1 ? `（${r.followup_count}）` : ''}</button>
+                    ) : null}
+                    {(() => {
+                      const ph = Number(r.last_followup_photos) || 0, fi = Number(r.last_followup_files) || 0
+                      if (!ph && !fi) return null
+                      return <span className="badge" style={{ flex: '0 0 auto' }} title={`最近一条跟进上传：${ph} 张图片 · ${fi} 个附件`}>{ph ? `🖼${ph}` : ''}{fi ? ` 📎${fi}` : ''}</span>
+                    })()}
+                  </span>
                 </td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.sales}</td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.purchaser || '—'}</td>
@@ -127,6 +140,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
                   <button className="btn sm" onClick={() => setViewId(r.id)}>查看</button>
                   <button className="btn sm" onClick={() => setEditId(r.id)}>编辑</button>
+                  <button className="btn sm" onClick={() => setFollowOf({ id: r.id, no: r.inquiry_no, customer: r.customer_name })}>跟进</button>
                 </td>
               </tr>
             ))}
@@ -134,6 +148,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
           </tbody>
         </table>
       </div>
+      {followOf && <InquiryFollowupsModal inquiryId={followOf.id} inquiryNo={followOf.no} customerName={followOf.customer} onClose={() => setFollowOf(null)} />}
       {viewId && <InquiryDetailModal id={viewId} onClose={() => setViewId(null)} />}
       {editId && <EditModal id={editId} meta={meta} products={products} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); void load() }} />}
     </div>

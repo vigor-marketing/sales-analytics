@@ -1011,6 +1011,8 @@ app.get('/api/inquiries', (req, res) => {
       (SELECT f.detail FROM followups f WHERE f.inquiry_id = i.id ORDER BY f.date DESC, f.created_at DESC, f.rowid DESC LIMIT 1) AS last_followup_detail,
       (SELECT COALESCE(f.by_name, '') FROM followups f WHERE f.inquiry_id = i.id ORDER BY f.date DESC, f.created_at DESC, f.rowid DESC LIMIT 1) AS last_followup_by,
       (SELECT COUNT(*) FROM followups f WHERE f.inquiry_id = i.id) AS followup_count,
+      (SELECT json_array_length(COALESCE(NULLIF(f.photos, ''), '[]')) FROM followups f WHERE f.inquiry_id = i.id ORDER BY f.date DESC, f.created_at DESC, f.rowid DESC LIMIT 1) AS last_followup_photos,
+      (SELECT json_array_length(COALESCE(NULLIF(f.attachments, ''), '[]')) FROM followups f WHERE f.inquiry_id = i.id ORDER BY f.date DESC, f.created_at DESC, f.rowid DESC LIMIT 1) AS last_followup_files,
       CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END AS _won, o.won_date AS _won_date, o.order_no AS _order_no, o.id AS _order_id
     ${join} LEFT JOIN orders o ON o.inquiry_id = i.id ${where} ORDER BY i.date DESC, i.created_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
   const ids = rows.map((r) => str(r.id))
