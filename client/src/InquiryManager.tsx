@@ -13,11 +13,11 @@ const LOST_REASONS = ['价格无优势', '交期太长', '技术方案不满足'
 /** 状态文案由后端自动判定：有订单=已成单，标记未成单=未成单，其余=跟进中 */
 type Status = 'won' | 'lost' | 'following'
 const statusLabel: Record<Status, string> = { won: '已成单', lost: '未成单', following: '跟进中' }
-function StatusTag({ status }: { status?: Status }) {
+function StatusTag({ status, big }: { status?: Status; big?: boolean }) {
   const st: Status = status ?? 'following'
-  if (st === 'won') return <span className="tag won">已成单</span>
-  if (st === 'lost') return <span className="tag lost">未成单</span>
-  return <span className="badge">跟进中</span>
+  if (st === 'won') return <span className={'tag won' + (big ? ' big' : '')}>已成单</span>
+  if (st === 'lost') return <span className={'tag lost' + (big ? ' big' : '')}>未成单</span>
+  return <span className={'badge' + (big ? ' big' : '')}>跟进中</span>
 }
 
 export default function InquiryManager({ meta = { sales: [], purchasers: [], sources: [] } }: { meta?: MetaLite }) {
@@ -79,11 +79,14 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
           <thead><tr>{['询价号', '日期', '客户', '状态', '标签', '报价合计', '销售', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} style={{ borderBottom: '1px solid var(--line2)' }}>
+              <tr key={r.id} className={r.status === 'lost' ? 'row-lost' : undefined} style={{ borderBottom: '1px solid var(--line2)' }}>
                 <td className="mono" style={{ padding: '6px 8px' }}>{r.inquiry_no}</td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.date}</td>
                 <td style={{ padding: '6px 8px' }}>{r.customer_name}</td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }} title={r.lost_reason ? `丢单原因：${r.lost_reason}` : undefined}><StatusTag status={r.status} />{r.status === 'lost' && <div className="hint">{r.lost_reason || '—'}</div>}</td>
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+                  <StatusTag status={r.status} big={r.status === 'lost'} />
+                  {r.status === 'lost' && <div className="lost-line">丢单原因：{r.lost_reason || '—'}{r.lost_date ? `（${r.lost_date}）` : ''}</div>}
+                </td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><TagBlocks r={r} /></td>
                 <td style={{ padding: '6px 8px' }} title={fmtT(r)}>≈USD {money(r.usdApprox)}<div className="hint">{fmtT(r)}</div></td>
                 <td style={{ padding: '6px 8px' }}>{r.sales}</td>
@@ -161,13 +164,21 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)', marginLeft: 10 }}>重点项目</span>
               <span className={Number(d.is_key_project) === 1 ? 'tag kp' : 'badge'}>{Number(d.is_key_project) === 1 ? '是' : '否'}</span>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)', marginLeft: 10 }}>状态</span>
-              <StatusTag status={d.status} />
+              <StatusTag status={d.status} big={d.status === 'lost'} />
               <span className="hint">（自动判定：有销售订单即为已成单，标记未成单后为未成单，其余为跟进中）</span>
               {Number(d.is_won) === 1 && <span className="hint">订单号 {d.orderNo || '—'} · 成单日期 {d.won_date || '—'}{cycle != null ? ` · 转化 ${cycle} 天` : ''}</span>}
-              {d.status === 'lost' && <span className="hint" style={{ color: 'var(--danger)' }}>丢单原因：{d.lost_reason || '—'}{d.lost_date ? ` · 丢单日期 ${d.lost_date}` : ''}</span>}
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)', marginLeft: 10 }}>跟进</span>
               <span className="hint">最近跟进 {d.last_followup_at || '—'} · 下次跟进 {d.next_followup_at || '—'}（记录见「询报价跟进」页）</span>
             </div>
+
+            {d.status === 'lost' && (
+              <div className="lostbox">
+                <b>未成单（丢单）</b>
+                <span style={{ marginLeft: 10 }}>丢单原因：<b>{d.lost_reason || '—'}</b></span>
+                {d.lost_date && <span style={{ marginLeft: 10 }}>丢单日期：<b className="mono">{d.lost_date}</b></span>}
+                <div className="hint" style={{ color: '#b91c1c', marginTop: 2 }}>如需重新跟进：在「编辑」中取消未成单标记并保存，之后才能生成销售订单。</div>
+              </div>
+            )}
 
             {/* 询价明细（与录入页一致） */}
             <h4 className="sec-title" style={{ marginTop: 14 }}>询价明细</h4>
@@ -222,7 +233,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
   // 询价报价合计（生成销售订单时自动带出金额与币种，可手改）
   const [quote, setQuote] = useState<{ currency: string; total: number }[]>([])
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
-  const [form, setForm] = useState<{ inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; note: string; blockers: string; actionPlan: string; supportNeeded: string; stars: string; keyCust: boolean; keyProj: boolean; isLost: boolean; lostReason: string; lostDate: string; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
+  const [form, setForm] = useState<{ inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; note: string; blockers: string; actionPlan: string; supportNeeded: string; stars: string; keyCust: boolean; keyProj: boolean; isLost: boolean; lostReason: string; lostDate: string; customReason: boolean; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
   const set = (patch: Partial<typeof form>) => setForm((f) => (f ? { ...f, ...patch } : f))
   useEffect(() => {
     get<Detail>(`/inquiries/${id}`).then((d) => {
@@ -250,11 +261,11 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
     try { await del(`/orders/${order.id}`); onSaved() }
     catch (e) { setOrdErr((e as Error).message) } finally { setOrdBusy(false) }
   }
-  useEffect(() => { get<Detail>(`/inquiries/${id}`).then((d) => setForm({ inquiryNo: d.inquiry_no, customerName: d.customer_name, date: d.date, country: d.country || '', useLoc: d.use_location || '', sales: d.sales, purchaser: d.purchaser, source: d.source, handTotal: d.hand_total == null ? '' : String(d.hand_total), note: d.note || '', stars: d.customer_stars == null ? '' : String(d.customer_stars), blockers: d.blockers || '', actionPlan: d.action_plan || '', supportNeeded: d.support_needed || '', keyCust: Number(d.is_key_customer) === 1, keyProj: Number(d.is_key_project) === 1, isLost: Number(d.is_lost) === 1, lostReason: d.lost_reason || '', lostDate: d.lost_date || new Date().toISOString().slice(0, 10), items: (d.items || []).map((it) => ({ productName: it.product_name, qty: it.qty == null ? '' : String(it.qty), amount: String(it.amount), currency: it.currency })) })).catch((e) => setErr((e as Error).message)) }, [id])
+  useEffect(() => { get<Detail>(`/inquiries/${id}`).then((d) => setForm({ inquiryNo: d.inquiry_no, customerName: d.customer_name, date: d.date, country: d.country || '', useLoc: d.use_location || '', sales: d.sales, purchaser: d.purchaser, source: d.source, handTotal: d.hand_total == null ? '' : String(d.hand_total), note: d.note || '', stars: d.customer_stars == null ? '' : String(d.customer_stars), blockers: d.blockers || '', actionPlan: d.action_plan || '', supportNeeded: d.support_needed || '', keyCust: Number(d.is_key_customer) === 1, keyProj: Number(d.is_key_project) === 1, isLost: Number(d.is_lost) === 1, lostReason: d.lost_reason || '', lostDate: d.lost_date || new Date().toISOString().slice(0, 10), customReason: Boolean(d.lost_reason) && !(meta.lostReasons?.length ? meta.lostReasons : LOST_REASONS).includes(d.lost_reason as string), items: (d.items || []).map((it) => ({ productName: it.product_name, qty: it.qty == null ? '' : String(it.qty), amount: String(it.amount), currency: it.currency })) })).catch((e) => setErr((e as Error).message)) }, [id])
   const save = async () => {
     if (!form) return
     if (!form.items.some((it) => it.productName.trim() && Number(it.amount) > 0)) return setErr('至少一行有效产品')
-    if (form.isLost && !order && !form.lostReason.trim()) return setErr('标记「未成单」必须填写丢单原因')
+    if (form.isLost && !order && !form.lostReason.trim()) return setErr('标记「未成单」必须选择或填写丢单原因')
     setBusy(true); setErr('')
     try {
       await put(`/inquiries/${id}`, {
@@ -330,7 +341,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
             </div>
 
             {/* 跟进状态：自动判定，未成单需填原因 */}
-            <div style={{ marginTop: 14, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
+            <div className={form.isLost && !order ? 'statuswrap-lost' : ''} style={{ marginTop: 14, borderTop: form.isLost && !order ? 'none' : '1px dashed var(--line)', paddingTop: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <span style={{ fontWeight: 700 }}>跟进状态</span>
                 <StatusTag status={order ? 'won' : form.isLost ? 'lost' : 'following'} />
@@ -348,13 +359,31 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
                     </label>
                   </div>
                   {form.isLost && (<>
-                    <div className="col w2" style={{ minWidth: 280 }}>
-                      <label>丢单原因 * <span className="hint">（可选可手填）</span></label>
-                      <input className="sa" list="lost-reasons" style={{ width: '100%' }} value={form.lostReason} onChange={(e) => set({ lostReason: e.target.value })} placeholder="下拉选择或直接输入原因" />
-                      <datalist id="lost-reasons">{(meta.lostReasons?.length ? meta.lostReasons : LOST_REASONS).map((x) => <option key={x} value={x} />)}</datalist>
+                    <div className="col w2" style={{ minWidth: 240 }}>
+                      <label>丢单原因 *</label>
+                      <select
+                        className="sa"
+                        style={{ width: '100%' }}
+                        value={form.customReason ? '__custom__' : form.lostReason}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          if (v === '__custom__') set({ customReason: true, lostReason: '' })
+                          else set({ customReason: false, lostReason: v })
+                        }}
+                      >
+                        <option value="">— 请选择原因 —</option>
+                        {(meta.lostReasons?.length ? meta.lostReasons : LOST_REASONS).map((x) => <option key={x} value={x}>{x}</option>)}
+                        <option value="__custom__">其他（手动输入）</option>
+                      </select>
                     </div>
+                    {form.customReason && (
+                      <div className="col w2" style={{ minWidth: 220 }}>
+                        <label>手动填写原因 *</label>
+                        <input className="sa" style={{ width: '100%' }} value={form.lostReason} onChange={(e) => set({ lostReason: e.target.value })} placeholder="请输入丢单原因" />
+                      </div>
+                    )}
                     <div className="col w1"><label>丢单日期</label><input className="sa" type="date" value={form.lostDate} onChange={(e) => set({ lostDate: e.target.value })} /></div>
-                    <div className="col grow1"><span className="hint">原因必填；选项在「字段与选项设置 → 丢单原因」维护</span></div>
+                    <div className="col grow1"><span className="hint">原因必填；下拉选项在「字段与选项设置 → 丢单原因」维护，特殊原因选「其他」手填</span></div>
                   </>)}
                 </div>
               )}

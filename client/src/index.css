@@ -91,6 +91,16 @@ ul.sugs li:hover, ul.sugs li.on { background: var(--brand-light) }
 .tag.won{background:linear-gradient(135deg,#34d399,#059669);color:#fff;box-shadow:0 1px 4px rgba(5,150,105,.4)}
 .tag.won::before{content:'✔';margin-right:3px;font-size:11px}
 .tag.lost{background:linear-gradient(135deg,#f87171,#dc2626);color:#fff;box-shadow:0 1px 4px rgba(220,38,38,.35)}
+.tag.lost,.tag.won{font-weight:700}
+.tag.big{font-size:13.5px;padding:4px 12px}
+.badge.big{font-size:12.5px;padding:4px 10px}
+/* 未成单：整行淡红 + 左侧红条 + 醒目原因行 */
+tr.row-lost>td{background:#fff5f5}
+tr.row-lost>td:first-child{box-shadow:inset 3px 0 0 #dc2626}
+tr.row-lost:hover>td{background:#ffecec}
+.lost-line{margin-top:2px;font-size:11.5px;color:#b91c1c;font-weight:600;white-space:normal}
+.lostbox{margin-top:10px;background:#fff1f1;border:1px solid #fca5a5;border-left:4px solid #dc2626;border-radius:6px;padding:8px 12px;font-size:13px;color:#b91c1c}
+.statuswrap-lost{background:#fff5f5;border:1px solid #fca5a5;border-left:4px solid #dc2626;border-radius:8px;padding:10px 12px;margin-top:14px}
 .tag.lost::before{content:'✖';margin-right:3px;font-size:11px}
 .chk{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text);cursor:pointer}
 .chk input{cursor:pointer}
