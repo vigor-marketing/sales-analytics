@@ -31,8 +31,8 @@ export default function FollowUps({ meta }: { meta: MetaLite }) {
     setNo(''); setHit(null); setLookErr('')
     if (!sales) { setOptions([]); return }
     setOptLoading(true)
-    get<{ id: string; inquiry_no: string; customer_name: string; date: string }[]>(`/inquiries?sales=${encodeURIComponent(sales)}`)
-      .then((rows) => setOptions(Array.isArray(rows) ? rows : []))
+    get<{ id: string; inquiry_no: string; customer_name: string; date: string }[] | { rows: { id: string; inquiry_no: string; customer_name: string; date: string }[] }>(`/inquiries?sales=${encodeURIComponent(sales)}`)
+      .then((d) => setOptions(Array.isArray(d) ? d : (d?.rows ?? [])))
       .catch(() => setOptions([]))
       .finally(() => setOptLoading(false))
   }, [sales])
