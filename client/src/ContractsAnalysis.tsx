@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get } from './api'
 
 interface Item { product_name: string; amount: number; currency: string; qty: number | null }
@@ -11,6 +11,95 @@ interface Stats { contractCount: number; cycleCount: number; avgCycle: number | 
 interface MetaLite { sales: { name: string; team: string }[] }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Math.round(Number(n)).toLocaleString('zh-CN'))
+/** 坐标轴刻度取整：把最大值向上取到 1/2/5×10^n，让刻度好看 */
+const niceMax = (v: number) => {
+  if (v <= 0) return 1
+  const exp = Math.floor(Math.log10(v))
+  const base = Math.pow(10, exp)
+  const f = v / base
+  const nice = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10
+  return nice * base
+}
+const compact = (v: number) => (v >= 10000 ? `${Math.round(v / 1000)}k` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)))
+
+/** 金额趋势看板：曲线 + 数据点 + 刻度网格 + 悬浮提示（替代大色块柱子） */
+function TrendChart({ data, unitLabel }: { data: { key: string; label: string; usd: number; n: number }[]; unitLabel: string }) {
+  const wrap = useRef<HTMLDivElement>(null)
+  const [w, setW] = useState(760)
+  const [hover, setHover] = useState<number | null>(null)
+  useEffect(() => {
+    const el = wrap.current
+    if (!el) return
+    const ro = new ResizeObserver((entries) => { const cw = entries[0]?.contentRect.width ?? 0; if (cw > 40) setW(cw) })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const H = 230, padL = 58, padR = 18, padT = 26, padB = 36
+  const innerW = Math.max(60, w - padL - padR)
+  const innerH = H - padT - padB
+  const maxRaw = Math.max(...data.map((d) => d.usd), 0)
+  const top = niceMax(maxRaw)
+  const step = data.length > 1 ? innerW / (data.length - 1) : 0
+  const px = (i: number) => padL + (data.length > 1 ? i * step : innerW / 2)
+  const py = (v: number) => padT + innerH - (v / top) * innerH
+  const pts = data.map((d, i) => [px(i), py(d.usd)] as const)
+  const line = pts.map((pt, i) => (i === 0 ? `M${pt[0]},${pt[1]}` : `L${pt[0]},${pt[1]}`)).join(' ')
+  const smooth = pts.reduce((acc, pt, i) => {
+    if (i === 0) return `M${pt[0].toFixed(1)},${pt[1].toFixed(1)}`
+    const prev = pts[i - 1]
+    const cx = (prev[0] + pt[0]) / 2
+    return `${acc} C${cx.toFixed(1)},${prev[1].toFixed(1)} ${cx.toFixed(1)},${pt[1].toFixed(1)} ${pt[0].toFixed(1)},${pt[1].toFixed(1)}`
+  }, '')
+  const area = `${smooth} L${pts[pts.length - 1][0].toFixed(1)},${padT + innerH} L${pts[0][0].toFixed(1)},${padT + innerH} Z`
+  const ticks = [1, 0.75, 0.5, 0.25, 0].map((r) => ({ v: top * r, y: padT + innerH - r * innerH }))
+  const peak = data.reduce((mi, d, i) => (d.usd > data[mi].usd ? i : mi), 0)
+  const total = data.reduce((a, b) => a + b.usd, 0)
+  const showValue = data.length <= 14 && innerW / Math.max(1, data.length) > 46
+  const hv = hover != null ? data[hover] : null
+  return (
+    <div ref={wrap} className="trend-wrap">
+      <svg width={w} height={H} style={{ display: 'block' }} role="img" aria-label={`订单金额趋势（${unitLabel}）`}>
+        <defs>
+          <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#0052d9" stopOpacity="0.16" />
+            <stop offset="100%" stopColor="#0052d9" stopOpacity="0.01" />
+          </linearGradient>
+        </defs>
+        {ticks.map((t) => (
+          <g key={t.y}>
+            <line x1={padL} y1={t.y} x2={padL + innerW} y2={t.y} stroke="#e8ecf3" strokeWidth="1" />
+            <text x={padL - 8} y={t.y + 4} textAnchor="end" fontSize="11" fill="#8a94a6">{compact(t.v)}</text>
+          </g>
+        ))}
+        <path d={area} fill="url(#trendFill)" stroke="none" />
+        <path d={smooth} fill="none" stroke="#0052d9" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+        {pts.map((pt, i) => (
+          <g key={data[i].key}>
+            <circle cx={pt[0]} cy={pt[1]} r={hover === i ? 6 : i === peak && data[i].usd > 0 ? 5 : 4}
+              fill={data[i].usd > 0 ? '#fff' : '#f2f4f8'}
+              stroke={i === peak && data[i].usd > 0 ? '#ef4f0b' : '#0052d9'} strokeWidth={hover === i ? 3 : 2.2} />
+            {showValue && data[i].usd > 0 && (
+              <text x={pt[0]} y={pt[1] - 11} textAnchor="middle" fontSize="11" fontWeight={700} fill={i === peak ? '#ef4f0b' : '#33405a'}>{compact(data[i].usd)}</text>
+            )}
+            <text x={px(i)} y={H - 14} textAnchor="middle" fontSize="11.5" fill={hover === i ? '#0052d9' : '#6b7488'} fontWeight={hover === i ? 700 : 400}>{data[i].label}</text>
+            <rect x={px(i) - (step || innerW) / 2} y={padT} width={step || innerW} height={innerH} fill="transparent"
+              onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} style={{ cursor: 'pointer' }} />
+          </g>
+        ))}
+        {hover != null && <line x1={px(hover)} y1={padT} x2={px(hover)} y2={padT + innerH} stroke="#0052d9" strokeDasharray="3 3" strokeWidth="1" />}
+      </svg>
+      {hv && (
+        <div className="trend-tip" style={{ left: Math.min(Math.max(px(hover!) - 70, 4), Math.max(4, w - 164)) }}>
+          <div style={{ fontWeight: 700 }}>{hv.label}</div>
+          <div>金额 <b>{money(hv.usd)}</b> USD</div>
+          <div>订单 <b>{hv.n}</b> 单 · 占比 <b>{total ? Math.round((hv.usd / total) * 100) : 0}%</b></div>
+          {hv.usd > 0 && <div className="hint">{hv.label === data[peak].label ? '本期最高' : ''}</div>}
+        </div>
+      )}
+      <div className="hint" style={{ marginTop: 2 }}>柱线含义：每个点为一期金额，橙色圈为最高期；鼠标移到点上可看金额与单数</div>
+    </div>
+  )
+}
 const cycleTone = (d: number | null) => (d == null ? 'var(--sub)' : d <= 30 ? '#059669' : d <= 90 ? '#a35c00' : 'var(--danger)')
 
 export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
@@ -61,7 +150,6 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
     })
     return arr
   }, [rows, trendMode, activeYear])
-  const maxTrend = Math.max(1, ...trend.map((t) => t.usd))
   const trendSum = trend.reduce((a, b) => a + b.usd, 0)
   const trendN = trend.reduce((a, b) => a + b.n, 0)
   // 客户 Top10
@@ -114,16 +202,9 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
             : `${activeYear} 年各月（跟随上方筛选）：合计 ≈USD ${money(trendSum)} · ${trendN} 单`}
         </span>
       </div>
-      {trend.length && trendN > 0 ? (
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: trendMode === 'month' ? 4 : 6, height: 170, padding: '0 2px' }}>
-          {trend.map((t) => (
-            <div key={t.key} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }} title={`${t.label}：${money(t.usd)} USD · ${t.n} 单`}>
-              <div style={{ height: `${Math.round((t.usd / maxTrend) * 100)}%`, minHeight: 3, background: t.usd > 0 ? 'linear-gradient(180deg,#4f8cff,#1d4ed8)' : 'transparent', borderRadius: '4px 4px 0 0' }} />
-              <div className="hint" style={{ textAlign: 'center', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden' }}>{t.label}</div>
-            </div>
-          ))}
-        </div>
-      ) : <div className="hint">暂无数据</div>}
+      {trend.length && trendN > 0
+        ? <TrendChart data={trend} unitLabel={trendMode === 'year' ? '按年' : `${activeYear} 年按月`} />
+        : <div className="hint">暂无数据</div>}
 
       {stats && (
         <div className="dash-cols2" style={{ marginTop: 14 }}>
