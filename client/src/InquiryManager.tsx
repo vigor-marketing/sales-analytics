@@ -221,7 +221,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                 <Field label="需要的支持" value={(d as unknown as { support_needed?: string }).support_needed} area fixed />
               </div>
               <div className="grid-1" style={{ marginTop: 10 }}>
-                <Field label="备注" value={d.note} area />
+                <Field label="备注" value={d.note} area fixed />
               </div>
             </div>
 
@@ -430,8 +430,8 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
               <div className="col fixed-h"><label>行动计划</label><textarea className="sa fixed-h" value={form.actionPlan} onChange={(e) => set({ actionPlan: e.target.value })} /></div>
               <div className="col fixed-h"><label>需要的支持</label><textarea className="sa fixed-h" value={form.supportNeeded} onChange={(e) => set({ supportNeeded: e.target.value })} /></div>
             </div>
-            <div className="row" style={{ marginTop: 8 }}>
-              <div className="col grow1"><label>备注</label><textarea className="sa" rows={2} value={form.note} onChange={(e) => set({ note: e.target.value })} /></div>
+            <div className="row fixed-h" style={{ marginTop: 8 }}>
+              <div className="col grow1 fixed-h"><label>备注</label><textarea className="sa fixed-h" value={form.note} onChange={(e) => set({ note: e.target.value })} /></div>
             </div>
             {/* 跟进状态：自动判定，未成单需填原因 */}
             <div className={form.isLost && !order ? 'statuswrap-lost' : ''} style={{ marginTop: 14, borderTop: form.isLost && !order ? 'none' : '1px dashed var(--line)', paddingTop: 10 }}>

@@ -354,7 +354,7 @@ export default function App() {
             <div className="col box-fixed fixed-h"><label>需要的支持</label><textarea className="sa fixed-h" value={supportNeeded} onChange={(e) => setSupportNeeded(e.target.value)} placeholder="如：报价支持 / 技术选型 / 领导出面 / 样品寄送 / 资质文件" /></div>
           </div>
           <div className="grid-1" style={{ marginTop: 10 }}>
-            <div className="col box-fixed"><label>备注</label><textarea className="sa" rows={3} style={{ fieldSizing: 'content' } as React.CSSProperties} value={note} onChange={(e) => setNote(e.target.value)} placeholder="客户要求、交期等补充说明（选填）" /></div>
+            <div className="col box-fixed fixed-h"><label>备注</label><textarea className="sa fixed-h" value={note} onChange={(e) => setNote(e.target.value)} placeholder="客户要求、交期等补充说明（选填）" /></div>
           </div>
         </div>
 

@@ -84,6 +84,7 @@ app.get('/api/products', (req, res) => {
       prev_currency: h ? h.prev_currency : null,
       amount_delta: (prevAmount == null || r.last_amount == null) ? null : Math.round((Number(r.last_amount) - Number(prevAmount)) * 100) / 100,
       change_count: counts.get(k) ?? 0,
+      version: counts.get(k) ?? 0,
     }
   }))
 })
@@ -92,8 +93,10 @@ app.get('/api/products', (req, res) => {
 app.get('/api/products/history', (req, res) => {
   const name = str(req.query.name)
   if (!name) return fail(res, '请提供产品名称')
-  const rows = getDb().prepare('SELECT * FROM product_prices WHERE product_name = ? COLLATE NOCASE ORDER BY created_at DESC, biz_date DESC LIMIT 500').all(name)
-  ok(res, rows)
+  const rows = getDb().prepare('SELECT * FROM product_prices WHERE product_name = ? COLLATE NOCASE ORDER BY created_at ASC, biz_date ASC LIMIT 500').all(name) as Record<string, unknown>[]
+  // 按时间顺序编版本号：V1 首次录入，之后每次变动 +1
+  const versioned = rows.map((r, i) => ({ ...r, version: i + 1, is_latest: i === rows.length - 1 }))
+  ok(res, versioned.reverse())
 })
 app.post('/api/products', (req, res) => {
   const name = str(req.body?.name)
@@ -344,7 +347,7 @@ app.post('/api/inquiries', (req, res) => {
       .run(iid, no, date, customerId, country || customerCountry || null, useLocation || country, sales, purchaser, source, handTotal, note, keyCust, keyProj, isWon, blockers, actionPlan, supportNeeded, customerStars, t, t)
     const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
     cleanItems.forEach((it) => ins.run(newId(), iid, it.productName, it.qty, it.amount, it.currency, it.sort))
-    upsertProducts(cleanItems, date, t, { inquiryId: iid, inquiryNo: no, customerName: text(customer.name), sales })
+    upsertProducts(cleanItems, date, t, { inquiryId: iid, inquiryNo: no, customerName: text(customer.name), sales, source: '询报价录入' })
   })()
   ok(res, { id: iid, inquiryNo: no, customerId: customerId, createdCustomer, team: teamName || null }, 201)
 })
@@ -704,7 +707,7 @@ app.put('/api/inquiries/:id', (req, res) => {
       const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
       clean.forEach((it) => ins.run(newId(), req.params.id, it.productName, it.qty, it.amount, it.currency, it.sort))
       const custForName = text(old.customer_id) ? d.prepare('SELECT name FROM customers WHERE id = ?').get(text(old.customer_id)) as { name: string } | undefined : undefined
-      upsertProducts(clean, date, t, { inquiryId: req.params.id, inquiryNo: str(old.inquiry_no), customerName: custForName?.name, sales })
+      upsertProducts(clean, date, t, { inquiryId: req.params.id, inquiryNo: str(old.inquiry_no), customerName: custForName?.name, sales, source: '询报价管理·编辑' })
     }
     // 客户档案同步：星级/国别/使用地/来源在询报价里改动后要跟着更新
     const custId = text(old.customer_id)
