@@ -264,15 +264,14 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                     <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}><span className="badge">{r.method || '—'}</span></td>
                     {/* 简述与详情合并在一列：简述加粗一行、详情紧随其后；右侧「查看详情」按钮打开完整记录 */}
                     <td style={{ padding: '7px 8px' }} title={[r.summary, detail].filter(Boolean).join(' ｜ ') || '—'}>
-                      <span style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                        <span style={{ flex: '1 1 auto', minWidth: 0 }}>
-                          {r.summary && <div style={{ fontWeight: 600 }}>{r.summary}</div>}
-                          {detail && <div style={{ marginTop: r.summary ? 3 : 0, whiteSpace: 'pre-wrap' }}>{detail}</div>}
-                          {!r.summary && !detail && <span className="hint">—</span>}
-                        </span>
-                        <button className="btn xs" style={{ flex: '0 0 auto' }} title="查看该询价的全部跟进详情（含简述、详情、图片、附件、跟进指导）"
+                      <div>
+                        {r.summary && <div style={{ fontWeight: 600 }}>{r.summary}</div>}
+                        {detail && <div style={{ marginTop: r.summary ? 3 : 0, whiteSpace: 'pre-wrap' }}>{detail}</div>}
+                        {!r.summary && !detail && <span className="hint">—</span>}
+                        {/* 「查看详情」放在简述/详情下面 */}
+                        <button className="btn xs" style={{ marginTop: 6 }} title="查看该询价的全部跟进详情（含简述、详情、图片、附件、跟进指导）"
                           onClick={(e) => { e.stopPropagation(); setDetailOf({ id: r.inquiry_id, no: r.inquiry_no, customer: r.customer_name }) }}>查看详情</button>
-                      </span>
+                      </div>
                     </td>
                     <td style={{ padding: '7px 8px' }}>
                       {(() => {
