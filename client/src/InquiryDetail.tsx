@@ -224,7 +224,11 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
               </div>
               {fus.length > 0 ? (
                 <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 8 }}>
-                  <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                  <table className="grid fit-table" style={{ borderCollapse: 'collapse', fontSize: 12.5 }}>
+                    <colgroup>
+                      <col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} /><col style={{ width: '11%' }} /><col style={{ width: '18%' }} /><col style={{ width: '6%' }} />
+                      <col style={{ width: '8%' }} /><col style={{ width: '15%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '8%' }} />
+                    </colgroup>
                     <thead><tr>{['跟进日期', '第几次跟进', '方式', '简述', '具体内容', '图片', '附件', '跟进指导', '下次跟进', '跟进人', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
                     <tbody>
                       {fus.map((f) => (
@@ -235,8 +239,8 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                             {f.seq_total && f.seq_total > 1 ? <span className="hint" style={{ marginLeft: 4 }}>/ 共 {f.seq_total}</span> : null}
                           </td>
                           <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.method || '—'}</td>
-                          <td style={{ padding: '6px 8px', minWidth: 150 }}>{f.summary || '—'}</td>
-                          <td style={{ padding: '6px 8px', minWidth: 220, whiteSpace: 'pre-wrap' }}>{f.detail || '—'}</td>
+                          <td style={{ padding: '6px 8px' }}>{f.summary || '—'}</td>
+                          <td style={{ padding: '6px 8px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{f.detail || '—'}</td>
                           <td style={{ padding: '6px 8px' }}>
                             {(f.photos || []).length === 0 ? '—' : (
                               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -254,7 +258,7 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                             ))}
                           </td>
                           {/* 跟进指导：此处只读查看，醒目标注；新增/追加在「询报价跟进」页 */}
-                          <td style={{ padding: '6px 8px', minWidth: 200 }}><GuidanceNote comments={f.comments} /></td>
+                          <td style={{ padding: '6px 8px' }}><GuidanceNote compact comments={f.comments} /></td>
                           <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.next_followup_at || '—'}</td>
                           <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.by_name || '—'}</td>
                           <td className="mono hint" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{String(f.created_at || '').slice(0, 16).replace('T', ' ')}</td>

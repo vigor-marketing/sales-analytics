@@ -35,10 +35,10 @@ export default function PriceHistoryModal({ name, info, onClose }: {
         </div>
         {err && <div className="msg err">{err}</div>}
         <div className="tablewrap" style={{ marginTop: 10, maxHeight: '56vh' }}>
-          <table className="grid data-table fixed-table" style={{ fontSize: 12.5, minWidth: 1090 }}>
+          <table className="grid data-table fixed-table fit-table" style={{ fontSize: 12.5 }}>
             <colgroup>
-              <col style={{ width: 95 }} /><col style={{ width: 130 }} /><col style={{ width: 105 }} /><col style={{ width: 240 }} /><col style={{ width: 115 }} />
-              <col style={{ width: 95 }} /><col style={{ width: 110 }} /><col style={{ width: 130 }} /><col style={{ width: 90 }} />
+              <col style={{ width: '8%' }} /><col style={{ width: '12%' }} /><col style={{ width: '9%' }} /><col style={{ width: '22%' }} /><col style={{ width: '10%' }} />
+              <col style={{ width: '9%' }} /><col style={{ width: '10%' }} /><col style={{ width: '12%' }} /><col style={{ width: '8%' }} />
             </colgroup>
             <thead><tr>{['版本', '记录时间', '业务日期', '金额变化', '数量变化', '来源', '询价号', '客户', '销售'].map((h) => <th key={h} style={{ textAlign: h === '版本' ? 'center' : 'left' }}>{h}</th>)}</tr></thead>
             <tbody>

@@ -80,7 +80,7 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
       {msg && <div className="msg err">{msg}</div>}
 
       <div className="tablewrap">
-        <table className="grid data-table fixed-table" style={{ fontSize: 12.5, minWidth: 1560 }}>
+        <table className="grid data-table fixed-table fit-table" style={{ fontSize: 12.5 }}>
           <colgroup>
             <col style={{ width: '9%' }} /><col style={{ width: '8%' }} /><col style={{ width: '7%' }} /><col style={{ width: '14%' }} /><col style={{ width: '9%' }} />
             <col style={{ width: '5%' }} /><col style={{ width: '7%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '4%' }} />
@@ -240,7 +240,7 @@ function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
                         <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.date}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.method || '—'}</td>
                         <td style={{ padding: '6px 8px' }}>{f.summary || '—'}</td>
-                        <td style={{ padding: '6px 8px', minWidth: 260, whiteSpace: 'pre-wrap' }}>{f.detail || '—'}</td>
+                        <td style={{ padding: '6px 8px', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{f.detail || '—'}</td>
                         <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.next_followup_at ? String(f.next_followup_at).replace('T', ' ') : '—'}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.by_name || '—'}</td>
                       </tr>

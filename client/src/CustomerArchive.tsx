@@ -41,10 +41,10 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
       {msg && <div className="msg err">{msg}</div>}
       <div className="hint" style={{ margin: '8px 0' }}>共 {rows.length} 个客户 · 询价 {totals.n} 条 · 累计折USD ≈ {money(totals.usd)}</div>
       <div className="tablewrap">
-        <table className="grid data-table fixed-table" style={{ fontSize: 12.5, minWidth: 1220 }}>
+        <table className="grid data-table fixed-table fit-table" style={{ fontSize: 12.5 }}>
           <colgroup>
-            <col style={{ width: 210 }} /><col style={{ width: 90 }} /><col style={{ width: 90 }} /><col style={{ width: 130 }} /><col style={{ width: 80 }} />
-            <col style={{ width: 90 }} /><col style={{ width: 90 }} /><col style={{ width: 140 }} /><col style={{ width: 90 }} /><col style={{ width: 100 }} />
+            <col style={{ width: '19%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '12%' }} /><col style={{ width: '7%' }} />
+            <col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '8%' }} /><col style={{ width: '9%' }} />
           </colgroup>
           <thead><tr>{['客户名称', '国别', '星级', '是否重点客户', '询价数', '已成单', '未成单', '累计金额(USD)', '成交率', '操作'].map((h) => <th key={h} title={h === '是否重点客户' ? '客户级别标签；每条询价是否为重点询价、是否成交，请点「查看」' : undefined}>{h}</th>)}</tr></thead>
           <tbody>
@@ -102,10 +102,10 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
             </div>
             {/* 询价列表：窄窗口时在弹窗内横向滚动，列宽始终够用（不再截断） */}
             <div className="tablewrap" style={{ maxHeight: '52vh' }}>
-            <table className="grid data-table fixed-table" style={{ fontSize: 12.5, minWidth: 1310 }}>
+            <table className="grid data-table fixed-table fit-table" style={{ fontSize: 12.5 }}>
               <colgroup>
-                <col style={{ width: 135 }} /><col style={{ width: 100 }} /><col style={{ width: 90 }} /><col style={{ width: 90 }} /><col style={{ width: 90 }} />
-                <col style={{ width: 100 }} /><col style={{ width: 210 }} /><col style={{ width: 120 }} /><col style={{ width: 70 }} /><col style={{ width: 200 }} /><col style={{ width: 100 }} />
+                <col style={{ width: '10%' }} /><col style={{ width: '8%' }} /><col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '7%' }} />
+                <col style={{ width: '8%' }} /><col style={{ width: '16%' }} /><col style={{ width: '9%' }} /><col style={{ width: '5%' }} /><col style={{ width: '16%' }} /><col style={{ width: '7%' }} />
               </colgroup>
               <thead><tr>{['询价号', '日期', '销售', '采购', '来源', '是否成交', '丢单原因', '是否重点询价', '行数', '报价合计', '折USD'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
               <tbody>

@@ -86,7 +86,12 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
         <button className="btn" onClick={() => { setQ(''); setRange(''); setSales(''); setPur(''); setSrc(''); setSt(''); void load() }}>重置</button>
       </div>
       <div className="tablewrap" style={{ overflowX: 'auto' }}>
-        <table className="grid" style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12.5 }}>
+        {/* 自适应列宽：表格永远不超过屏幕宽度（长内容在单元格内换行/省略，悬停看全文） */}
+        <table className="grid fit-table" style={{ borderCollapse: 'collapse', fontSize: 12.5 }}>
+          <colgroup>
+            <col style={{ width: '11%' }} /><col style={{ width: '7%' }} /><col style={{ width: '11%' }} /><col style={{ width: '13%' }} /><col style={{ width: '9%' }} />
+            <col style={{ width: '12%' }} /><col style={{ width: '6%' }} /><col style={{ width: '6%' }} /><col style={{ width: '7%' }} /><col style={{ width: '18%' }} />
+          </colgroup>
           <thead><tr>{['询价号', '日期', '客户', '状态', '标签', '报价合计（含费用）', '销售', '采购', '来源', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: h === '来源' ? 'center' : 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '报价合计（含费用）' ? '产品明细合计 ＋ 运费/税费/佣金/其他费用' : undefined}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (

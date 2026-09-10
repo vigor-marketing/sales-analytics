@@ -187,6 +187,14 @@ tr.row-click:hover>td{background:#eef5ff !important}
 /* 统一尺寸的表格：单行截断 + 名称列限宽，行高一致、列宽规整（不再长长短短） */
 .fixed-table{table-layout:fixed}
 .fixed-table th,.fixed-table td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;height:32px;padding:0 10px}
+/* ===== 表格宽度自适应屏幕：固定列宽按百分比分配，长内容换行/省略，绝不超出容器宽度 ===== */
+table.fit-table { table-layout: fixed; width: 100%; max-width: 100% }
+table.fit-table > thead > tr > th, table.fit-table > tbody > tr > td { overflow-wrap: anywhere; word-break: break-word }
+table.fit-table.fixed-table > tbody > tr > td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+/* 非固定行高的自适应表（跟进记录）：长内容换行显示，不撑破容器 */
+table.fit-table:not(.fixed-table) > tbody > tr > td { white-space: normal }
+.tablewrap { max-width: 100% }
+
 /* ===== 全部表格内容居中（表头 + 单元格，含徽标/按钮/金额，覆盖行内左右对齐设置） ===== */
 table.grid > thead > tr > th, table.grid > tbody > tr > td { text-align: center !important }
 table.grid > tbody > tr > td > .badge, table.grid > tbody > tr > td > .tag, table.grid > tbody > tr > td > .btn { margin-left: 3px; margin-right: 3px }

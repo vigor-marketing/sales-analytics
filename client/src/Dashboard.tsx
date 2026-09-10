@@ -113,10 +113,10 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
         <div className="hint" style={{ marginTop: 6 }}>{cur.note}</div>
 
         <div className="tablewrap" style={{ marginTop: 8 }}>
-          <table className="grid data-table fixed-table rem-table rem-data-table" style={{ width: '100%', minWidth: 1180, borderCollapse: 'collapse', fontSize: 12.5 }}>
+          <table className="grid data-table fixed-table fit-table rem-table rem-data-table" style={{ fontSize: 12.5 }}>
             <colgroup>
               <col style={{ width: '8%' }} /><col style={{ width: '9%' }} /><col style={{ width: '10%' }} /><col style={{ width: '6%' }} /><col style={{ width: '6%' }} />
-              <col style={{ width: 105 }} /><col style={{ width: 145 }} /><col style={{ width: '7%' }} /><col style={{ width: '16%' }} /><col style={{ width: 132 }} />
+              <col style={{ width: '9%' }} /><col style={{ width: '12%' }} /><col style={{ width: '7%' }} /><col style={{ width: '20%' }} /><col style={{ width: '13%' }} />
             </colgroup>
             <thead><tr>
               <th style={{ textAlign: 'left' }}>类型</th><th style={{ textAlign: 'left' }}>询价号</th><th style={{ textAlign: 'left' }}>客户</th>
