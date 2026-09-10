@@ -98,19 +98,31 @@ export default function FollowupRecordModal({ record, editable, create, onClose,
           </>
         )}
 
-        {!create && ((record.photos || []).length > 0 || (record.attachments || []).length > 0) ? (
-          <div style={{ marginTop: 8 }}>
-            <label>图片 / 附件（不可在弹窗内修改）</label>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
-              {(record.photos || []).map((u) => (
-                <a key={u} href={u} target="_blank" rel="noreferrer" title="查看原图"><img src={u} alt="跟进图片" style={{ height: 34, width: 46, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line)' }} /></a>
-              ))}
-              {(record.attachments || []).map((a) => (
-                <a key={a.url} className="filelink" href={a.url} target="_blank" rel="noreferrer" title={a.name}>📎 {a.name}{a.size != null ? `（${money(Math.round(a.size / 1024))}KB）` : ''}</a>
-              ))}
-            </div>
+        {!create && (
+          <div style={{ marginTop: 10 }}>
+            <label>
+              图片与附件
+              {((record.photos || []).length + (record.attachments || []).length) > 0
+                ? `（${(record.photos || []).length} 张图片 · ${(record.attachments || []).length} 个附件 · 点击可查看/打开）`
+                : ''}
+            </label>
+            {((record.photos || []).length + (record.attachments || []).length) > 0 ? (
+              <div className="fu-files">
+                {(record.photos || []).map((u, i) => (
+                  <a key={u} className="fu-photo" href={u} target="_blank" rel="noreferrer" title="点击查看原图">
+                    <img src={u} alt={`跟进图片 ${i + 1}`} />
+                    <span className="hint">查看原图</span>
+                  </a>
+                ))}
+                {(record.attachments || []).map((a) => (
+                  <a key={a.url} className="filelink" href={a.url} target="_blank" rel="noreferrer" title={`打开/下载 ${a.name}`}>
+                    📎 {a.name}{a.size != null ? `（${money(Math.round(a.size / 1024))}KB）` : ''}
+                  </a>
+                ))}
+              </div>
+            ) : <div className="hint" style={{ marginTop: 4 }}>该条跟进没有上传图片或附件</div>}
           </div>
-        ) : null}
+        )}
 
         {!create && <div style={{ marginTop: 10 }}>
           <label>跟进指导（{(record.comments ?? []).length} 条 · 只读）</label>

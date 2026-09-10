@@ -229,6 +229,11 @@ tr.fu-child-latest > td:first-child { box-shadow: inset 3px 0 0 var(--brand) }
 .fu-files{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px}
 .fu-thumb{height:54px;width:auto;max-width:120px;object-fit:cover;border-radius:4px;border:1px solid var(--line);display:block}
 
+/* 跟进记录弹窗里的图片预览（大图 + 可点开原图） */
+.fu-photo{display:inline-flex;flex-direction:column;align-items:center;gap:3px;text-decoration:none}
+.fu-photo img{height:96px;width:auto;max-width:200px;object-fit:cover;border-radius:6px;border:1px solid var(--line);display:block;background:#fff}
+.fu-photo:hover img{border-color:var(--brand)}
+
 /* 跟进记录编辑/查看弹窗 */
 .fu-modal{width:760px;max-width:96vw}
 .fu-modal .fu-input{width:100%;height:120px;min-height:120px;max-height:120px;resize:none;overflow:auto}
