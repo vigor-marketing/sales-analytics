@@ -51,6 +51,10 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   const [options, setOptions] = useState<{ id: string; inquiry_no: string; customer_name: string; date: string }[]>([])
   const [optLoading, setOptLoading] = useState(false)
   const [busy, setBusy] = useState(false)
+  // 详情里默认只「查看多条跟进」；点击任意一条（或点「＋ 新建跟进」）才展开建立跟进表单
+  const [formOpen, setFormOpen] = useState(false)
+  const formRef = useRef<HTMLDivElement | null>(null)
+  const sumRef = useRef<HTMLInputElement | null>(null)
 
   // 详情打开状态上报（用于页面右上角显示「返回询报价跟进」）
   useEffect(() => { onDetailChange?.(Boolean(hit)) }, [hit, onDetailChange])
@@ -90,6 +94,14 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
     catch (e) { setLookErr((e as Error).message) }
   }, [sales, no])
   useEffect(() => { const t = setTimeout(() => { void lookup() }, 400); return () => clearTimeout(t) }, [lookup])
+  // 切换合同（询价）时收起表单，先看该合同的全部跟进
+  useEffect(() => { setFormOpen(false) }, [hit?.id])
+  // 点击某条跟进 → 展开建立跟进表单（沿用该条的跟进方式/跟进人），不跳回页面顶部
+  const openFormFrom = (r: Fu) => {
+    setF((prev) => ({ ...prev, date: today(), method: r.method || prev.method, byName: r.by_name || r.sales || prev.byName, summary: '', detail: '', nextFollowupAt: '' }))
+    setFormOpen(true)
+    setTimeout(() => { formRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }); sumRef.current?.focus() }, 60)
+  }
 
   const loadList = useCallback(async () => {
     try { setList(await get<Fu[]>(`/followups?sales=${encodeURIComponent(sales)}${hit ? `&inquiryId=${encodeURIComponent(hit.id)}` : ''}`)) }
@@ -187,91 +199,6 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
         </div>
       )}
 
-      {hit && (
-        <div style={{ marginTop: 12, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>建立跟进</div>
-          <div className="row">
-            <div className="col w1"><label>跟进日期 *</label><input className="sa" type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
-            <div className="col w2"><label>跟进方式 *</label>
-              <select className="sa" style={{ width: 180 }} value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>
-                {methods.map((m) => <option key={m}>{m}</option>)}
-              </select>
-            </div>
-            <div className="col w2"><label>下次跟进时间</label><input className="sa" type="datetime-local" value={f.nextFollowupAt} onChange={(e) => setF({ ...f, nextFollowupAt: e.target.value })} /></div>
-            <div className="col w2"><label>跟进人</label>
-              <select className="sa" style={{ width: 180 }} value={f.byName || sales} onChange={(e) => setF({ ...f, byName: e.target.value })}>
-                {meta.sales.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="row">
-            <div className="col grow1"><label>跟进简述</label><input className="sa" style={{ width: '100%' }} value={f.summary} onChange={(e) => setF({ ...f, summary: e.target.value })} placeholder="一句话概括本次跟进（如：确认技术规格并催 PO）" /></div>
-          </div>
-          <div className="col box-fixed" style={{ maxWidth: 860 }}><label>具体跟进内容</label><textarea className="sa" rows={4} value={f.detail} onChange={(e) => setF({ ...f, detail: e.target.value })} placeholder="详细沟通内容、客户反馈、异议与应对、下一步计划…" /></div>
-
-          <div className="row" style={{ marginTop: 8, alignItems: 'flex-start' }}>
-            <div className="col" style={{ flex: 1, minWidth: 280 }}>
-              <label>图片/照片 {photos.length > 0 && <span className="badge new">{photos.length}</span>}</label>
-              <input ref={photoInput} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => { void upload(e.target.files, 'photo'); e.target.value = '' }} />
-              <div
-                className={'dropzone' + (dragP ? ' on' : '') + (uploading ? ' uploading' : '')}
-                onClick={() => { if (!uploading) photoInput.current?.click() }}
-                onDragOver={(e) => { e.preventDefault(); setDragP(true) }}
-                onDragLeave={() => setDragP(false)}
-                onDrop={(e) => { e.preventDefault(); setDragP(false); if (!uploading) void upload(e.dataTransfer.files, 'photo') }}
-                title="点击选择，或把图片拖进来（可多选，单张≤8MB）"
-              >
-                <span style={{ fontSize: 16, lineHeight: 1 }}>🖼</span>
-                <span>{uploading ? '上传中…' : '点击或拖拽图片到此处'}</span>
-                <span className="hint" style={{ fontSize: 11 }}>支持多张 · 单张 ≤ 8MB</span>
-              </div>
-              {photos.length > 0 && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-                  {photos.map((p) => (
-                    <span key={p} className="thumb" title="点击查看原图">
-                      <a href={p} target="_blank" rel="noreferrer"><img src={p} alt="照片" /></a>
-                      <button className="del" title="移除这张图片" onClick={() => setPhotos((a) => a.filter((x) => x !== p))}>×</button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="col" style={{ flex: 1, minWidth: 280 }}>
-              <label>附件 {files.length > 0 && <span className="badge new">{files.length}</span>}</label>
-              <input ref={fileInput} type="file" multiple style={{ display: 'none' }} onChange={(e) => { void upload(e.target.files, 'file'); e.target.value = '' }} />
-              <div
-                className={'dropzone' + (dragF ? ' on' : '') + (uploading ? ' uploading' : '')}
-                onClick={() => { if (!uploading) fileInput.current?.click() }}
-                onDragOver={(e) => { e.preventDefault(); setDragF(true) }}
-                onDragLeave={() => setDragF(false)}
-                onDrop={(e) => { e.preventDefault(); setDragF(false); if (!uploading) void upload(e.dataTransfer.files, 'file') }}
-                title="点击选择，或把文件拖进来（可多选，单个≤8MB）"
-              >
-                <span style={{ fontSize: 16, lineHeight: 1 }}>📎</span>
-                <span>{uploading ? '上传中…' : '点击或拖拽文件到此处'}</span>
-                <span className="hint" style={{ fontSize: 11 }}>支持多选 · 单个 ≤ 8MB</span>
-              </div>
-              {files.length > 0 && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-                  {files.map((x) => (
-                    <span key={x.url} className="filechip" title={x.name}>
-                      <a className="mono" href={x.url} target="_blank" rel="noreferrer">{x.name}</a>
-                      {x.size != null && <span className="hint" style={{ fontSize: 11 }}>{(x.size / 1024).toFixed(0)}KB</span>}
-                      <button className="del" title="移除该附件" onClick={() => setFiles((a) => a.filter((y) => y.url !== x.url))}>×</button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="actions" style={{ marginTop: 10 }}>
-            <button className="btn pri" disabled={busy || uploading} onClick={() => void submit()}>建立跟进{busy ? '…' : ''}</button>
-            {uploading && <span className="hint">文件上传中…</span>}
-          </div>
-        </div>
-      )}
-
       {commentOf && (
         // 未进入详情时可新增；已进入跟进详情则只读
         <GuidanceModal record={commentOf} people={meta.sales.map((x) => x.name)} readOnly={Boolean(hit)}
@@ -279,7 +206,12 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
       )}
 
       <div style={{ marginTop: 14 }}>
-        <div style={{ fontWeight: 700, marginBottom: 6 }}>跟进记录{hit ? `（本询价 ${list.length} 条）` : sales ? `（${sales} 名下 ${list.length} 条）` : ''}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+          <span style={{ fontWeight: 700 }}>跟进记录{hit ? `（本询价 ${list.length} 条）` : sales ? `（${sales} 名下 ${list.length} 条）` : ''}</span>
+          {hit && <span className="hint">{list.length > 1 ? '点击下面任意一条跟进即可新建跟进' : '点击该条跟进即可新建跟进'}</span>}
+          {hit && <span style={{ flex: 1 }} />}
+          {hit && !formOpen && <button className="btn sm pri" onClick={() => { setFormOpen(true); setTimeout(() => { formRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }); sumRef.current?.focus() }, 60) }}>＋ 新建跟进</button>}
+        </div>
         <div className="tablewrap" style={{ overflowX: 'auto' }}>
           <table className="grid follow-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
             <thead><tr>{['跟进日期', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
@@ -293,11 +225,13 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                 return (
                   <tr key={r.id} className="row-click" title="点击进入该询价的跟进" style={{ borderBottom: '1px solid var(--line2)' }}
                     onClick={(e) => {
-                      // 行内按钮（查看/追加指导）不触发进入跟进
+                      // 行内按钮（查看/追加指导）不触发行点击
                       if ((e.target as HTMLElement).closest('button,a,input,select,textarea')) return
+                      // 已在某个合同的跟进详情里：点击任意一条 → 进入新建跟进表单
+                      if (hit) { openFormFrom(r); return }
+                      // 列表里：先进入该合同（查看它的多条跟进）
                       keepNoRef.current = true
                       setSales(r.sales); setNo(r.inquiry_no)
-                      window.scrollTo({ top: 0, behavior: 'smooth' })
                     }}>
                     <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.date}</td>
                     <td style={{ padding: '7px 8px' }}>
@@ -368,6 +302,96 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
           </table>
         </div>
       </div>
+
+      {hit && formOpen && (
+        <div ref={formRef} style={{ marginTop: 12, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <span style={{ fontWeight: 700 }}>建立跟进</span>
+            <span className="hint">询价 {hit.inquiry_no} · 新建一条跟进记录</span>
+            <span style={{ flex: 1 }} />
+            <button className="btn sm" onClick={() => setFormOpen(false)}>收起表单</button>
+          </div>
+          <div className="row">
+            <div className="col w1"><label>跟进日期 *</label><input className="sa" type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
+            <div className="col w2"><label>跟进方式 *</label>
+              <select className="sa" style={{ width: 180 }} value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>
+                {methods.map((m) => <option key={m}>{m}</option>)}
+              </select>
+            </div>
+            <div className="col w2"><label>下次跟进时间</label><input className="sa" type="datetime-local" value={f.nextFollowupAt} onChange={(e) => setF({ ...f, nextFollowupAt: e.target.value })} /></div>
+            <div className="col w2"><label>跟进人</label>
+              <select className="sa" style={{ width: 180 }} value={f.byName || sales} onChange={(e) => setF({ ...f, byName: e.target.value })}>
+                {meta.sales.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="row">
+            <div className="col grow1"><label>跟进简述</label><input ref={sumRef} className="sa" style={{ width: '100%' }} value={f.summary} onChange={(e) => setF({ ...f, summary: e.target.value })} placeholder="一句话概括本次跟进（如：确认技术规格并催 PO）" /></div>
+          </div>
+          <div className="col box-fixed" style={{ maxWidth: 860 }}><label>具体跟进内容</label><textarea className="sa" rows={4} value={f.detail} onChange={(e) => setF({ ...f, detail: e.target.value })} placeholder="详细沟通内容、客户反馈、异议与应对、下一步计划…" /></div>
+
+          <div className="row" style={{ marginTop: 8, alignItems: 'flex-start' }}>
+            <div className="col" style={{ flex: 1, minWidth: 280 }}>
+              <label>图片/照片 {photos.length > 0 && <span className="badge new">{photos.length}</span>}</label>
+              <input ref={photoInput} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => { void upload(e.target.files, 'photo'); e.target.value = '' }} />
+              <div
+                className={'dropzone' + (dragP ? ' on' : '') + (uploading ? ' uploading' : '')}
+                onClick={() => { if (!uploading) photoInput.current?.click() }}
+                onDragOver={(e) => { e.preventDefault(); setDragP(true) }}
+                onDragLeave={() => setDragP(false)}
+                onDrop={(e) => { e.preventDefault(); setDragP(false); if (!uploading) void upload(e.dataTransfer.files, 'photo') }}
+                title="点击选择，或把图片拖进来（可多选，单张≤8MB）"
+              >
+                <span style={{ fontSize: 16, lineHeight: 1 }}>🖼</span>
+                <span>{uploading ? '上传中…' : '点击或拖拽图片到此处'}</span>
+                <span className="hint" style={{ fontSize: 11 }}>支持多张 · 单张 ≤ 8MB</span>
+              </div>
+              {photos.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                  {photos.map((p) => (
+                    <span key={p} className="thumb" title="点击查看原图">
+                      <a href={p} target="_blank" rel="noreferrer"><img src={p} alt="照片" /></a>
+                      <button className="del" title="移除这张图片" onClick={() => setPhotos((a) => a.filter((x) => x !== p))}>×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="col" style={{ flex: 1, minWidth: 280 }}>
+              <label>附件 {files.length > 0 && <span className="badge new">{files.length}</span>}</label>
+              <input ref={fileInput} type="file" multiple style={{ display: 'none' }} onChange={(e) => { void upload(e.target.files, 'file'); e.target.value = '' }} />
+              <div
+                className={'dropzone' + (dragF ? ' on' : '') + (uploading ? ' uploading' : '')}
+                onClick={() => { if (!uploading) fileInput.current?.click() }}
+                onDragOver={(e) => { e.preventDefault(); setDragF(true) }}
+                onDragLeave={() => setDragF(false)}
+                onDrop={(e) => { e.preventDefault(); setDragF(false); if (!uploading) void upload(e.dataTransfer.files, 'file') }}
+                title="点击选择，或把文件拖进来（可多选，单个≤8MB）"
+              >
+                <span style={{ fontSize: 16, lineHeight: 1 }}>📎</span>
+                <span>{uploading ? '上传中…' : '点击或拖拽文件到此处'}</span>
+                <span className="hint" style={{ fontSize: 11 }}>支持多选 · 单个 ≤ 8MB</span>
+              </div>
+              {files.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                  {files.map((x) => (
+                    <span key={x.url} className="filechip" title={x.name}>
+                      <a className="mono" href={x.url} target="_blank" rel="noreferrer">{x.name}</a>
+                      {x.size != null && <span className="hint" style={{ fontSize: 11 }}>{(x.size / 1024).toFixed(0)}KB</span>}
+                      <button className="del" title="移除该附件" onClick={() => setFiles((a) => a.filter((y) => y.url !== x.url))}>×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="actions" style={{ marginTop: 10 }}>
+            <button className="btn pri" disabled={busy || uploading} onClick={() => void submit()}>建立跟进{busy ? '…' : ''}</button>
+            {uploading && <span className="hint">文件上传中…</span>}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
