@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { get, put } from './api'
 import ReasonPicker from './ReasonPicker'
 import { KeyTags } from './KeyTags'
+import { RANGE_LABEL, rangeDates, type RangeKey } from './dateRange'
 
 interface Item { product_name: string; qty: number | null; amount: number; currency: string }
 interface OrderRow {
@@ -15,23 +16,34 @@ interface OrderRow {
   customer_name: string; hand_total: number | null; usdApprox: number; totals: { currency: string; total: number }[]
   productNames: string; itemCount: number; items: Item[]; cycleDays: number | null
 }
-interface MetaLite { sales: { name: string; team: string }[]; winReasons?: string[]; lostReasons?: string[] }
+interface MetaLite { sales: { name: string; team: string }[]; purchasers?: string[]; sources?: string[]; winReasons?: string[]; lostReasons?: string[] }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Math.round(Number(n)).toLocaleString('zh-CN'))
 const cycleTone = (d: number | null) => (d == null ? 'var(--sub)' : d <= 30 ? '#059669' : d <= 90 ? '#a35c00' : 'var(--danger)')
 
 export default function Contracts({ meta }: { meta: MetaLite }) {
-  const [q, setQ] = useState(''); const [sales, setSales] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [product, setProduct] = useState('')
+  const [orderNo, setOrderNo] = useState(''); const [customer, setCustomer] = useState(''); const [sales, setSales] = useState('')
+  const [purchaser, setPurchaser] = useState(''); const [source, setSource] = useState(''); const [product, setProduct] = useState('')
+  const [range, setRange] = useState<RangeKey>('')
+  const [customers, setCustomers] = useState<{ id: string; name: string }[]>([])
+  const [products, setProducts] = useState<{ id: string; name: string }[]>([])
+  useEffect(() => {
+    get<{ id: string; name: string }[]>('/customers').then((l) => setCustomers(Array.isArray(l) ? l : [])).catch(() => { /* */ })
+    get<{ id: string; name: string }[]>('/products').then((l) => setProducts(Array.isArray(l) ? l : [])).catch(() => { /* */ })
+  }, [])
   const [rows, setRows] = useState<OrderRow[]>([])
   const [msg, setMsg] = useState(''); const [viewId, setViewId] = useState<string | null>(null); const [editId, setEditId] = useState<string | null>(null)
   const load = useCallback(async () => {
     try {
       const p = new URLSearchParams()
-      if (q) p.set('q', q); if (sales) p.set('sales', sales); if (from) p.set('from', from); if (to) p.set('to', to); if (product) p.set('product', product)
+      const { from, to } = rangeDates(range)
+      if (orderNo) p.set('orderNo', orderNo); if (customer) p.set('customer', customer); if (sales) p.set('sales', sales)
+      if (purchaser) p.set('purchaser', purchaser); if (source) p.set('source', source); if (product) p.set('product', product)
+      if (from) p.set('from', from); if (to) p.set('to', to)
       const d = await get<{ rows: OrderRow[] }>(`/orders?${p.toString()}`)
       setRows(d.rows)
     } catch (e) { setMsg((e as Error).message) }
-  }, [q, sales, from, to, product])
+  }, [orderNo, customer, sales, purchaser, source, product, range])
   useEffect(() => { void load() }, [load])
   const card: React.CSSProperties = { flex: '1 1 150px', minWidth: 150, background: '#fff', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px' }
   return (
@@ -40,19 +52,31 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
         <h3 style={{ margin: 0 }}>销售订单管理</h3>
         <span className="hint">成交以订单为准：询价是否成交由是否存在订单自动判定；订单在「询报价管理」中生成</span>
         <span style={{ flex: 1 }} />
-        <input className="sa" style={{ width: 170 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="订单号/询价号/客户" />
-        <input className="sa" style={{ width: 150 }} value={product} onChange={(e) => setProduct(e.target.value)} placeholder="产品名称" />
+        <input className="sa" style={{ width: 150 }} value={orderNo} onChange={(e) => setOrderNo(e.target.value)} placeholder="订单号/询价号" />
+        <select className="sa" style={{ maxWidth: 170 }} value={customer} onChange={(e) => setCustomer(e.target.value)} title="按客户筛选">
+          <option value="">全部客户</option>
+          {customers.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+          {customer && !customers.some((c) => c.name === customer) && <option value={customer}>{customer}</option>}
+        </select>
         <select className="sa" value={sales} onChange={(e) => setSales(e.target.value)}><option value="">全部销售</option>{meta.sales.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}</select>
-        <input className="sa" type="date" value={from} onChange={(e) => setFrom(e.target.value)} title="成单日期起" />
-        <input className="sa" type="date" value={to} onChange={(e) => setTo(e.target.value)} title="成单日期止" />
+        <select className="sa" value={purchaser} onChange={(e) => setPurchaser(e.target.value)}><option value="">全部采购</option>{(meta.purchasers ?? []).map((p) => <option key={p} value={p}>{p}</option>)}</select>
+        <select className="sa" value={source} onChange={(e) => setSource(e.target.value)}><option value="">全部来源</option>{(meta.sources ?? []).map((s) => <option key={s} value={s}>{s}</option>)}</select>
+        <select className="sa" style={{ maxWidth: 220 }} value={product} onChange={(e) => setProduct(e.target.value)} title="按产品筛选（下拉可选）">
+          <option value="">全部产品</option>
+          {products.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+          {product && !products.some((p) => p.name === product) && <option value={product}>{product}</option>}
+        </select>
+        <select className="sa" value={range} onChange={(e) => setRange(e.target.value as RangeKey)} title="成单日期范围">
+          {(Object.keys(RANGE_LABEL) as RangeKey[]).map((k) => <option key={k} value={k}>{RANGE_LABEL[k]}</option>)}
+        </select>
         <button className="btn" onClick={() => void load()}>查询</button>
-        <button className="btn" onClick={() => { setQ(''); setSales(''); setFrom(''); setTo(''); setProduct('') }}>重置</button>
+        <button className="btn" onClick={() => { setOrderNo(''); setCustomer(''); setSales(''); setPurchaser(''); setSource(''); setProduct(''); setRange('') }}>重置</button>
       </div>
       {msg && <div className="msg ok">{msg}</div>}
 
       <div className="tablewrap" style={{ overflow: 'auto', maxHeight: '56vh' }}>
         <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-          <thead><tr>{['订单号', '询价号', '客户', '标签', '产品', '询价日期', '成单日期', '转化周期', '销售', '订单金额', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+          <thead><tr>{['订单号', '询价号', '客户', '标签', '产品', '采购', '来源', '询价日期', '成单日期', '转化周期', '销售', '订单金额', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.order_id} style={{ borderBottom: '1px solid var(--line2)' }}>
@@ -61,6 +85,8 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
                 <td style={{ padding: '6px 8px' }}>{r.customer_name}</td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><KeyTags kc={r.is_key_customer} kp={r.is_key_project} /></td>
                 <td style={{ padding: '6px 8px', maxWidth: 260, whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.productNames || '—'}</td>
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.purchaser || '—'}</td>
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><span className="badge">{r.source || '—'}</span></td>
                 <td style={{ padding: '6px 8px' }} className="mono">{r.date}</td>
                 <td style={{ padding: '6px 8px' }} className="mono">{r.won_date}</td>
                 <td style={{ padding: '6px 8px', fontWeight: 700, color: cycleTone(r.cycleDays) }}>{r.cycleDays == null ? '—' : r.cycleDays + ' 天'}</td>
@@ -72,7 +98,7 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={11} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无销售订单（到「询报价管理」点“生成销售订单”并填写成单日期）</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', padding: 24, color: 'var(--sub)' }}>暂无销售订单（到「询报价管理」点“生成销售订单”并填写成单日期）</td></tr>}
           </tbody>
         </table>
       </div>

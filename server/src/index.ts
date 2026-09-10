@@ -428,8 +428,13 @@ function nextOrderNo(): string {
 app.get('/api/orders', (req, res) => {
   const d = getDb()
   const q = str(req.query.q), salesQ = str(req.query.sales), from = str(req.query.from), to = str(req.query.to), productQ = str(req.query.product)
+  const orderNoQ = str(req.query.orderNo), customerQ = str(req.query.customer), purchaserQ = str(req.query.purchaser), sourceQ = str(req.query.source)
   const parts: string[] = ['1=1']; const args: unknown[] = []
   if (q) { parts.push('(o.order_no LIKE ? OR i.inquiry_no LIKE ? OR c.name LIKE ?)'); const l = `%${q}%`; args.push(l, l, l) }
+  if (orderNoQ) { parts.push('(o.order_no LIKE ? OR i.inquiry_no LIKE ?)'); const l = `%${orderNoQ}%`; args.push(l, l) }
+  if (customerQ) { parts.push('c.name LIKE ?'); args.push(`%${customerQ}%`) }
+  if (purchaserQ) { parts.push('i.purchaser = ?'); args.push(purchaserQ) }
+  if (sourceQ) { parts.push('i.source = ?'); args.push(sourceQ) }
   if (salesQ) { parts.push('i.sales = ?'); args.push(salesQ) }
   if (from) { parts.push('o.won_date >= ?'); args.push(from) }
   if (to) { parts.push('o.won_date <= ?'); args.push(to) }
