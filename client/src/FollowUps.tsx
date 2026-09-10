@@ -77,13 +77,12 @@ export default function FollowUps({ meta }: { meta: MetaLite }) {
             {meta.sales.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
           </select>
         </div>
-        <div className="col w2">
+        <div className="col" style={{ flex: 1, minWidth: 320, maxWidth: 460 }}>
           <label>询价号 * <span className="hint">（先选销售，再选该销售名下询价）</span></label>
-          <select className="sa" style={{ width: 220 }} value={no} disabled={!sales || optLoading} title={no || ''} onChange={(e) => setNo(e.target.value)}>
+          <select className="sa" style={{ width: '100%', maxWidth: 460 }} value={no} disabled={!sales || optLoading} title={no || ''} onChange={(e) => setNo(e.target.value)}>
             <option value="">{!sales ? '— 请先选择销售人员 —' : optLoading ? '加载中…' : options.length ? '— 请选择询价号 —' : '该销售名下暂无询价'}</option>
-            {options.map((o) => <option key={o.id} value={o.inquiry_no} title={`${o.inquiry_no} · ${o.customer_name}（${o.date}）`}>{o.inquiry_no}</option>)}
+            {options.map((o) => <option key={o.id} value={o.inquiry_no}>{o.inquiry_no} · {o.customer_name}（{o.date}）</option>)}
           </select>
-          {no && (() => { const o = options.find((x) => x.inquiry_no === no); return o ? <span className="hint" style={{ alignSelf: 'center' }}>{o.customer_name}（{o.date}）</span> : null })()}
         </div>
         {lookErr && <span className="hint" style={{ color: 'var(--danger)', alignSelf: 'center' }}>{lookErr}</span>}
       </div>
