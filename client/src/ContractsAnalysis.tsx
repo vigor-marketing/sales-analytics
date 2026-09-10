@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get } from './api'
 import { RANGE_LABEL, rangeDates, type RangeKey } from './dateRange'
 
@@ -267,6 +267,36 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
     })).sort((a, b) => b.usd - a.usd)
   }, [rows, teamOf])
 
+  /** 小组内成员明细：每个小组下各成员的订单数/金额/组内占比/平均周期（含本期无成单的成员） */
+  const teamMembers = useMemo(() => {
+    const byMember = new Map<string, { n: number; usd: number; cycles: number[] }>()
+    rows.forEach((r) => {
+      const k = r.sales || '未指定'
+      const a = byMember.get(k) ?? { n: 0, usd: 0, cycles: [] }
+      a.n += 1; a.usd += r.usdApprox || 0
+      if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
+      byMember.set(k, a)
+    })
+    const teamNames = Array.from(new Set(meta.sales.map((x) => x.team || '未分组')))
+    rows.forEach((r) => { const t = teamOf.get(r.sales) ?? '未分组'; if (!teamNames.includes(t)) teamNames.push(t) })
+    return teamNames.map((team) => {
+      const members = Array.from(new Set(meta.sales.filter((x) => (x.team || '未分组') === team).map((x) => x.name)))
+      byMember.forEach((_v, k) => { if ((teamOf.get(k) ?? '未分组') === team && !members.includes(k)) members.push(k) })
+      const list = members.map((name) => {
+        const v = byMember.get(name) ?? { n: 0, usd: 0, cycles: [] }
+        return {
+          name, n: v.n, usd: Math.round(v.usd),
+          avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
+        }
+      }).sort((a, b) => b.usd - a.usd)
+      const total = list.reduce((x, v) => x + v.usd, 0)
+      return {
+        team, list, usd: Math.round(total), n: list.reduce((x, v) => x + v.n, 0),
+        rows: list.map((m) => ({ ...m, share: total ? Math.round((m.usd / total) * 1000) / 10 : 0 })),
+      }
+    }).filter((t) => t.list.length > 0).sort((a, b) => b.usd - a.usd)
+  }, [rows, teamOf, meta.sales])
+
   /** 按销售：成单次数、金额折USD、平均转化周期 */
   const salesRows = useMemo(() => {
     const m = new Map<string, { n: number; usd: number; cycles: number[] }>()
@@ -361,6 +391,43 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           {teamRows.length > 0 && (
             <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
               合计 {money(teamRows.reduce((a, b) => a + b.usd, 0))} USD · {teamRows.reduce((a, b) => a + b.n, 0)} 单（小组归属按「销售人员 → 组别」，未匹配的归入未分组）
+            </div>
+          )}
+        </Panel>
+
+        <Panel title="小组内成员分析" hint="每个小组下各成员的成单金额与占比（含本期无成单的成员）" style={{ gridColumn: '1 / -1' }}>
+          {teamMembers.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
+            <div className="tablewrap" style={{ overflowX: 'auto' }}>
+              <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead><tr>{['小组 / 成员', '订单数', '金额（折USD）', '组内占比', '平均转化周期', '组内排名'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {teamMembers.map((t) => (
+                    <Fragment key={t.team}>
+                      <tr style={{ background: '#f4f7fc' }}>
+                        <td style={{ padding: '6px 8px', fontWeight: 800 }}>{t.team}<span className="hint" style={{ marginLeft: 6, fontWeight: 400 }}>小组合计 {t.list.length} 人</span></td>
+                        <td style={{ padding: '6px 8px', fontWeight: 700 }}>{t.n} 单</td>
+                        <td className="mono" style={{ padding: '6px 8px', fontWeight: 700 }}>{money(t.usd)}</td>
+                        <td style={{ padding: '6px 8px' }}>100%</td>
+                        <td style={{ padding: '6px 8px' }}>—</td>
+                        <td style={{ padding: '6px 8px' }}>—</td>
+                      </tr>
+                      {t.rows.map((m, i) => (
+                        <tr key={t.team + m.name} style={{ borderBottom: '1px solid var(--line2)' }}>
+                          <td style={{ padding: '6px 8px', paddingLeft: 22 }}>
+                            {m.name}
+                            {m.n === 0 && <span className="hint" style={{ marginLeft: 6 }}>本期无成单</span>}
+                          </td>
+                          <td style={{ padding: '6px 8px' }}>{m.n} 单</td>
+                          <td className="mono" style={{ padding: '6px 8px' }}>{money(m.usd)}</td>
+                          <td style={{ padding: '6px 8px' }}>{m.n === 0 ? '—' : `${m.share}%`}</td>
+                          <td style={{ padding: '6px 8px' }}>{m.avgCycle == null ? '—' : `${m.avgCycle} 天`}</td>
+                          <td style={{ padding: '6px 8px' }}>{m.n === 0 ? '—' : `第 ${i + 1} 名`}</td>
+                        </tr>
+                      ))}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </Panel>
