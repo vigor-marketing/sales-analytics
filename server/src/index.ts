@@ -62,6 +62,8 @@ function cleanupOrphans(): void {
     const d = getDb()
     const items = d.prepare('DELETE FROM inquiry_items WHERE inquiry_id NOT IN (SELECT id FROM inquiries)').run()
     if (items.changes) console.log(`[cleanup] 清理孤儿询价明细 ${items.changes} 行`)
+    const fees = d.prepare('DELETE FROM fee_versions WHERE inquiry_id NOT IN (SELECT id FROM inquiries)').run()
+    if (fees.changes) console.log(`[cleanup] 清理孤儿费用版本 ${fees.changes} 行`)
     const refs = new Set<string>()
     ;(d.prepare('SELECT photos, attachments FROM followups').all() as { photos: string | null; attachments: string | null }[]).forEach((r) => {
       const collect = (v: unknown, key?: string) => {
@@ -138,6 +140,20 @@ function inquiryUsdTotal(d: ReturnType<typeof getDb>, inquiryId: string, row?: R
   const fee = r ? { currency: feeCurrencyOf(r.fee_currency), amount: feeTotalOf(r) } : null
   const merged = fee && fee.amount ? [...totals, { currency: fee.currency, total: fee.amount }] : totals
   return usdOfTotals(merged)
+}
+
+/** 写一条费用版本（费用发生变化时调用，与产品价格版本并列，便于追溯） */
+function insertFeeVersion(inquiryId: string, vals: Record<string, number | null>, feeCurrency: string, source: string): void {
+  const total = FEE_KEYS.reduce((s, f) => s + (vals[f.key] ?? 0), 0)
+  if (!total) return
+  getDb().prepare(`INSERT INTO fee_versions (id, inquiry_id, freight, tax, commission, other_fee, fee_currency, total, source, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(newId(), inquiryId, vals.freight ?? null, vals.tax ?? null, vals.commission ?? null, vals.otherFee ?? null, feeCurrency, Math.round(total * 100) / 100, source, nowIso())
+}
+/** 费用版本列表（按时间正序编号 V1、V2…） */
+function feeVersionsOf(inquiryId: string): Record<string, unknown>[] {
+  const rows = getDb().prepare('SELECT * FROM fee_versions WHERE inquiry_id = ? ORDER BY created_at ASC, rowid ASC').all(inquiryId) as Record<string, unknown>[]
+  return rows.map((r, i) => ({ ...r, version: i + 1, is_latest: i === rows.length - 1 })).reverse()
 }
 
 /** 费用明细（含 0 项也返回，便于前端展示输入框回填） */
@@ -498,6 +514,8 @@ app.post('/api/inquiries', (req, res) => {
         fees.values.freight, fees.values.tax, fees.values.commission, fees.values.otherFee, feeCurrency, t, t)
     const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
     cleanItems.forEach((it) => ins.run(newId(), iid, it.productName, it.qty, it.amount, it.currency, it.sort))
+    // 费用版本 V1（有费用时才记录）
+    insertFeeVersion(iid, fees.values, feeCurrency, '询报价录入')
     upsertProducts(cleanItems, date, t, { inquiryId: iid, inquiryNo: no, customerName: text(customer.name), sales, source: '询报价录入' })
   })()
   ok(res, { id: iid, inquiryNo: no, customerId: customerId, createdCustomer, team: teamName || null }, 201)
@@ -992,7 +1010,14 @@ app.get('/api/inquiries/:id', (req, res) => {
   const feeTotal = feeTotalOf(r)
   const grand = grandTotals(totals, feeCurrencyOf(r.fee_currency), feeTotal)
   ok(res, { ...base, is_won: order ? 1 : 0, status: inquiryStatus(Boolean(order), r.is_lost), won_date: order ? str(order.won_date) : null, orderNo: order ? str(order.order_no) : null, order: order ?? null, items,
-    totals, feeTotal, fees: feeBreakdown(r), grandTotals: grand, quoteUsdApprox: Math.round(usdOfTotals(totals)), usdApprox: Math.round(usdOfTotals(grand)) })
+    totals, feeTotal, fees: feeBreakdown(r), feeVersions: feeVersionsOf(req.params.id), grandTotals: grand, quoteUsdApprox: Math.round(usdOfTotals(totals)), usdApprox: Math.round(usdOfTotals(grand)) })
+})
+// 费用版本记录（与产品价格记录并列，便于追溯每次运费/税费/佣金/其他费用的变化）
+app.get('/api/inquiries/:id/fee-history', (req, res) => {
+  const d = getDb()
+  const inq = d.prepare('SELECT inquiry_no FROM inquiries WHERE id = ?').get(req.params.id) as { inquiry_no: string } | undefined
+  if (!inq) return fail(res, '询价不存在', 404)
+  ok(res, { inquiryNo: inq.inquiry_no, versions: feeVersionsOf(req.params.id) })
 })
 app.put('/api/inquiries/:id', (req, res) => {
   const d = getDb()
@@ -1064,6 +1089,10 @@ app.put('/api/inquiries/:id', (req, res) => {
       const custForName = text(old.customer_id) ? d.prepare('SELECT name FROM customers WHERE id = ?').get(text(old.customer_id)) as { name: string } | undefined : undefined
       upsertProducts(clean, date, t, { inquiryId: req.params.id, inquiryNo: str(old.inquiry_no), customerName: custForName?.name, sales, source: '询报价管理·编辑' })
     }
+    // 费用有变化（金额或币种）→ 记一条新的费用版本
+    const feeChanged = FEE_KEYS.some((f) => Number(feeVals[f.key] ?? 0) !== Number(num(old[f.key === 'otherFee' ? 'other_fee' : f.key]) ?? 0))
+      || feeCurrency !== feeCurrencyOf(old.fee_currency)
+    if (feeChanged) insertFeeVersion(req.params.id, feeVals, feeCurrency, '询报价管理·编辑')
     // 客户档案同步：星级/国别/使用地/来源在询报价里改动后要跟着更新
     const custId = text(old.customer_id)
     if (custId) {

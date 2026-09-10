@@ -5,13 +5,14 @@ import ReasonPicker from './ReasonPicker'
 import ProductPicker, { type ProductLite } from './ProductPicker'
 import { KeyTags } from './KeyTags'
 import PriceHistoryModal from './PriceHistory'
+import FeeHistoryModal from './FeeHistoryModal'
 import InquiryDetailModal from './InquiryDetail'
 import { RANGE_LABEL, rangeDates, type RangeKey } from './dateRange'
 import { COUNTRIES } from './countries'
 
 interface TotalItem { currency: string; total: number }
 interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; customer_stars?: number | null; won_date?: string | null; orderNo?: string | null; orderId?: string | null; last_followup_at?: string | null; next_followup_at?: string | null; is_lost?: number; lost_reason?: string | null; lost_date?: string | null; status?: Status; blockers?: string | null; action_plan?: string | null; support_needed?: string | null; freight?: number | null; tax?: number | null; commission?: number | null; other_fee?: number | null; fee_currency?: string | null; feeTotal?: number; grandTotals?: TotalItem[]; quoteUsdApprox?: number }
-interface Detail extends Row { items: { product_name: string; qty: number | null; amount: number; currency: string }[]; order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null }
+interface Detail extends Row { feeVersions?: { id: string; version: number; is_latest?: boolean; total: number; fee_currency: string; created_at: string }[]; items: { product_name: string; qty: number | null; amount: number; currency: string }[]; order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null }
 interface MetaLite { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; lostReasons?: string[]; winReasons?: string[]; fx?: Record<string, number> }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
@@ -132,11 +133,14 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
   const [ordOpen, setOrdOpen] = useState(false)
   // 询价报价合计（与录入页一致：按币种自动合计 + 折USD），并用于生成订单时带出金额
   const [quote, setQuote] = useState<{ currency: string; total: number }[]>([])
+  const [detail, setDetail] = useState<Detail | null>(null)
+  const [feeHist, setFeeHist] = useState(false)
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
   const [form, setForm] = useState<{ freight: string; tax: string; commission: string; otherFee: string; feeCurrency: string; inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; note: string; blockers: string; actionPlan: string; supportNeeded: string; stars: string; keyCust: boolean; keyProj: boolean; isLost: boolean; lostReason: string; lostDate: string; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
   const set = (patch: Partial<typeof form>) => setForm((f) => (f ? { ...f, ...patch } : f))
   useEffect(() => {
     get<Detail>(`/inquiries/${id}`).then((d) => {
+      setDetail(d)
       setOrdOpen(false)
       setQuote((d.totals || []).filter((t) => Number(t.total) > 0)) // 首次快照；后续以 liveTotals 为准
       if (d.order) { setOrder(d.order); setOrd({ wonDate: d.order.won_date, orderNo: d.order.order_no, amount: d.order.amount == null ? '' : String(d.order.amount), currency: d.order.currency, note: d.order.note || '', winReason: d.order.win_reason || '' }) }
@@ -288,6 +292,27 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                   </div>
                 )
               })}
+              {(() => {
+                const fv = (detail?.feeVersions ?? [])[0]
+                const feeNow = liveTotals.feeTotal > 0
+                const feeChanged = Math.abs(liveTotals.feeTotal - (Number(detail?.feeTotal ?? 0))) > 0.001 || (form.feeCurrency !== (detail?.fee_currency || 'USD'))
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap', fontSize: 12.5, borderTop: '1px dashed var(--line)', paddingTop: 6 }}>
+                    <span style={{ minWidth: 180, fontWeight: 600 }}>费用（运费 / 税费 / 佣金 / 其他费用）</span>
+                    {feeNow
+                      ? <>
+                        <span className="badge new">当前 V{fv?.version ?? 1}</span>
+                        <span className="hint">当前合计 {money(Number(detail?.feeTotal ?? 0))} {detail?.fee_currency || 'USD'}</span>
+                        <span className="hint">→ 本次录入 <b className="mono">{money(liveTotals.feeTotal)} {form.feeCurrency}</b></span>
+                        {feeChanged
+                          ? <span style={{ color: '#a35c00', fontWeight: 700 }}>保存后生成 V{(fv?.version ?? 0) + 1}</span>
+                          : <span className="hint" style={{ color: '#059669' }}>与当前一致，保存后版本不变</span>}
+                      </>
+                      : <span className="badge">未填写费用</span>}
+                    <button className="btn xs" disabled={!(detail?.feeVersions ?? []).length} onClick={() => setFeeHist(true)}>查看记录</button>
+                  </div>
+                )
+              })()}
               {form.items.filter((it) => it.productName.trim()).length === 0 && <div className="hint" style={{ marginTop: 4 }}>先填写产品名称与金额</div>}
             </div>
 
@@ -416,6 +441,8 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                 </div>
               )}
             </div>
+
+            {feeHist && <FeeHistoryModal inquiryId={id} inquiryNo={form?.inquiryNo} onClose={() => setFeeHist(false)} />}
 
             {histName && <PriceHistoryModal name={histName} info={(() => { const pr = products.find((x) => x.name === histName); return pr ? { last_amount: pr.last_amount, currency: pr.currency, last_qty: pr.last_qty, use_count: pr.use_count } : undefined })()} onClose={() => setHistName(null)} />}
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { get } from './api'
 import { StatusChip } from './StatusChip'
 import PriceHistoryModal from './PriceHistory'
+import FeeHistoryModal, { type FeeVersion } from './FeeHistoryModal'
 import GuidanceNote from './Guidance'
 
 interface TotalItem { currency: string; total: number }
@@ -18,6 +19,7 @@ interface Detail {
   freight?: number | null; tax?: number | null; commission?: number | null; other_fee?: number | null; fee_currency?: string | null
   feeTotal?: number; grandTotals?: TotalItem[]; quoteUsdApprox?: number
   fees?: { key: string; label: string; value: number | null }[]
+  feeVersions?: FeeVersion[]
   order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null
 }
 interface ProductLite { id: string; name: string; currency: string; last_amount: number | null; last_qty?: number | null; use_count: number; version?: number; prev_amount?: number | null }
@@ -48,6 +50,7 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
   const [fus, setFus] = useState<FuRow[]>([])
   const [fuLoaded, setFuLoaded] = useState(false)
   const [histName, setHistName] = useState<string | null>(null)
+  const [feeHist, setFeeHist] = useState(false)
   useEffect(() => { get<Detail>(`/inquiries/${id}`).then(setD).catch((e) => setErr((e as Error).message)) }, [id])
   useEffect(() => {
     setFuLoaded(false)
@@ -147,6 +150,25 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                       <button className="btn xs" disabled={!pr} onClick={() => pr && setHistName(pr.name)}>查看记录</button>
                     </div>
                   ))}
+                  {(() => {
+                    const fv = (d.feeVersions ?? [])[0]
+                    const feeNow = (d.feeTotal ?? 0) > 0
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap', fontSize: 12.5, borderTop: '1px dashed var(--line)', paddingTop: 6 }}>
+                        <span style={{ minWidth: 180, fontWeight: 600 }}>费用（运费 / 税费 / 佣金 / 其他费用）</span>
+                        {feeNow
+                          ? <>
+                            <span className="badge new">当前 V{fv?.version ?? 1}</span>
+                            <span className="hint">合计 {money2(d.feeTotal)} {d.fee_currency || 'USD'}</span>
+                            {(d.fees || []).filter((f) => f.value).length > 0 && (
+                              <span className="hint">（{(d.fees || []).filter((f) => f.value).map((f) => `${f.label} ${money2(f.value)}`).join(' · ')}）</span>
+                            )}
+                          </>
+                          : <span className="badge">未填写费用</span>}
+                        <button className="btn xs" disabled={!(d.feeVersions ?? []).length} onClick={() => setFeeHist(true)}>查看记录</button>
+                      </div>
+                    )
+                  })()}
                   {list.length === 0 && <div className="hint" style={{ marginTop: 4 }}>暂无产品明细</div>}
                 </div>
               )
@@ -165,7 +187,7 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
               )}
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--brand)' }}>总报价（含费用）</span>
               {(d.grandTotals || d.totals || []).map((t) => (
-                <span key={`g-${t.currency}`} className="badge new">{money2(t.total)} {t.currency}</span>
+                <span key={`g-${t.currency}`} className="ro mono" style={{ width: 'auto', display: 'inline-flex', fontWeight: 700, color: 'var(--brand)' }}>{money2(t.total)} {t.currency}</span>
               ))}
               {(d.grandTotals || d.totals || []).some((t) => t.currency !== 'USD') && (
                 <span className="ro mono" style={{ width: 'auto', display: 'inline-flex' }}>折 USD 约 {money2(d.usdApprox)}</span>
@@ -187,6 +209,8 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                 <Field label="备注" value={d.note} area fixed />
               </div>
             </div>
+
+            {feeHist && <FeeHistoryModal inquiryId={id} inquiryNo={d?.inquiry_no} onClose={() => setFeeHist(false)} />}
 
             {histName && <PriceHistoryModal name={histName} info={(() => { const pr = products.find((x) => x.name === histName); return pr ? { last_amount: pr.last_amount, currency: pr.currency, last_qty: pr.last_qty, use_count: pr.use_count } : undefined })()} onClose={() => setHistName(null)} />}
 

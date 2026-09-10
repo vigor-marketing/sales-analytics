@@ -76,6 +76,10 @@ export function schema(): void {
     CREATE TABLE IF NOT EXISTS followup_comments (
       id TEXT PRIMARY KEY, followup_id TEXT NOT NULL, content TEXT NOT NULL,
       by_name TEXT, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS fee_versions (
+      id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL REFERENCES inquiries(id) ON DELETE CASCADE,
+      freight REAL, tax REAL, commission REAL, other_fee REAL, fee_currency TEXT NOT NULL DEFAULT 'USD',
+      total REAL NOT NULL DEFAULT 0, source TEXT, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS product_prices (
       id TEXT PRIMARY KEY, product_name TEXT NOT NULL, currency TEXT NOT NULL DEFAULT 'USD',
       amount REAL, qty REAL, prev_amount REAL, prev_qty REAL, prev_currency TEXT,
@@ -127,6 +131,7 @@ export function schema(): void {
     'CREATE INDEX IF NOT EXISTS idx_inquiries_sales_date ON inquiries(sales, date)',
     'CREATE INDEX IF NOT EXISTS idx_inquiries_lost ON inquiries(is_lost)',
     'CREATE INDEX IF NOT EXISTS idx_items_inquiry ON inquiry_items(inquiry_id)',
+    'CREATE INDEX IF NOT EXISTS idx_fee_versions_inquiry ON fee_versions(inquiry_id)',
     'CREATE INDEX IF NOT EXISTS idx_orders_inquiry ON orders(inquiry_id)',
     'CREATE INDEX IF NOT EXISTS idx_orders_won_date ON orders(won_date)',
     'CREATE INDEX IF NOT EXISTS idx_followups_inquiry ON followups(inquiry_id)',
