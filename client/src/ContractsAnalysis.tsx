@@ -173,6 +173,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
     return (TABS.some((t) => t.key === saved) ? saved : 'all') as TabKey
   })
   useEffect(() => { try { localStorage.setItem('sa:anaTab', tab) } catch { /* */ } }, [tab])
+  // 组内子页面：再按小组筛选
+  const [teamFilter, setTeamFilter] = useState('')
   const [year, setYear] = useState('')
 
   const load = useCallback(async () => {
@@ -291,6 +293,11 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   }, [rows, teamOf])
 
   /** 小组内成员明细：每个小组下各成员的订单数/金额/组内占比/平均周期（含本期无成单的成员） */
+  const teamNames = useMemo(() => {
+    const names = Array.from(new Set(meta.sales.map((x) => x.team || '未分组')))
+    return names
+  }, [meta.sales])
+
   const teamMembers = useMemo(() => {
     const byMember = new Map<string, { n: number; usd: number; cycles: number[] }>()
     rows.forEach((r) => {
@@ -319,6 +326,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
       }
     }).filter((t) => t.list.length > 0).sort((a, b) => b.usd - a.usd)
   }, [rows, teamOf, meta.sales])
+  /** 组内子页面当前展示的小组（按小组筛选后） */
+  const shownTeams = useMemo(() => (teamFilter ? teamMembers.filter((t) => t.team === teamFilter) : teamMembers), [teamMembers, teamFilter])
 
   /** 按销售：成单次数、金额折USD、平均转化周期 */
   const salesRows = useMemo(() => {
@@ -364,10 +373,42 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
 
       {/* 子页面切换：每个分析维度单独一页查看，避免堆叠混乱 */}
       <div className="ana-tabs">
-        {TABS.map((t) => (
-          <button key={t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)} title={t.note}>{t.label}</button>
-        ))}
-        <span className="hint" style={{ marginLeft: 4 }}>{TABS.find((t) => t.key === tab)?.note}</span>
+        <div className="ana-tabs-l">
+          {TABS.map((t) => (
+            <button key={t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)} title={t.note}>{t.label}</button>
+          ))}
+        </div>
+        <span className="hint ana-note">{TABS.find((t) => t.key === tab)?.note}</span>
+        {tab === 'group' && (
+          <select className="sa" style={{ width: 150, marginLeft: 'auto' }} value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} title="按小组筛选组内成员">
+            <option value="">全部小组</option>
+            {teamNames.map((t) => <option key={t} value={t}>{t}</option>)}
+            {teamFilter && !teamNames.includes(teamFilter) && <option value={teamFilter}>{teamFilter}</option>}
+          </select>
+        )}
+      </div>
+
+      {/* 当前子页的关键数字速览 */}
+      <div className="ana-sum">
+        {tab === 'all' && (<>
+          <span className="ana-sum-i"><b>{stats?.contractCount ?? 0}</b> 单</span>
+          <span className="ana-sum-i"><b>{money(stats?.usdTotal ?? 0)}</b> USD</span>
+          <span className="ana-sum-i">平均周期 <b>{stats?.avgCycle == null ? '—' : `${stats.avgCycle} 天`}</b></span>
+          <span className="ana-sum-i">成交 <b>{winSum?.total ?? 0}</b> · 丢单 <b>{lostSum?.total ?? 0}</b></span>
+          <span className="ana-sum-i">客户 <b>{topCustomers.length}</b> 家 · 产品 <b>{productRows.length}</b> 个</span>
+        </>)}
+        {tab === 'team' && (<>
+          <span className="ana-sum-i">小组 <b>{teamRows.length}</b> 个</span>
+          <span className="ana-sum-i">合计 <b>{money(teamRows.reduce((a, b) => a + b.usd, 0))}</b> USD</span>
+          <span className="ana-sum-i">最高 <b>{teamRows[0]?.name ?? '—'}</b>{teamRows[0] ? `（${money(teamRows[0].usd)} · ${teamRows[0].share}%）` : ''}</span>
+          <span className="ana-sum-i">月份数 <b>{monthTeams.length}</b></span>
+        </>)}
+        {tab === 'group' && (<>
+          <span className="ana-sum-i">成员 <b>{shownTeams.reduce((a, t) => a + t.list.length, 0)}</b> 人</span>
+          <span className="ana-sum-i">其中有成单 <b>{shownTeams.reduce((a, t) => a + t.rows.filter((m) => m.n > 0).length, 0)}</b> 人</span>
+          <span className="ana-sum-i">合计 <b>{money(shownTeams.reduce((a, t) => a + t.usd, 0))}</b> USD</span>
+          <span className="ana-sum-i">最高成员 <b>{(() => { const all = shownTeams.flatMap((t) => t.rows); const top = all.sort((a, b) => b.usd - a.usd)[0]; return top ? `${top.name}（${money(top.usd)}）` : '—' })()}</b></span>
+        </>)}
       </div>
 
       <div className="dash-grid" style={{ marginTop: 10 }}>
@@ -434,13 +475,13 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         </>)}
 
         {tab === 'group' && (<>
-        <Panel title="小组内成员分析" hint="每个小组下各成员的成单金额与占比（含本期无成单的成员）" style={{ gridColumn: '1 / -1' }}>
-          {teamMembers.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
+        <Panel title="小组内成员分析" hint={`${teamFilter ? `已筛「${teamFilter}」· ` : ''}每个小组下各成员的成单金额与占比（含本期无成单的成员）`} style={{ gridColumn: '1 / -1' }}>
+          {shownTeams.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
             <div className="tablewrap" style={{ overflowX: 'auto' }}>
               <table className="grid data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead><tr>{['小组 / 成员', '订单数', '金额（折USD）', '组内占比', '平均转化周期', '组内排名'].map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
                 <tbody>
-                  {teamMembers.map((t) => (
+                  {shownTeams.map((t) => (
                     <Fragment key={t.team}>
                       <tr style={{ background: '#f4f7fc' }}>
                         <td style={{ padding: '6px 8px', fontWeight: 800 }}>{t.team}<span className="hint" style={{ marginLeft: 6, fontWeight: 400 }}>小组合计 {t.list.length} 人</span></td>
