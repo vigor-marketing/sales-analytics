@@ -1,7 +1,7 @@
 /** sales-analytics v3 起步：询报价录入页 API */
 import cors from 'cors'
 import express from 'express'
-import { schema, ensurePeople, getDb, getSources, getCountries, saveSources, getSetting, setSetting, newId, nowIso, todayStr, text, num } from './db.js'
+import { schema, ensurePeople, backfillProducts, getDb, getSources, getCountries, saveSources, getSetting, setSetting, newId, nowIso, todayStr, text, num } from './db.js'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,6 +12,15 @@ app.use(cors())
 app.use(express.json())
 
 const str = (v: unknown) => text(v)
+/** 录入/更新询价时把产品沉淀进产品档案 */
+function upsertProducts(items: { productName: string; qty: number | null; amount: number; currency: string }[], date: string, t: string): void {
+  const d = getDb()
+  const up = d.prepare(`INSERT INTO products (id, name, currency, last_amount, last_qty, use_count, last_used_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET currency=excluded.currency, last_amount=excluded.last_amount, last_qty=excluded.last_qty,
+      use_count=products.use_count+1, last_used_at=excluded.last_used_at, updated_at=excluded.updated_at`)
+  items.forEach((it) => up.run(newId(), it.productName, it.currency, it.amount, it.qty, date, t, t))
+}
 const ok = (res: express.Response, data: unknown, st = 200) => res.status(st).json({ ok: true, data })
 const fail = (res: express.Response, msg: string, st = 400) => res.status(st).json({ ok: false, error: msg })
 
@@ -23,6 +32,41 @@ app.get('/api/meta/bootstrap', (_req, res) => {
   const sales = people.filter((p) => p.role === 'sales').map((p) => ({ name: p.name, team: p.team_name }))
   const purchasers = people.filter((p) => ['采购部', '销售支持组'].includes(p.department)).map((p) => p.name)
   ok(res, { sales, purchasers, sources: getSources(), countries: getCountries(), fx: FX, month: todayStr().slice(0, 7) })
+})
+
+// —— 产品档案：录入自动沉淀 + 查询/维护 ——
+app.get('/api/products', (req, res) => {
+  const q = str(req.query.q)
+  const like = `%${q}%`
+  const rows = (q
+    ? getDb().prepare('SELECT * FROM products WHERE name LIKE ? ORDER BY use_count DESC, updated_at DESC LIMIT 500').all(like)
+    : getDb().prepare('SELECT * FROM products ORDER BY use_count DESC, updated_at DESC LIMIT 500').all())
+  ok(res, rows)
+})
+app.post('/api/products', (req, res) => {
+  const name = str(req.body?.name)
+  if (!name) return fail(res, '产品名称必填')
+  const t = nowIso()
+  const cur = ['USD', 'CNY', 'EUR'].includes(str(req.body?.currency)) ? str(req.body?.currency) : 'USD'
+  getDb().prepare(`INSERT INTO products (id, name, currency, last_amount, last_qty, use_count, last_used_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?) ON CONFLICT(name) DO UPDATE SET currency=excluded.currency, updated_at=excluded.updated_at`)
+    .run(newId(), name, cur, num(req.body?.lastAmount), num(req.body?.lastQty), t, t)
+  ok(res, getDb().prepare('SELECT * FROM products WHERE name = ? COLLATE NOCASE').get(name), 201)
+})
+app.put('/api/products/:id', (req, res) => {
+  const d = getDb()
+  if (!d.prepare('SELECT id FROM products WHERE id = ?').get(req.params.id)) return fail(res, '产品不存在', 404)
+  const name = str(req.body?.name)
+  const cur = ['USD', 'CNY', 'EUR'].includes(str(req.body?.currency)) ? str(req.body?.currency) : null
+  if (name) d.prepare('UPDATE products SET name = ?, updated_at = ? WHERE id = ?').run(name, nowIso(), req.params.id)
+  if (cur) d.prepare('UPDATE products SET currency = ?, updated_at = ? WHERE id = ?').run(cur, nowIso(), req.params.id)
+  if (req.body?.lastAmount !== undefined) d.prepare('UPDATE products SET last_amount = ?, updated_at = ? WHERE id = ?').run(num(req.body?.lastAmount), nowIso(), req.params.id)
+  ok(res, d.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id))
+})
+app.delete('/api/products/:id', (req, res) => {
+  const r = getDb().prepare('DELETE FROM products WHERE id = ?').run(req.params.id)
+  if (!r.changes) return fail(res, '产品不存在', 404)
+  ok(res, { deleted: 1 })
 })
 
 // —— 客户档案：列表（含询价联动聚合） + 详情 ——
@@ -141,6 +185,7 @@ app.post('/api/inquiries', (req, res) => {
       .run(iid, no, date, cus.id, country || cus.country, useLocation, sales, purchaser, source, handTotal, note, keyCust, keyProj, isWon, t, t)
     const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
     cleanItems.forEach((it) => ins.run(newId(), iid, it.productName, it.qty, it.amount, it.currency, it.sort))
+    upsertProducts(cleanItems, date, t)
   })()
   const saved = d.prepare('SELECT id FROM inquiries WHERE inquiry_no = ?').get(no) as { id: string }
   ok(res, { id: saved.id, inquiryNo: no }, 201)
@@ -223,6 +268,7 @@ app.put('/api/inquiries/:id', (req, res) => {
       d.prepare('DELETE FROM inquiry_items WHERE inquiry_id = ?').run(req.params.id)
       const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
       clean.forEach((it) => ins.run(newId(), req.params.id, it.productName, it.qty, it.amount, it.currency, it.sort))
+      upsertProducts(clean, date, t)
     }
   })()
   ok(res, { id: req.params.id })
@@ -234,7 +280,7 @@ app.delete('/api/inquiries/:id', (req, res) => {
   ok(res, { deleted: 1 })
 })
 
-schema(); ensurePeople()
+schema(); ensurePeople(); backfillProducts()
 
 // 生产托管前端产物（可选）
 const clientDist = path.resolve(__dirname, '../../client/dist')

@@ -38,6 +38,11 @@ export function schema(): void {
     CREATE TABLE IF NOT EXISTS people (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, department TEXT, team_name TEXT,
       role TEXT NOT NULL DEFAULT 'sales', created_at TEXT NOT NULL DEFAULT (datetime('now')));
+    CREATE TABLE IF NOT EXISTS products (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, currency TEXT NOT NULL DEFAULT 'USD',
+      last_amount REAL, last_qty REAL, use_count INTEGER NOT NULL DEFAULT 0,
+      last_used_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      UNIQUE(name COLLATE NOCASE));
     CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT NOT NULL);
   `)
   // 老库补列（幂等）
@@ -70,6 +75,25 @@ export function saveSources(list: string[]): void {
 export function getCountries(): string[] {
   try { const arr = JSON.parse(getSetting('countries', '')); if (Array.isArray(arr)) return arr.filter((x) => typeof x === 'string' && x.trim()) } catch { /* */ }
   return ['中国', '美国', '加拿大', '阿联酋', '沙特', '科威特', '印尼', '马来西亚', '俄罗斯', '哈萨克斯坦', '英国', '德国', '巴西', '墨西哥', '其他']
+}
+
+/** 历史明细回填产品档案（幂等，仅补名称/次数/币种/最近价格） */
+export function backfillProducts(): void {
+  db.exec(`
+    INSERT OR IGNORE INTO products (id, name, currency, last_amount, last_qty, use_count, last_used_at, created_at, updated_at)
+    SELECT lower(hex(randomblob(16))), t.product_name, t.currency, t.amount, t.qty, t.c, t.last_used, datetime('now'), datetime('now')
+    FROM (
+      SELECT ii.product_name AS product_name,
+             (SELECT ii2.currency FROM inquiry_items ii2 WHERE ii2.product_name = ii.product_name ORDER BY ii2.rowid DESC LIMIT 1) AS currency,
+             (SELECT ii2.amount FROM inquiry_items ii2 WHERE ii2.product_name = ii.product_name ORDER BY ii2.rowid DESC LIMIT 1) AS amount,
+             (SELECT ii2.qty FROM inquiry_items ii2 WHERE ii2.product_name = ii.product_name ORDER BY ii2.rowid DESC LIMIT 1) AS qty,
+             COUNT(*) AS c,
+             (SELECT i2.date FROM inquiry_items ii3 JOIN inquiries i2 ON i2.id = ii3.inquiry_id WHERE ii3.product_name = ii.product_name ORDER BY ii3.rowid DESC LIMIT 1) AS last_used
+      FROM inquiry_items ii
+      WHERE ii.product_name IS NOT NULL AND ii.product_name <> ''
+      GROUP BY ii.product_name
+    ) t;
+  `)
 }
 
 /** 开发/演示组织（真实接入工作台后由组织同步覆盖） */

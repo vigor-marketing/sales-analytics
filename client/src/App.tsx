@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get, post } from './api'
 import { COUNTRIES } from './countries'
-import { ArticleIcon, EditIcon, SettingIcon, UserIcon } from 'tdesign-icons-react'
+import { ArticleIcon, CartIcon, EditIcon, SettingIcon, UserIcon } from 'tdesign-icons-react'
 import CustomerArchive from './CustomerArchive'
+import ProductArchive from './ProductArchive'
 import InquiryManager from './InquiryManager'
 import SettingsView from './SettingsView'
 
@@ -22,14 +23,15 @@ const DEFAULTS: Bootstrap = {
   month: new Date().toISOString().slice(0, 7),
 }
 
-type PageKey = 'entry' | 'manage' | 'customers' | 'settings'
+type PageKey = 'entry' | 'manage' | 'customers' | 'products' | 'settings'
 const NAV: { key: PageKey; label: string; icon: JSX.Element }[] = [
   { key: 'entry', label: '询报价录入', icon: <EditIcon /> },
   { key: 'manage', label: '询报价管理', icon: <ArticleIcon /> },
   { key: 'customers', label: '客户档案', icon: <UserIcon /> },
+  { key: 'products', label: '产品档案', icon: <CartIcon /> },
   { key: 'settings', label: '字段与选项设置', icon: <SettingIcon /> },
 ]
-const TITLES: Record<PageKey, string> = { entry: '询报价录入', manage: '询报价管理', customers: '客户档案', settings: '字段与选项设置' }
+const TITLES: Record<PageKey, string> = { entry: '询报价录入', manage: '询报价管理', customers: '客户档案', products: '产品档案', settings: '字段与选项设置' }
 function Shell({ page, onNav, children }: { page: PageKey; onNav: (p: PageKey) => void; children: React.ReactNode }) {
   return (
     <div className="sa-layout">
@@ -78,6 +80,7 @@ export default function App() {
   const [note, setNote] = useState('')
   const [keyCust, setKeyCust] = useState<'' | '1' | '0'>('')
   const [keyProj, setKeyProj] = useState<'' | '1' | '0'>('')
+  const [products, setProducts] = useState<{ id: string; name: string; currency: string; last_amount: number | null; use_count: number }[]>([])
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [cusList, setCusList] = useState<{ id: string; name: string; country: string | null }[]>([])
@@ -86,6 +89,7 @@ export default function App() {
   const noT = useRef<HTMLInputElement>(null)
 
   useEffect(() => { get<Bootstrap>('/meta/bootstrap').then(setMeta).catch(() => { /* 使用内置默认，保存时会再报后端错误 */ }) }, [])
+  useEffect(() => { get<{ id: string; name: string; currency: string; last_amount: number | null; use_count: number }[]>('/products').then(setProducts).catch(() => { /* */ }) }, [])
   const checkNo = useCallback((v: string) => {
     if (!v.trim()) { setNoTaken(false); return }
     get<{ exists: boolean }>(`/inquiries/exists?no=${encodeURIComponent(v.trim())}`).then((r) => setNoTaken(r.exists)).catch(() => { /* */ })
@@ -147,6 +151,7 @@ export default function App() {
     <Shell page={page} onNav={setPage}>
       {page === 'manage' && <InquiryManager meta={meta} />}
       {page === 'customers' && <CustomerArchive />}
+      {page === 'products' && <ProductArchive />}
       {page === 'settings' && <SettingsView />}
     </Shell>
   )
@@ -200,7 +205,16 @@ export default function App() {
         </div>
         {items.map((it, i) => (
           <div key={i} className="item-row">
-            <div className="col grow1"><label>产品名称</label><input className="sa" style={{ width: '100%' }} value={it.productName} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, productName: e.target.value } : x))} placeholder="如：可溶桥塞" /></div>
+            <div className="col grow1">
+              <label>产品名称 <span className="hint">（输入即联动产品档案，可直接下拉选择）</span></label>
+              <input className="sa" style={{ width: '100%' }} list="prod-list" value={it.productName} placeholder="如：可溶桥塞"
+                onChange={(e) => {
+                  const v = e.target.value
+                  const hit = products.find((pp) => pp.name.toLowerCase() === v.trim().toLowerCase())
+                  setItems((a) => a.map((x, j) => j === i ? { ...x, productName: v, currency: hit ? hit.currency : x.currency } : x))
+                }} />
+              {(() => { const hit = products.find((pp) => pp.name.toLowerCase() === it.productName.trim().toLowerCase()); return hit ? <span className="hint">档案：参考金额 {hit.last_amount == null ? '—' : Number(hit.last_amount).toLocaleString()} {hit.currency} · 已用 {hit.use_count} 次</span> : null })()}
+            </div>
             <div className="col w1"><label>数量</label><input className="sa" type="number" min="0" value={it.qty} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} /></div>
             <div className="col w1"><label>金额 *</label><input className="sa" type="number" min="0" value={it.amount} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} /></div>
             <div className="col w1"><label>币种</label>
@@ -210,6 +224,7 @@ export default function App() {
           </div>
         ))}
         <button className="btn sm" onClick={() => setItems((a) => [...a, emptyRow()])}>＋ 添加产品</button>
+        <datalist id="prod-list">{products.map((pp) => <option key={pp.id} value={pp.name} />)}</datalist>
 
         <div style={{ marginTop: 14, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
           <div className="totals">
