@@ -168,7 +168,7 @@ export default function FollowUps({ meta }: { meta: MetaLite }) {
             <div className="col" style={{ flex: 1, minWidth: 280 }}>
               <label>图片/照片</label>
               <input ref={photoInput} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => { void upload(e.target.files, 'photo'); e.target.value = '' }} />
-              <button className="btn xs" disabled={uploading} onClick={() => photoInput.current?.click()}>＋ 上传图片</button>
+              <button className="btn xs" style={{ alignSelf: 'flex-start' }} disabled={uploading} onClick={() => photoInput.current?.click()}>＋ 上传图片</button>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
                 {photos.map((p) => (
                   <span key={p} style={{ position: 'relative' }}>
@@ -182,7 +182,7 @@ export default function FollowUps({ meta }: { meta: MetaLite }) {
             <div className="col" style={{ flex: 1, minWidth: 280 }}>
               <label>附件</label>
               <input ref={fileInput} type="file" multiple style={{ display: 'none' }} onChange={(e) => { void upload(e.target.files, 'file'); e.target.value = '' }} />
-              <button className="btn xs" disabled={uploading} onClick={() => fileInput.current?.click()}>＋ 上传附件</button>
+              <button className="btn xs" style={{ alignSelf: 'flex-start' }} disabled={uploading} onClick={() => fileInput.current?.click()}>＋ 上传附件</button>
               <div style={{ marginTop: 6 }}>
                 {files.map((x) => (
                   <div key={x.url} className="row" style={{ marginBottom: 4 }}>
