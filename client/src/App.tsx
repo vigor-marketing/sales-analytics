@@ -278,6 +278,7 @@ export default function App() {
               <label>产品名称 <span className="hint">（可手输；点右侧按钮从产品档案选择）</span></label>
               <div className="prod-pick" style={{ display: 'flex', gap: 6 }}>
                 <input className="sa" style={{ width: '100%' }} value={it.productName} placeholder="如：可溶桥塞"
+                  title={(() => { const h = products.find((pp) => pp.name.toLowerCase() === it.productName.trim().toLowerCase()); return h ? `档案：参考金额 ${h.last_amount == null ? '—' : Number(h.last_amount).toLocaleString()} ${h.currency} · 已用 ${h.use_count} 次` : '' })()}
                   onChange={(e) => {
                     const v = e.target.value
                     const hit = products.find((pp) => pp.name.toLowerCase() === v.trim().toLowerCase())
@@ -301,7 +302,6 @@ export default function App() {
                   </div>
                 )}
               </div>
-              {(() => { const hit = products.find((pp) => pp.name.toLowerCase() === it.productName.trim().toLowerCase()); return hit ? <span className="hint">档案：参考金额 {hit.last_amount == null ? '—' : Number(hit.last_amount).toLocaleString()} {hit.currency} · 已用 {hit.use_count} 次</span> : null })()}
             </div>
             <div className="col w1"><label>数量</label><input className="sa" type="number" min="0" value={it.qty} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} /></div>
             <div className="col w1"><label>金额 *</label><input className="sa" type="number" min="0" value={it.amount} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} /></div>
