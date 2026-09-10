@@ -291,7 +291,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
   // 询价报价合计（生成销售订单时自动带出金额与币种，可手改）
   const [quote, setQuote] = useState<{ currency: string; total: number }[]>([])
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
-  const [form, setForm] = useState<{ inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; note: string; blockers: string; actionPlan: string; supportNeeded: string; stars: string; keyCust: boolean; keyProj: boolean; isLost: boolean; lostReason: string; lostDate: string; customReason: boolean; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
+  const [form, setForm] = useState<{ inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; note: string; blockers: string; actionPlan: string; supportNeeded: string; stars: string; keyCust: boolean; keyProj: boolean; isLost: boolean; lostReason: string; lostDate: string; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
   const set = (patch: Partial<typeof form>) => setForm((f) => (f ? { ...f, ...patch } : f))
   useEffect(() => {
     get<Detail>(`/inquiries/${id}`).then((d) => {
@@ -319,7 +319,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
     try { await del(`/orders/${order.id}`); onSaved() }
     catch (e) { setOrdErr((e as Error).message) } finally { setOrdBusy(false) }
   }
-  useEffect(() => { get<Detail>(`/inquiries/${id}`).then((d) => setForm({ inquiryNo: d.inquiry_no, customerName: d.customer_name, date: d.date, country: d.country || '', useLoc: d.use_location || '', sales: d.sales, purchaser: d.purchaser, source: d.source, handTotal: d.hand_total == null ? '' : String(d.hand_total), note: d.note || '', stars: d.customer_stars == null ? '' : String(d.customer_stars), blockers: d.blockers || '', actionPlan: d.action_plan || '', supportNeeded: d.support_needed || '', keyCust: Number(d.is_key_customer) === 1, keyProj: Number(d.is_key_project) === 1, isLost: Number(d.is_lost) === 1, lostReason: d.lost_reason || '', lostDate: d.lost_date || new Date().toISOString().slice(0, 10), customReason: Boolean(d.lost_reason) && !(meta.lostReasons?.length ? meta.lostReasons : LOST_REASONS).includes(d.lost_reason as string), items: (d.items || []).map((it) => ({ productName: it.product_name, qty: it.qty == null ? '' : String(it.qty), amount: String(it.amount), currency: it.currency })) })).catch((e) => setErr((e as Error).message)) }, [id])
+  useEffect(() => { get<Detail>(`/inquiries/${id}`).then((d) => setForm({ inquiryNo: d.inquiry_no, customerName: d.customer_name, date: d.date, country: d.country || '', useLoc: d.use_location || '', sales: d.sales, purchaser: d.purchaser, source: d.source, handTotal: d.hand_total == null ? '' : String(d.hand_total), note: d.note || '', stars: d.customer_stars == null ? '' : String(d.customer_stars), blockers: d.blockers || '', actionPlan: d.action_plan || '', supportNeeded: d.support_needed || '', keyCust: Number(d.is_key_customer) === 1, keyProj: Number(d.is_key_project) === 1, isLost: Number(d.is_lost) === 1, lostReason: d.lost_reason || '', lostDate: d.lost_date || new Date().toISOString().slice(0, 10),  items: (d.items || []).map((it) => ({ productName: it.product_name, qty: it.qty == null ? '' : String(it.qty), amount: String(it.amount), currency: it.currency })) })).catch((e) => setErr((e as Error).message)) }, [id])
   const save = async () => {
     if (!form) return
     if (!form.items.some((it) => it.productName.trim() && Number(it.amount) > 0)) return setErr('至少一行有效产品')
@@ -417,29 +417,15 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
                     </label>
                   </div>
                   {form.isLost && (<>
-                    <div className="col w2" style={{ minWidth: 240 }}>
+                    <div className="col w2" style={{ minWidth: 320 }}>
                       <label>丢单原因 *</label>
-                      <select
-                        className="sa"
-                        style={{ width: '100%' }}
-                        value={form.customReason ? '__custom__' : form.lostReason}
-                        onChange={(e) => {
-                          const v = e.target.value
-                          if (v === '__custom__') set({ customReason: true, lostReason: '' })
-                          else set({ customReason: false, lostReason: v })
-                        }}
-                      >
-                        <option value="">— 请选择原因 —</option>
-                        {(meta.lostReasons?.length ? meta.lostReasons : LOST_REASONS).filter((x) => x !== '其他').map((x) => <option key={x} value={x}>{x}</option>)}
-                        <option value="__custom__">其他（手动输入）</option>
-                      </select>
+                      <ReasonPicker
+                        value={form.lostReason}
+                        onChange={(v) => set({ lostReason: v })}
+                        options={meta.lostReasons?.length ? meta.lostReasons : LOST_REASONS}
+                        placeholder="— 请选择原因 —"
+                      />
                     </div>
-                    {form.customReason && (
-                      <div className="col w2" style={{ minWidth: 220 }}>
-                        <label>手动填写原因 *</label>
-                        <input className="sa" style={{ width: '100%' }} value={form.lostReason} onChange={(e) => set({ lostReason: e.target.value })} placeholder="请输入丢单原因" />
-                      </div>
-                    )}
                     <div className="col w1"><label>丢单日期</label><input className="sa" type="date" value={form.lostDate} onChange={(e) => set({ lostDate: e.target.value })} /></div>
                     <div className="col grow1"><span className="hint">原因必填；下拉选项在「字段与选项设置 → 丢单原因」维护，特殊原因选「其他」手填</span></div>
                   </>)}
