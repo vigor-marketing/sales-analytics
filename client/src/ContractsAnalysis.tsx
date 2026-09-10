@@ -91,7 +91,7 @@ function TrendChart({ data }: { data: { key: string; label: string; usd: number;
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-  const H = 172, padL = 54, padR = 16, padT = 20, padB = 30
+  const H = 180, padL = 76, padR = 22, padT = 22, padB = 36
   const innerW = Math.max(60, w - padL - padR)
   const innerH = H - padT - padB
   const top = niceMax(Math.max(...data.map((d) => d.usd), 0))
@@ -131,10 +131,12 @@ function TrendChart({ data }: { data: { key: string; label: string; usd: number;
           <g key={data[i].key}>
             <circle cx={pt[0]} cy={pt[1]} r={hover === i ? 6 : i === peak && data[i].usd > 0 ? 5 : 4}
               fill={data[i].usd > 0 ? '#fff' : '#f2f4f8'} stroke={i === peak && data[i].usd > 0 ? '#ef4f0b' : '#0052d9'} strokeWidth={hover === i ? 3 : 2.2} />
-            {showValue && data[i].usd > 0 && (
-              <text x={pt[0]} y={pt[1] - 11} textAnchor="middle" fontSize="11" fontWeight={700} fill={i === peak ? '#ef4f0b' : '#33405a'}>{compact(data[i].usd)}</text>
-            )}
-            <text x={px(i)} y={H - 14} textAnchor="middle" fontSize="11.5" fill={hover === i ? '#0052d9' : '#6b7488'} fontWeight={hover === i ? 700 : 400}>{data[i].label}</text>
+            {showValue && data[i].usd > 0 && (() => {
+              // 首/末点分别左对齐、右对齐，避免压到左侧刻度或越出右边界
+              const anchor = i === 0 ? 'start' : i === data.length - 1 ? 'end' : 'middle'
+              return <text x={pt[0]} y={pt[1] - 11} textAnchor={anchor} fontSize="11" fontWeight={700} fill={i === peak ? '#ef4f0b' : '#33405a'}>{compact(data[i].usd)}</text>
+            })()}
+            <text x={px(i)} y={H - 11} textAnchor="middle" fontSize="11.5" fill={hover === i ? '#0052d9' : '#6b7488'} fontWeight={hover === i ? 700 : 400}>{data[i].label}</text>
             <rect x={px(i) - (step || innerW) / 2} y={padT} width={step || innerW} height={innerH} fill="transparent"
               onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} style={{ cursor: 'pointer' }} />
           </g>
