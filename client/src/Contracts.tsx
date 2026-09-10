@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { del, get, put } from './api'
+import ReasonPicker from './ReasonPicker'
 
 interface Item { product_name: string; qty: number | null; amount: number; currency: string }
 interface OrderRow {
@@ -8,7 +9,7 @@ interface OrderRow {
   customer_name: string; hand_total: number | null; usdApprox: number; totals: { currency: string; total: number }[]
   productNames: string; itemCount: number; items: Item[]; cycleDays: number | null
 }
-interface MetaLite { sales: { name: string; team: string }[] }
+interface MetaLite { sales: { name: string; team: string }[]; winReasons?: string[]; lostReasons?: string[] }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Math.round(Number(n)).toLocaleString('zh-CN'))
 const cycleTone = (d: number | null) => (d == null ? 'var(--sub)' : d <= 30 ? '#059669' : d <= 90 ? '#a35c00' : 'var(--danger)')
@@ -77,7 +78,7 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
       </div>
 
       {viewId && <OrderView id={viewId} onClose={() => setViewId(null)} />}
-      {editId && <OrderEdit id={editId} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); void load() }} />}
+      {editId && <OrderEdit id={editId} winReasons={meta.winReasons} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); void load() }} />}
     </div>
   )
 }
@@ -112,6 +113,7 @@ function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
               <thead><tr>{['#', '产品名称', '数量', '金额', '币种'].map((h) => <th key={h} style={{ textAlign: 'left', padding: 6, borderBottom: '1px solid var(--line)' }}>{h}</th>)}</tr></thead>
               <tbody>{(d.items || []).map((it, i) => <tr key={i}><td style={{ padding: 6 }}>{i + 1}</td><td style={{ padding: 6 }}>{it.product_name}</td><td style={{ padding: 6 }}>{it.qty ?? '—'}</td><td style={{ padding: 6 }} className="mono">{money(it.amount)}</td><td style={{ padding: 6 }}>{it.currency}</td></tr>)}</tbody>
             </table>
+            {(d as { win_reason?: string | null }).win_reason && <div className="hint" style={{ marginTop: 8 }}>成交原因：{(d as { win_reason?: string | null }).win_reason}</div>}
             {d.order_note && <div className="hint" style={{ marginTop: 8 }}>订单备注：{d.order_note}</div>}
           </>
         )}
@@ -120,16 +122,16 @@ function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
   )
 }
 
-function OrderEdit({ id, onClose, onSaved }: { id: string; onClose: () => void; onSaved: () => void }) {
+function OrderEdit({ id, onClose, onSaved, winReasons = [] }: { id: string; onClose: () => void; onSaved: () => void; winReasons?: string[] }) {
   const { d } = useOrder(id)
-  const [form, setForm] = useState<{ orderNo: string; wonDate: string; amount: string; currency: string; note: string } | null>(null)
+  const [form, setForm] = useState<{ orderNo: string; wonDate: string; amount: string; currency: string; note: string; winReason: string } | null>(null)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
-  useEffect(() => { if (d) setForm({ orderNo: d.order_no, wonDate: d.won_date, amount: d.order_amount == null ? '' : String(d.order_amount), currency: d.order_currency, note: d.order_note || '' }) }, [d])
+  useEffect(() => { if (d) setForm({ orderNo: d.order_no, wonDate: d.won_date, amount: d.order_amount == null ? '' : String(d.order_amount), currency: d.order_currency, note: d.order_note || '', winReason: (d as { win_reason?: string | null }).win_reason || '' }) }, [d])
   const save = async () => {
     if (!form) return
     setBusy(true); setErr('')
-    try { await put(`/orders/${id}`, { orderNo: form.orderNo, wonDate: form.wonDate, amount: form.amount ? Number(form.amount) : undefined, currency: form.currency, note: form.note }); onSaved() } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+    try { await put(`/orders/${id}`, { orderNo: form.orderNo, wonDate: form.wonDate, amount: form.amount ? Number(form.amount) : undefined, currency: form.currency, note: form.note, winReason: form.winReason }); onSaved() } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
   return (
     <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
@@ -148,6 +150,11 @@ function OrderEdit({ id, onClose, onSaved }: { id: string; onClose: () => void; 
             <div className="row">
               <div className="col w2"><label>订单金额</label><input className="sa" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
               <div className="col w1"><label>币种</label><select className="sa" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>{['USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}</select></div>
+            </div>
+            <div className="row">
+              <div className="col w2"><label>成交原因 <span className="hint">（用于成交原因分析，选填）</span></label>
+                <ReasonPicker value={form.winReason} onChange={(v) => setForm({ ...form, winReason: v })} options={winReasons} />
+              </div>
             </div>
             <div className="col"><label>备注</label><textarea className="sa" rows={2} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></div>
             <div className="actions" style={{ marginTop: 10 }}><button className="btn pri" disabled={busy} onClick={() => void save()}>保存修改</button></div>

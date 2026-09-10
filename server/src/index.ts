@@ -1,7 +1,7 @@
 /** sales-analytics v3 起步：询报价录入页 API */
 import cors from 'cors'
 import express from 'express'
-import { schema, ensurePeople, backfillProducts, migrateWonToOrders, getDb, getSources, getCountries, saveSources, getFollowMethods, saveFollowMethods, getLostReasons, saveLostReasons, getSetting, setSetting, newId, nowIso, todayStr, text, num } from './db.js'
+import { schema, ensurePeople, backfillProducts, migrateWonToOrders, getDb, getSources, getCountries, saveSources, getFollowMethods, saveFollowMethods, getLostReasons, saveLostReasons, getWinReasons, saveWinReasons, getSetting, setSetting, newId, nowIso, todayStr, text, num } from './db.js'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -31,7 +31,7 @@ app.get('/api/meta/bootstrap', (_req, res) => {
   const people = d.prepare('SELECT name, department, team_name, role FROM people ORDER BY team_name, name').all() as { name: string; department: string; team_name: string; role: string }[]
   const sales = people.filter((p) => p.role === 'sales').map((p) => ({ name: p.name, team: p.team_name }))
   const purchasers = people.filter((p) => ['采购部', '销售支持组'].includes(p.department)).map((p) => p.name)
-  ok(res, { sales, purchasers, sources: getSources(), methods: getFollowMethods(), lostReasons: getLostReasons(), countries: getCountries(), fx: FX, month: todayStr().slice(0, 7) })
+  ok(res, { sales, purchasers, sources: getSources(), methods: getFollowMethods(), lostReasons: getLostReasons(), winReasons: getWinReasons(), countries: getCountries(), fx: FX, month: todayStr().slice(0, 7) })
 })
 
 // —— 产品档案：录入自动沉淀 + 查询/维护 ——
@@ -90,6 +90,17 @@ app.post('/api/lost-reasons', (req, res) => {
   if (b.action === 'add' && str(b.value)) { if (!list.includes(str(b.value))) list.push(str(b.value)); saveLostReasons(list); return ok(res, list) }
   if (b.action === 'remove' && str(b.value)) { saveLostReasons(list.filter((x) => x !== str(b.value))); return ok(res, getLostReasons()) }
   if (b.action === 'rename' && str(b.value) && str(b.newValue)) { saveLostReasons(list.map((x) => (x === str(b.value) ? str(b.newValue) : x))); return ok(res, getLostReasons()) }
+  fail(res, '未知操作')
+})
+
+// —— 成交原因字典管理（设置页统一管理） ——
+app.get('/api/win-reasons', (_req, res) => ok(res, getWinReasons()))
+app.post('/api/win-reasons', (req, res) => {
+  const b = (req.body ?? {}) as { action?: string; value?: string; newValue?: string }
+  const list = getWinReasons()
+  if (b.action === 'add' && str(b.value)) { if (!list.includes(str(b.value))) list.push(str(b.value)); saveWinReasons(list); return ok(res, list) }
+  if (b.action === 'remove' && str(b.value)) { saveWinReasons(list.filter((x) => x !== str(b.value))); return ok(res, getWinReasons()) }
+  if (b.action === 'rename' && str(b.value) && str(b.newValue)) { saveWinReasons(list.map((x) => (x === str(b.value) ? str(b.newValue) : x))); return ok(res, getWinReasons()) }
   fail(res, '未知操作')
 })
 
@@ -163,6 +174,7 @@ app.get('/api/options', (_req, res) => {
       { code: 'source', name: '询价来源', values: getSources() },
       { code: 'follow_method', name: '跟进方式', values: getFollowMethods() },
       { code: 'lost_reason', name: '丢单原因（未成单原因）', values: getLostReasons() },
+      { code: 'win_reason', name: '成交原因', values: getWinReasons() },
       { code: 'country_custom', name: '自定义国别补充（可选维护）', values: (() => { try { const a = JSON.parse(getSetting('countries', '')); return Array.isArray(a) ? a : [] } catch { return [] } })() },
     ],
     fixed: [
@@ -342,7 +354,7 @@ app.get('/api/orders', (req, res) => {
   if (from) { parts.push('o.won_date >= ?'); args.push(from) }
   if (to) { parts.push('o.won_date <= ?'); args.push(to) }
   if (productQ) { parts.push('EXISTS (SELECT 1 FROM inquiry_items it WHERE it.inquiry_id = i.id AND it.product_name LIKE ?)'); args.push(`%${productQ}%`) }
-  const rows = d.prepare(`SELECT o.id AS order_id, o.order_no, o.won_date, o.amount AS order_amount, o.currency AS order_currency, o.note AS order_note,
+  const rows = d.prepare(`SELECT o.id AS order_id, o.order_no, o.won_date, o.amount AS order_amount, o.currency AS order_currency, o.note AS order_note, o.win_reason AS win_reason,
       i.id AS inquiry_id, i.inquiry_no, i.date, i.sales, i.purchaser, i.source, i.country, i.use_location, i.hand_total, i.is_key_customer, i.is_key_project,
       c.name AS customer_name
     FROM orders o JOIN inquiries i ON i.id = o.inquiry_id LEFT JOIN customers c ON c.id = i.customer_id
@@ -380,8 +392,9 @@ app.post('/api/orders', (req, res) => {
   const amount = num(req.body?.amount)
   const t = nowIso()
   const oid = newId()
-  d.prepare('INSERT INTO orders (id, order_no, inquiry_id, customer_id, won_date, amount, currency, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(oid, orderNo, inquiryId, text(inq.customer_id) || null, wonDate, amount, cur, text(req.body?.note) || null, t, t)
+  const winReason = text(req.body?.winReason) || null
+  d.prepare('INSERT INTO orders (id, order_no, inquiry_id, customer_id, won_date, amount, currency, note, win_reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(oid, orderNo, inquiryId, text(inq.customer_id) || null, wonDate, amount, cur, text(req.body?.note) || null, winReason, t, t)
   ok(res, { id: oid, orderNo, wonDate }, 201)
 })
 app.put('/api/orders/:id', (req, res) => {
@@ -397,13 +410,76 @@ app.put('/api/orders/:id', (req, res) => {
   const amount = req.body?.amount !== undefined ? num(req.body.amount) : num(o.amount)
   const cur = req.body?.currency !== undefined && ['USD', 'CNY', 'EUR'].includes(str(req.body.currency)) ? str(req.body.currency) : str(o.currency)
   const note = req.body?.note !== undefined ? (text(req.body.note) || null) : str(o.note) || null
-  d.prepare('UPDATE orders SET order_no = ?, won_date = ?, amount = ?, currency = ?, note = ?, updated_at = ? WHERE id = ?').run(orderNo, wonDate, amount, cur, note, nowIso(), req.params.id)
+  const winReason = req.body?.winReason !== undefined ? (text(req.body.winReason) || null) : (str(o.win_reason) || null)
+  d.prepare('UPDATE orders SET order_no = ?, won_date = ?, amount = ?, currency = ?, note = ?, win_reason = ?, updated_at = ? WHERE id = ?').run(orderNo, wonDate, amount, cur, note, winReason, nowIso(), req.params.id)
   ok(res, { id: req.params.id })
 })
 app.delete('/api/orders/:id', (req, res) => {
   const r = getDb().prepare('DELETE FROM orders WHERE id = ?').run(req.params.id)
   if (!r.changes) return fail(res, '订单不存在', 404)
   ok(res, { deleted: 1 })
+})
+
+// —— 原因分析：成交原因（来源销售订单）与丢单原因（来源标记未成单的询价） ——
+app.get('/api/analysis/reasons', (req, res) => {
+  const d = getDb()
+  const salesQ = str(req.query.sales), from = str(req.query.from), to = str(req.query.to), productQ = str(req.query.product)
+  const usdOf = (inquiryId: string) => {
+    const items = d.prepare('SELECT amount, currency FROM inquiry_items WHERE inquiry_id = ?').all(inquiryId) as { amount: number; currency: string }[]
+    return items.reduce((s2, x) => s2 + (Number(x.amount) || 0) / (FX2[x.currency] || 1), 0)
+  }
+  const blank = (v: unknown) => text(v) || '未填写'
+
+  const wParts: string[] = ['1=1']; const wArgs: unknown[] = []
+  if (salesQ) { wParts.push('i.sales = ?'); wArgs.push(salesQ) }
+  if (from) { wParts.push('o.won_date >= ?'); wArgs.push(from) }
+  if (to) { wParts.push('o.won_date <= ?'); wArgs.push(to) }
+  if (productQ) { wParts.push('EXISTS (SELECT 1 FROM inquiry_items it WHERE it.inquiry_id = i.id AND it.product_name LIKE ?)'); wArgs.push(`%${productQ}%`) }
+  const wins = d.prepare(`SELECT i.id AS inquiry_id, i.date AS inq_date, o.won_date, o.win_reason FROM orders o JOIN inquiries i ON i.id = o.inquiry_id WHERE ${wParts.join(' AND ')}`)
+    .all(...wArgs) as { inquiry_id: string; inq_date: string; won_date: string; win_reason: string | null }[]
+
+  const lParts: string[] = ['o.id IS NULL', 'COALESCE(i.is_lost, 0) = 1']; const lArgs: unknown[] = []
+  if (salesQ) { lParts.push('i.sales = ?'); lArgs.push(salesQ) }
+  if (from) { lParts.push('COALESCE(i.lost_date, i.date) >= ?'); lArgs.push(from) }
+  if (to) { lParts.push('COALESCE(i.lost_date, i.date) <= ?'); lArgs.push(to) }
+  if (productQ) { lParts.push('EXISTS (SELECT 1 FROM inquiry_items it WHERE it.inquiry_id = i.id AND it.product_name LIKE ?)'); lArgs.push(`%${productQ}%`) }
+  const losts = d.prepare(`SELECT i.id, i.lost_reason, i.date AS inq_date, COALESCE(i.lost_date, i.date) AS lost_at FROM inquiries i LEFT JOIN orders o ON o.inquiry_id = i.id WHERE ${lParts.join(' AND ')}`)
+    .all(...lArgs) as { id: string; lost_reason: string | null; inq_date: string; lost_at: string }[]
+
+  const agg = (rows: { reason: string; usd: number; cycle: number | null }[]) => {
+    const m = new Map<string, { reason: string; count: number; usd: number; cycles: number[] }>()
+    rows.forEach((r) => {
+      const a = m.get(r.reason) ?? { reason: r.reason, count: 0, usd: 0, cycles: [] }
+      a.count += 1; a.usd += r.usd
+      if (typeof r.cycle === 'number' && r.cycle >= 0) a.cycles.push(r.cycle)
+      m.set(r.reason, a)
+    })
+    const totalN = rows.length
+    const totalUsd = rows.reduce((s2, r) => s2 + r.usd, 0)
+    const items = Array.from(m.values())
+      .map((a) => ({
+        reason: a.reason, count: a.count, usd: Math.round(a.usd),
+        share: totalN ? Math.round((a.count / totalN) * 1000) / 10 : 0,
+        usdShare: totalUsd ? Math.round((a.usd / totalUsd) * 1000) / 10 : 0,
+        avgCycle: a.cycles.length ? Math.round(a.cycles.reduce((x, y) => x + y, 0) / a.cycles.length) : null,
+      }))
+      .sort((a, b) => b.count - a.count || b.usd - a.usd)
+    return { total: totalN, usdTotal: Math.round(totalUsd), items, missing: items.find((x) => x.reason === '未填写')?.count ?? 0 }
+  }
+
+  const winRows = wins.map((w) => ({
+    reason: blank(w.win_reason),
+    usd: usdOf(w.inquiry_id),
+    cycle: (w.won_date && w.inq_date) ? Math.round((Date.parse(String(w.won_date)) - Date.parse(String(w.inq_date))) / 86400000) : null,
+  }))
+  // 丢单周期：询价日期 → 丢单日期（同成交的转化周期口径）
+  const lostRows = losts.map((l) => ({
+    reason: blank(l.lost_reason),
+    usd: usdOf(l.id),
+    cycle: (l.lost_at && l.inq_date) ? Math.round((Date.parse(String(l.lost_at)) - Date.parse(String(l.inq_date))) / 86400000) : null,
+  }))
+
+  ok(res, { win: agg(winRows), lost: agg(lostRows), reasons: { win: getWinReasons(), lost: getLostReasons() } })
 })
 
 app.get('/api/contracts', (req, res) => {
@@ -507,7 +583,7 @@ app.get('/api/inquiries/:id', (req, res) => {
   const r = d.prepare('SELECT i.*, c.name AS customer_name FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id WHERE i.id = ?').get(req.params.id) as Record<string, unknown> | undefined
   if (!r) return fail(res, '询价不存在', 404)
   const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(req.params.id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
-  const order = d.prepare('SELECT id, order_no, won_date, amount, currency, note FROM orders WHERE inquiry_id = ?').get(req.params.id) as Record<string, unknown> | undefined
+  const order = d.prepare('SELECT id, order_no, won_date, amount, currency, note, win_reason FROM orders WHERE inquiry_id = ?').get(req.params.id) as Record<string, unknown> | undefined
   const { is_won: _legacyWon, won_date: _legacyWonDate, ...base } = r
   ok(res, { ...base, is_won: order ? 1 : 0, status: inquiryStatus(Boolean(order), r.is_lost), won_date: order ? str(order.won_date) : null, orderNo: order ? str(order.order_no) : null, order: order ?? null, items, totals: fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount }))) })
 })

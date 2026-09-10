@@ -8,7 +8,10 @@ interface OrderRow {
   usdApprox: number; totals: { currency: string; total: number }[]; items: Item[]; cycleDays: number | null; productNames: string
 }
 interface Stats { contractCount: number; cycleCount: number; avgCycle: number | null; medianCycle: number | null; minCycle: number | null; maxCycle: number | null; usdTotal: number; byProduct: { name: string; count: number; avgCycle: number }[]; bySales: { name: string; count: number; avgCycle: number }[] }
-interface MetaLite { sales: { name: string; team: string }[] }
+interface MetaLite { sales: { name: string; team: string }[]; winReasons?: string[]; lostReasons?: string[] }
+interface ReasonItem { reason: string; count: number; usd: number; share: number; usdShare: number; avgCycle: number | null }
+interface ReasonStat { total: number; usdTotal: number; items: ReasonItem[]; missing: number }
+interface ReasonData { win: ReasonStat; lost: ReasonStat; reasons: { win: string[]; lost: string[] } }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Math.round(Number(n)).toLocaleString('zh-CN'))
 /** 坐标轴刻度取整：把最大值向上取到 1/2/5×10^n，让刻度好看 */
@@ -108,12 +111,15 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   const [trendMode, setTrendMode] = useState<'year' | 'month'>('year')
   const [year, setYear] = useState('')
   const [rows, setRows] = useState<OrderRow[]>([]); const [stats, setStats] = useState<Stats | null>(null); const [msg, setMsg] = useState('')
+  const [reasons, setReasons] = useState<ReasonData | null>(null)
+  const [reasonView, setReasonView] = useState<'win' | 'lost'>('win')
   const load = useCallback(async () => {
     try {
       const p = new URLSearchParams()
       if (sales) p.set('sales', sales); if (from) p.set('from', from); if (to) p.set('to', to); if (product) p.set('product', product)
       const d = await get<{ rows: OrderRow[]; stats: Stats }>(`/orders?${p.toString()}`)
       setRows(d.rows); setStats(d.stats)
+      try { setReasons(await get<ReasonData>(`/analysis/reasons?${p.toString()}`)) } catch { setReasons(null) }
     } catch (e) { setMsg((e as Error).message) }
   }, [sales, from, to, product])
   useEffect(() => { void load() }, [load])
@@ -234,6 +240,73 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           </div>
         </div>
       )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '16px 0 6px' }}>
+        <h4 style={{ margin: 0 }}>原因分析</h4>
+        <span className="seg">
+          <button className={reasonView === 'win' ? 'on' : ''} onClick={() => setReasonView('win')}>成交原因分析</button>
+          <button className={reasonView === 'lost' ? 'on' : ''} onClick={() => setReasonView('lost')}>丢单原因分析</button>
+        </span>
+        <span className="hint">{reasonView === 'win' ? '来源：销售订单里填写的「成交原因」（成单日期口径，跟随上方筛选）' : '来源：标记「未成单」时填写的丢单原因（丢单日期口径，跟随上方筛选）'}</span>
+      </div>
+      {(() => {
+        const st = reasonView === 'win' ? reasons?.win : reasons?.lost
+        if (!st) return <div className="hint">暂无数据</div>
+        const label = reasonView === 'win' ? '成交' : '丢单'
+        const maxUsd = Math.max(1, ...st.items.map((x) => x.usd))
+        return (
+          <>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+              <div style={card}><div className="hint">{label}单数</div><div style={{ fontSize: 22, fontWeight: 800 }}>{st.total}</div></div>
+              <div style={card}><div className="hint">{label}金额（折USD）</div><div style={{ fontSize: 22, fontWeight: 800, color: reasonView === 'win' ? '#059669' : 'var(--danger)' }}>{money(st.usdTotal)}</div></div>
+              <div style={card}><div className="hint">原因种类</div><div style={{ fontSize: 22, fontWeight: 800 }}>{st.items.filter((x) => x.reason !== '未填写').length}</div></div>
+              <div style={card}><div className="hint">未填写原因</div><div style={{ fontSize: 22, fontWeight: 800, color: st.missing ? '#a35c00' : 'var(--sub)' }}>{st.missing}</div></div>
+            </div>
+            <div className="tablewrap" style={{ overflowX: 'auto' }}>
+              <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead><tr>{(reasonView === 'win'
+                  ? ['成交原因', '订单数', '占比', '金额（折USD）', '金额占比', '平均转化周期']
+                  : ['丢单原因', '丢单数', '占比', '丢单金额（折USD）', '金额占比', '平均丢单周期']).map((h) => <th key={h} style={{ background: '#f8fafd', padding: 6, textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {st.items.map((x) => (
+                    <tr key={x.reason} style={{ borderBottom: '1px solid var(--line2)' }}>
+                      <td style={{ padding: 6, fontWeight: x.reason === '未填写' ? 400 : 600, color: x.reason === '未填写' ? 'var(--sub)' : 'var(--text)' }}>
+                        {reasonView === 'lost' && x.reason !== '未填写' ? <span className="tag lost" style={{ marginRight: 6 }}>丢单</span> : null}{x.reason}
+                      </td>
+                      <td style={{ padding: 6 }}>{x.count}</td>
+                      <td style={{ padding: 6, minWidth: 150 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ flex: 1, background: '#eef1f6', borderRadius: 4, height: 10, overflow: 'hidden', minWidth: 60 }}>
+                            <div style={{ width: `${Math.max(2, Math.round((x.count / Math.max(1, st.total)) * 100))}%`, height: '100%', background: reasonView === 'win' ? 'linear-gradient(90deg,#059669,#34d399)' : 'linear-gradient(90deg,#dc2626,#f87171)' }} />
+                          </div>
+                          <span className="mono" style={{ width: 46, textAlign: 'right' }}>{x.share}%</span>
+                        </div>
+                      </td>
+                      <td className="mono" style={{ padding: 6 }} title={`占金额 ${x.usdShare}%`}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 66, textAlign: 'right' }}>{money(x.usd)}</span>
+                          <div style={{ flex: 1, background: '#eef1f6', borderRadius: 4, height: 10, overflow: 'hidden', minWidth: 50 }}>
+                            <div style={{ width: `${Math.max(2, Math.round((x.usd / maxUsd) * 100))}%`, height: '100%', background: 'linear-gradient(90deg,#0052d9,#5b92f5)' }} />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="mono" style={{ padding: 6 }}>{x.usdShare}%</td>
+                      <td style={{ padding: 6, color: cycleTone(x.avgCycle), fontWeight: 700 }}>{x.avgCycle == null ? '—' : `${x.avgCycle} 天`}</td>
+                    </tr>
+                  ))}
+                  {st.items.length === 0 && <tr><td colSpan={6} className="hint" style={{ padding: 12, textAlign: 'center' }}>暂无数据</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            {reasonView === 'win' && st.missing > 0 && (
+              <div className="hint" style={{ marginTop: 6 }}>有 {st.missing} 笔订单还没填成交原因：到「询报价管理 → 编辑 → 销售订单」或「销售订单管理 → 编辑」里补填后，这里会立即统计。</div>
+            )}
+            {reasonView === 'lost' && st.total === 0 && (
+              <div className="hint" style={{ marginTop: 6 }}>还没有「未成单」记录：在「询报价管理 → 编辑」里勾选「标记为未成单（丢单）」并选择原因即可。</div>
+            )}
+          </>
+        )
+      })()}
 
       <h4 style={{ margin: '14px 0 6px' }}>客户 Top10（按订单金额折USD）</h4>
       <div style={{ maxWidth: 860 }}>

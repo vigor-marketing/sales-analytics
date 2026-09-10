@@ -92,14 +92,17 @@ export function schema(): void {
   try { db.exec('ALTER TABLE inquiries ADD COLUMN is_lost INTEGER NOT NULL DEFAULT 0') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN lost_reason TEXT') } catch { /* 已存在 */ }
   try { db.exec('ALTER TABLE inquiries ADD COLUMN lost_date TEXT') } catch { /* 已存在 */ }
+  // 成交原因（成单时填写，用于成交原因分析）
+  try { db.exec('ALTER TABLE orders ADD COLUMN win_reason TEXT') } catch { /* 已存在 */ }
   // 丢单原因下拉自带「其他（手动输入）」，历史字典里的裸「其他」属重复项，清理掉
   try {
-    const raw = db.prepare("SELECT v FROM settings WHERE k = 'lostReasons'").get() as { v: string } | undefined
-    if (raw?.v) {
+    for (const key of ['lostReasons', 'winReasons']) {
+      const raw = db.prepare('SELECT v FROM settings WHERE k = ?').get(key) as { v: string } | undefined
+      if (!raw?.v) continue
       const arr = JSON.parse(raw.v)
       if (Array.isArray(arr) && arr.includes('其他')) {
         const next = arr.filter((x: unknown) => x !== '其他')
-        db.prepare('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v').run('lostReasons', JSON.stringify(next))
+        db.prepare('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v').run(key, JSON.stringify(next))
       }
     }
   } catch { /* 忽略 */ }
@@ -132,6 +135,15 @@ export function getLostReasons(): string[] {
 }
 export function saveLostReasons(list: string[]): void {
   setSetting('lostReasons', JSON.stringify(list.filter((x) => text(x)).slice(0, 100)))
+}
+
+/** 成交原因字典（设置中可管理；成单时下拉选 + 允许手填） */
+export function getWinReasons(): string[] {
+  try { const arr = JSON.parse(getSetting('winReasons', '')); if (Array.isArray(arr) && arr.length) return arr.filter((x) => typeof x === 'string' && x.trim()) } catch { /* */ }
+  return ['价格有优势', '交期满足', '技术方案匹配', '品牌/资质认可', '客户关系', '售后服务', '老客户复购']
+}
+export function saveWinReasons(list: string[]): void {
+  setSetting('winReasons', JSON.stringify(list.filter((x) => text(x)).slice(0, 100)))
 }
 
 export function saveFollowMethods(list: string[]): void {

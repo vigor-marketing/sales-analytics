@@ -15,7 +15,7 @@ export default function SettingsView() {
   useEffect(() => { void load() }, [load])
 
   const save = async (code: string, action: string, value: string, newValue?: string) => {
-    const url = code === 'source' ? '/sources' : code === 'follow_method' ? '/follow-methods' : code === 'lost_reason' ? '/lost-reasons' : '/countries-custom'
+    const url = code === 'source' ? '/sources' : code === 'follow_method' ? '/follow-methods' : code === 'lost_reason' ? '/lost-reasons' : code === 'win_reason' ? '/win-reasons' : '/countries-custom'
     try {
       const list = await post<string[]>(url, { action, value, newValue })
       setEditable((g) => g.map((x) => (x.code === code ? { ...x, values: list } : x)))

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { del, get, post, put } from './api'
 import { StatusChip, type Status } from './StatusChip'
+import ReasonPicker from './ReasonPicker'
 import { COUNTRIES } from './countries'
 
 interface TotalItem { currency: string; total: number }
 interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; customer_stars?: number | null; won_date?: string | null; orderNo?: string | null; orderId?: string | null; last_followup_at?: string | null; next_followup_at?: string | null; is_lost?: number; lost_reason?: string | null; lost_date?: string | null; status?: Status; blockers?: string | null; action_plan?: string | null; support_needed?: string | null }
-interface Detail extends Row { items: { product_name: string; qty: number | null; amount: number; currency: string }[]; order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null } | null }
-interface MetaLite { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; lostReasons?: string[] }
+interface Detail extends Row { items: { product_name: string; qty: number | null; amount: number; currency: string }[]; order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null }
+interface MetaLite { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; lostReasons?: string[]; winReasons?: string[] }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
 const CURS = ['USD', 'CNY', 'EUR']
@@ -282,8 +283,8 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
 }
 
 function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onClose, onSaved }: { id: string; meta?: MetaLite; onClose: () => void; onSaved: () => void }) {
-  const [order, setOrder] = useState<{ id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null } | null>(null)
-  const [ord, setOrd] = useState({ wonDate: new Date().toISOString().slice(0, 10), orderNo: '', amount: '', currency: 'USD', note: '' })
+  const [order, setOrder] = useState<{ id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null>(null)
+  const [ord, setOrd] = useState({ wonDate: new Date().toISOString().slice(0, 10), orderNo: '', amount: '', currency: 'USD', note: '', winReason: '' })
   const [ordErr, setOrdErr] = useState('')
   const [ordBusy, setOrdBusy] = useState(false)
   const [ordOpen, setOrdOpen] = useState(false)
@@ -296,19 +297,19 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
     get<Detail>(`/inquiries/${id}`).then((d) => {
       setOrdOpen(false)
       setQuote((d.totals || []).filter((t) => Number(t.total) > 0))
-      if (d.order) { setOrder(d.order); setOrd({ wonDate: d.order.won_date, orderNo: d.order.order_no, amount: d.order.amount == null ? '' : String(d.order.amount), currency: d.order.currency, note: d.order.note || '' }) }
+      if (d.order) { setOrder(d.order); setOrd({ wonDate: d.order.won_date, orderNo: d.order.order_no, amount: d.order.amount == null ? '' : String(d.order.amount), currency: d.order.currency, note: d.order.note || '', winReason: d.order.win_reason || '' }) }
       else { setOrder(null) }
     }).catch(() => { /* */ })
   }, [id])
   const genOrder = async () => {
     setOrdErr(''); setOrdBusy(true)
-    try { await post('/orders', { inquiryId: id, wonDate: ord.wonDate, orderNo: ord.orderNo.trim() || undefined, amount: ord.amount ? Number(ord.amount) : undefined, currency: ord.currency, note: ord.note }); onSaved() }
+    try { await post('/orders', { inquiryId: id, wonDate: ord.wonDate, orderNo: ord.orderNo.trim() || undefined, amount: ord.amount ? Number(ord.amount) : undefined, currency: ord.currency, note: ord.note, winReason: ord.winReason || undefined }); onSaved() }
     catch (e) { setOrdErr((e as Error).message) } finally { setOrdBusy(false) }
   }
   const saveOrder = async () => {
     if (!order) return
     setOrdErr(''); setOrdBusy(true)
-    try { await put(`/orders/${order.id}`, { wonDate: ord.wonDate, orderNo: ord.orderNo.trim() || undefined, amount: ord.amount ? Number(ord.amount) : undefined, currency: ord.currency, note: ord.note }); onSaved() }
+    try { await put(`/orders/${order.id}`, { wonDate: ord.wonDate, orderNo: ord.orderNo.trim() || undefined, amount: ord.amount ? Number(ord.amount) : undefined, currency: ord.currency, note: ord.note, winReason: ord.winReason || undefined }); onSaved() }
     catch (e) { setOrdErr((e as Error).message) } finally { setOrdBusy(false) }
   }
   const delOrder = async () => {
@@ -461,6 +462,11 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
                 <div className="col w2"><label>订单号 <span className="hint">（留空自动）</span></label><input className="sa" value={ord.orderNo} onChange={(e) => setOrd({ ...ord, orderNo: e.target.value })} /></div>
                 <div className="col w2"><label>订单金额 <span className="hint">（默认带出报价合计）</span></label><input className="sa" type="number" value={ord.amount} onChange={(e) => setOrd({ ...ord, amount: e.target.value })} /></div>
                 <div className="col w1"><label>币种</label><select className="sa" value={ord.currency} onChange={(e) => setOrd({ ...ord, currency: e.target.value })}>{['USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}</select></div>
+              </div>
+              <div className="row">
+                <div className="col w2"><label>成交原因 <span className="hint">（选填，用于成交原因分析）</span></label>
+                  <ReasonPicker value={ord.winReason} onChange={(v) => setOrd({ ...ord, winReason: v })} options={meta.winReasons ?? []} placeholder="— 请选择成交原因 —" />
+                </div>
               </div>
               <div className="col"><label>订单备注</label><textarea className="sa" rows={2} value={ord.note} onChange={(e) => setOrd({ ...ord, note: e.target.value })} /></div>
               <div className="actions" style={{ marginTop: 8 }}>

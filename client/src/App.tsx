@@ -16,7 +16,7 @@ const emptyRow = (): ItemD => ({ productName: '', qty: '', amount: '', currency:
 const CURRENCIES = ['USD', 'CNY', 'EUR']
 const money = (n: number) => n.toLocaleString('zh-CN', { maximumFractionDigits: 2 })
 
-interface Bootstrap { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; methods?: string[]; lostReasons?: string[]; countries: string[]; fx: Record<string, number>; month: string }
+interface Bootstrap { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; methods?: string[]; lostReasons?: string[]; winReasons?: string[]; countries: string[]; fx: Record<string, number>; month: string }
 interface Saved { id: string; inquiryNo: string }
 const DEFAULTS: Bootstrap = {
   sales: [['Joey', '销售一组'], ['Vera', '销售一组'], ['Yolanda', '销售二组'], ['Jerric', '销售二组'], ['Loria', '销售三组']].map(([name, team]) => ({ name, team })),
@@ -24,6 +24,7 @@ const DEFAULTS: Bootstrap = {
   sources: ['展会', '官网', '转介绍', '老客户复购', '平台询盘', '邮件直询', '其他'],
   methods: ['电话', '邮件', '微信', '拜访', '展会', '其他'],
   lostReasons: ['价格无优势', '交期太长', '技术方案不满足', '客户选择竞品', '客户预算取消', '项目暂停/延期', '联系不上客户'],
+  winReasons: ['价格有优势', '交期满足', '技术方案匹配', '品牌/资质认可', '客户关系', '售后服务', '老客户复购'],
   countries: ['中国', '美国', '加拿大', '阿联酋', '沙特', '印尼', '马来西亚', '俄罗斯', '英国', '德国', '其他'],
   fx: { USD: 1, CNY: 7.12, EUR: 0.92 },
   month: new Date().toISOString().slice(0, 7),
