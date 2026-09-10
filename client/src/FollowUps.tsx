@@ -146,6 +146,14 @@ export default function FollowUps({ meta, target }: { meta: MetaLite; target?: {
 
       {hit && (
         <div style={{ marginTop: 10, border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px', background: '#fbfcff' }}>
+          {/* 进入某个询价的跟进详情后，可一键返回跟进列表 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <span style={{ fontWeight: 700, fontSize: 13 }}>跟进详情</span>
+            <span className="hint">询价 {hit.inquiry_no}</span>
+            <span style={{ flex: 1 }} />
+            <button className="btn sm" title="返回询报价跟进列表"
+              onClick={() => { setNo(''); setHit(null); setLookErr(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>← 返回跟进列表</button>
+          </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', fontSize: 13 }}>
             <span>询价号 <b className="mono">{hit.inquiry_no}</b></span>
             <span>客户 <b>{hit.customer_name}</b></span>
