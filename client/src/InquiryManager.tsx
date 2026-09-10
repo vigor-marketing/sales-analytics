@@ -378,6 +378,14 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
               <span className="hint">（在询价基本信息中修改；成交状态由下方销售订单自动判定）</span>
             </div>
             <div style={{ margin: '6px 0', fontWeight: 600 }}>产品明细</div>
+            {/* 产品明细表头：与下方各输入框逐列对齐 */}
+            <div className="item-head">
+              <span style={{ flex: '1 1 240px', minWidth: 160 }}>产品名称</span>
+              <span style={{ flex: '0 0 100px' }}>数量</span>
+              <span style={{ flex: '0 0 130px' }}>金额 <i style={{ color: 'var(--danger)', fontStyle: 'normal' }}>*</i></span>
+              <span style={{ flex: '0 0 96px' }}>币种</span>
+              <span style={{ flex: '0 0 34px', textAlign: 'center' }}>操作</span>
+            </div>
             {form.items.map((it, i) => (
               <div key={i} className="row" style={{ marginBottom: 6, alignItems: 'center', flexWrap: 'nowrap' }}>
                 <div style={{ flex: '1 1 240px', minWidth: 160 }}>
