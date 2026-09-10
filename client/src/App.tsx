@@ -308,7 +308,13 @@ export default function App() {
               <ProductPicker
                 value={it.productName}
                 products={products as ProductLite[]}
-                onChange={(patch) => setItems((a) => a.map((x, j) => j === i ? { ...x, productName: patch.productName, currency: patch.currency ?? x.currency } : x))}
+                onChange={(patch) => setItems((a) => a.map((x, j) => j === i ? {
+                  ...x,
+                  productName: patch.productName,
+                  currency: patch.currency ?? x.currency,
+                  qty: patch.fromArchive && !x.qty ? (patch.qty ?? x.qty) : x.qty,
+                  amount: patch.fromArchive && !x.amount ? (patch.amount ?? x.amount) : x.amount,
+                } : x))}
               />
             </div>
             <div className="col w1"><label>数量</label><input className="sa" type="number" min="0" value={it.qty} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} /></div>

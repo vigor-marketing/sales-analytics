@@ -390,7 +390,18 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
               {form.items.map((it, i) => (
                 <div key={i} className="item-grid" style={{ marginBottom: 6 }}>
                   <ProductPicker value={it.productName} products={products} placeholder="产品名称（可手输，也可选择）"
-                    onChange={(patch) => set({ items: form.items.map((x, j) => j === i ? { ...x, productName: patch.productName, currency: patch.currency ?? x.currency } : x) })} />
+                    onChange={(patch) => {
+                      set({
+                        items: form.items.map((x, j) => (j === i ? {
+                          ...x,
+                          productName: patch.productName,
+                          currency: patch.currency ?? x.currency,
+                          // 从档案选择时带出参考数量/金额；已有内容不覆盖
+                          qty: patch.fromArchive && !x.qty ? (patch.qty ?? x.qty) : x.qty,
+                          amount: patch.fromArchive && !x.amount ? (patch.amount ?? x.amount) : x.amount,
+                        } : x)),
+                      })
+                    }} />
                   <input className="sa" type="number" placeholder="数量" value={it.qty} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, qty: e.target.value } : x) })} />
                   <input className="sa" type="number" placeholder="金额" value={it.amount} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, amount: e.target.value } : x) })} />
                   <select className="sa" value={it.currency} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, currency: e.target.value } : x) })}>{CURS.map((c) => <option key={c}>{c}</option>)}</select>
