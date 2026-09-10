@@ -235,17 +235,6 @@ export default function App() {
           <label className="chk"><input type="radio" name="kc" checked={keyCust === '0'} onChange={() => setKeyCust('0')} /> 否</label>
           <span className="hint">必选；选“是”将在列表与详情以琥珀色块标注「重点客户」</span>
         </div>
-        <div className="form-grid" style={{ marginTop: 10 }}>
-          <label className="flabel">卡点/问题<textarea className="sa" rows={2} value={blockers} onChange={(e) => setBlockers(e.target.value)} placeholder="如：价格、交期、技术规格、竞品占位…" /></label>
-          <label className="flabel">行动计划<textarea className="sa" rows={2} value={actionPlan} onChange={(e) => setActionPlan(e.target.value)} placeholder="下一步打算怎么做" /></label>
-          <label className="flabel">需要的支持<textarea className="sa" rows={2} value={supportNeeded} onChange={(e) => setSupportNeeded(e.target.value)} placeholder="如：报价支持 / 技术选型 / 领导出面 / 样品寄送 / 资质文件" /></label>
-        </div>
-        <div className="col" style={{ marginTop: 8 }}><label>备注</label><textarea className="sa" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="客户要求、交期等补充说明（选填）" /></div>
-        <div className="actions">
-          <button className="btn pri" disabled={busy || !valid} onClick={() => void save(false)}>保存询价{busy ? '…' : ''}</button>
-          <button className="btn" disabled={busy || !valid} onClick={() => void save(true)}>保存并继续录下一条</button>
-          {!valid && <span className="hint">请补齐必填项（询价号唯一 / 销售 / 客户 / 采购 / 来源 / 重点客户 / 重点项目 / ≥1行明细金额大于0）</span>}
-        </div>
       </div>
 
       {/* 询价明细 */}
@@ -292,6 +281,23 @@ export default function App() {
           </div>
           <div className="hint" style={{ display: 'block', marginTop: 4 }}>总报价金额=各行金额自动合计（只读）；总金额可另行手填最终/成交金额，与报价一致可留空。</div>
         </div>
+
+        <div style={{ marginTop: 12, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
+          <div className="row">
+            <div className="col" style={{ flex: 1, minWidth: 240 }}><label>卡点/问题</label><textarea className="sa" rows={2} value={blockers} onChange={(e) => setBlockers(e.target.value)} placeholder="如：价格、交期、技术规格、竞品占位…" /></div>
+            <div className="col" style={{ flex: 1, minWidth: 240 }}><label>行动计划</label><textarea className="sa" rows={2} value={actionPlan} onChange={(e) => setActionPlan(e.target.value)} placeholder="下一步打算怎么做" /></div>
+          </div>
+          <div className="row">
+            <div className="col" style={{ flex: 1, minWidth: 240 }}><label>需要的支持</label><textarea className="sa" rows={2} value={supportNeeded} onChange={(e) => setSupportNeeded(e.target.value)} placeholder="如：报价支持 / 技术选型 / 领导出面 / 样品寄送 / 资质文件" /></div>
+            <div className="col" style={{ flex: 1, minWidth: 240 }}><label>备注</label><textarea className="sa" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="客户要求、交期等补充说明（选填）" /></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="actions" style={{ marginTop: 12 }}>
+        <button className="btn pri" disabled={busy || !valid} onClick={() => void save(false)}>保存询价{busy ? '…' : ''}</button>
+        <button className="btn" disabled={busy || !valid} onClick={() => void save(true)}>保存并继续录下一条</button>
+        {!valid && <span className="hint">请补齐必填项（询价号唯一 / 销售 / 客户 / 采购 / 来源 / 重点客户 / 重点项目 / ≥1行明细金额大于0）</span>}
       </div>
 
     </Shell>
