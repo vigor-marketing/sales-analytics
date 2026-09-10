@@ -273,7 +273,9 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
       )}
 
       {commentOf && (
-        <GuidanceModal record={commentOf} people={meta.sales.map((x) => x.name)} readOnly onClose={() => setCommentOf(null)} />
+        // 未进入详情时可新增；已进入跟进详情则只读
+        <GuidanceModal record={commentOf} people={meta.sales.map((x) => x.name)} readOnly={Boolean(hit)}
+          onClose={() => setCommentOf(null)} onSaved={() => { void loadList() }} />
       )}
 
       <div style={{ marginTop: 14 }}>
@@ -327,8 +329,11 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                         return (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
                             <GuidanceNote compact comments={cs} />
-                            {/* 跟进记录里的指导只查看，不支持在此新增 */}
-                            {cs.length > 0 && <button className="btn xs" onClick={() => setCommentOf(r)} title="查看全部跟进指导">查看指导</button>}
+                            {/* 跟进列表里可查看并新增指导；进入某个询价的跟进详情后只查看 */}
+                            <button className="btn xs" onClick={() => setCommentOf(r)}
+                              title={hit ? '查看全部跟进指导（详情内只读）' : cs.length ? '查看全部指导 / 继续追加' : '添加跟进指导'}>
+                              {hit ? '查看指导' : cs.length ? '查看/追加指导' : '＋ 添加指导'}
+                            </button>
                           </div>
                         )
                       })()}
