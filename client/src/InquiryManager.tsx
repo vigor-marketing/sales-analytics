@@ -175,10 +175,12 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
 
             {/* 卡点/行动计划/需要的支持/备注（与录入页一致） */}
             <div style={{ marginTop: 12, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
-              <div className="grid-2">
+              <div className="grid-eq3">
                 <Field label="卡点/问题" value={(d as unknown as { blockers?: string }).blockers} area />
                 <Field label="行动计划" value={(d as unknown as { action_plan?: string }).action_plan} area />
                 <Field label="需要的支持" value={(d as unknown as { support_needed?: string }).support_needed} area />
+              </div>
+              <div className="grid-1" style={{ marginTop: 10 }}>
                 <Field label="备注" value={d.note} area />
               </div>
             </div>
@@ -288,10 +290,10 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, onCl
               </div>
             ))}
             <button className="btn sm" onClick={() => set({ items: [...form.items, { productName: '', qty: '', amount: '', currency: 'USD' }] })}>＋ 添加产品</button>
-            <div className="row" style={{ marginTop: 8 }}>
-              <div className="col grow1"><label>卡点/问题</label><textarea className="sa" rows={2} value={form.blockers} onChange={(e) => set({ blockers: e.target.value })} /></div>
-              <div className="col grow1"><label>行动计划</label><textarea className="sa" rows={2} value={form.actionPlan} onChange={(e) => set({ actionPlan: e.target.value })} /></div>
-              <div className="col grow1"><label>需要的支持</label><textarea className="sa" rows={2} value={form.supportNeeded} onChange={(e) => set({ supportNeeded: e.target.value })} /></div>
+            <div className="grid-eq3" style={{ marginTop: 8 }}>
+              <div className="col"><label>卡点/问题</label><textarea className="sa" rows={3} value={form.blockers} onChange={(e) => set({ blockers: e.target.value })} /></div>
+              <div className="col"><label>行动计划</label><textarea className="sa" rows={3} value={form.actionPlan} onChange={(e) => set({ actionPlan: e.target.value })} /></div>
+              <div className="col"><label>需要的支持</label><textarea className="sa" rows={3} value={form.supportNeeded} onChange={(e) => set({ supportNeeded: e.target.value })} /></div>
             </div>
             <div className="row" style={{ marginTop: 8 }}>
               <div className="col grow1"><label>备注</label><textarea className="sa" rows={2} value={form.note} onChange={(e) => set({ note: e.target.value })} /></div>

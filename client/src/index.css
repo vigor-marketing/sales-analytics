@@ -94,6 +94,13 @@ ul.sugs li:hover, ul.sugs li.on { background: var(--brand-light) }
 .grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px}
 .box-fixed textarea.sa{width:100%;min-height:64px;height:auto;max-height:none;resize:none;overflow:hidden}
 @media(max-width:700px){.grid-2{grid-template-columns:1fr}}
+/* 等高排布：卡点 / 行动计划 / 需要的支持 —— 同一行内始终等宽等高 */
+.grid-eq3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 16px;align-items:stretch}
+.grid-eq3>.col{display:flex;flex-direction:column}
+.grid-eq3 .ro.area{flex:1 1 auto}
+.grid-eq3 textarea.sa{flex:1 1 auto}
+.grid-1{display:grid;grid-template-columns:1fr;gap:10px 16px}
+@media(max-width:860px){.grid-eq3{grid-template-columns:1fr}}
 
 /* 产品明细行：序号徽标 + 美化“添加产品”按钮 */
 .item-row{position:relative}
