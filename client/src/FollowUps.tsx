@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get, post } from './api'
 import { StatusChip } from './StatusChip'
 import { KeyTags } from './KeyTags'
@@ -89,6 +89,40 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
     catch (e) { setLookErr((e as Error).message) }
   }, [sales, no])
   useEffect(() => { const t = setTimeout(() => { void lookup() }, 400); return () => clearTimeout(t) }, [lookup])
+
+  // 同一个项目（同一条询价）的多条跟进记录，在前端合并成一行
+  const groups = useMemo(() => {
+    const m = new Map<string, {
+      key: string; rep: Fu; count: number
+      dates: string[]; nextAt: string | null; firstDate: string
+      comments: { id: string; content: string; by_name: string | null; created_at: string }[]
+      photos: string[]; atts: Att[]; methods: string[]; byNames: string[]
+    }>()
+    list.forEach((r) => {
+      const g = m.get(r.inquiry_id)
+      if (!g) {
+        m.set(r.inquiry_id, {
+          key: r.inquiry_id, rep: r, count: 1, dates: [r.date], nextAt: r.next_followup_at, firstDate: r.date,
+          comments: [...(r.comments ?? [])], photos: [...(r.photos ?? [])], atts: [...(r.attachments ?? [])],
+          methods: [r.method].filter(Boolean), byNames: r.by_name ? [r.by_name] : [],
+        })
+        return
+      }
+      g.count += 1
+      g.dates.push(r.date)
+      // 列表按日期倒序返回，第一条即最新；下次跟进取最新一条有填写的那次
+      if (!g.nextAt && r.next_followup_at) g.nextAt = r.next_followup_at
+      if (r.date < g.firstDate) g.firstDate = r.date
+      g.comments.push(...(r.comments ?? []))
+      ;(r.photos ?? []).forEach((x) => { if (!g.photos.includes(x)) g.photos.push(x) })
+      ;(r.attachments ?? []).forEach((x) => { if (!g.atts.some((y) => y.url === x.url)) g.atts.push(x) })
+      if (r.method && !g.methods.includes(r.method)) g.methods.push(r.method)
+      if (r.by_name && !g.byNames.includes(r.by_name)) g.byNames.push(r.by_name)
+    })
+    // 指导按时间正序展示（最新的在最后）
+    m.forEach((g) => g.comments.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))))
+    return Array.from(m.values()).sort((a, b) => String(b.rep.date).localeCompare(String(a.rep.date)) || String(b.rep.created_at).localeCompare(String(a.rep.created_at)))
+  }, [list])
 
   const loadList = useCallback(async () => {
     try { setList(await get<Fu[]>(`/followups?sales=${encodeURIComponent(sales)}${hit ? `&inquiryId=${encodeURIComponent(hit.id)}` : ''}`)) }
@@ -280,21 +314,38 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
       )}
 
       <div style={{ marginTop: 14 }}>
-        <div style={{ fontWeight: 700, marginBottom: 6 }}>跟进记录{hit ? `（本询价 ${list.length} 条）` : sales ? `（${sales} 名下 ${list.length} 条）` : ''}</div>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>
+          {hit
+            ? `跟进记录（本询价 ${list.length} 条明细）`
+            : `跟进记录（按项目合并：${groups.length} 个项目 / ${list.length} 条记录${sales ? ` · ${sales} 名下` : ''}）`}
+        </div>
         <div className="tablewrap">
           <table className="grid data-table fixed-table follow-table" style={{ fontSize: 12.5 }}>
             <colgroup>
-              <col style={{ width: '8%' }} /><col style={{ width: '11%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '22%' }} />
-              <col style={{ width: '21%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} />
+              {hit
+                ? <><col style={{ width: '8%' }} /><col style={{ width: '11%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '22%' }} />
+                  <col style={{ width: '21%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /></>
+                : <><col style={{ width: '8%' }} /><col style={{ width: '12%' }} /><col style={{ width: '8%' }} /><col style={{ width: '7%' }} /><col style={{ width: '7%' }} />
+                  <col style={{ width: '21%' }} /><col style={{ width: '19%' }} /><col style={{ width: '8%' }} /><col style={{ width: '10%' }} /></>}
             </colgroup>
-            <thead><tr>{['跟进日期', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间'].map((h) => <th key={h} style={{ textAlign: h === '方式' ? 'center' : 'left' }}>{h}</th>)}</tr></thead>
+            <thead><tr>{(hit
+              ? ['跟进日期', '询价号 / 客户', '销售 / 跟进人', '方式', '简述与跟进内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间']
+              : ['最近跟进', '询价号 / 客户', '销售 / 跟进人', '方式', '跟进次数', '最近简述与内容', '跟进指导（全部）', '图片 / 附件', '下次跟进']
+            ).map((h) => <th key={h} style={{ textAlign: h === '方式' || h === '跟进次数' ? 'center' : 'left' }} title={h === '跟进次数' ? '同一个项目的多条跟进记录已在前端合并，点击整行可查看该项目全部记录' : undefined}>{h}</th>)}</tr></thead>
             <tbody>
-              {list.map((r) => {
+              {(hit ? list.map((r) => ({
+                key: r.id, rep: r, count: 1, firstDate: r.date, dates: [r.date], nextAt: r.next_followup_at,
+                comments: [...(r.comments ?? [])], photos: [...(r.photos ?? [])], atts: [...(r.attachments ?? [])],
+                methods: [r.method].filter(Boolean), byNames: r.by_name ? [r.by_name] : [],
+              })) : groups).map((g) => {
+                const r = g.rep
                 const detail = r.detail || r.content || ''
-                const photos = r.photos || []
-                const atts = r.attachments || []
+                const photos = g.photos
+                const atts = g.atts
+                const merged = !hit && g.count > 1
+                const rangeTxt = g.firstDate === r.date ? r.date : `${g.firstDate} ~ ${r.date}`
                 return (
-                  <tr key={r.id} className="row-click" title="点击进入该询价的跟进" style={{ borderBottom: '1px solid var(--line2)' }}
+                  <tr key={g.key} className="row-click" title={merged ? `同一个项目 ${g.count} 条跟进已合并 · 点击查看该项目全部记录` : '点击进入该询价的跟进'} style={{ borderBottom: '1px solid var(--line2)' }}
                     onClick={(e) => {
                       // 行内按钮（查看/追加指导）不触发进入跟进
                       if ((e.target as HTMLElement).closest('button,a,input,select,textarea')) return
@@ -302,7 +353,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                       setSales(r.sales); setNo(r.inquiry_no)
                       window.scrollTo({ top: 0, behavior: 'smooth' })
                     }}>
-                    <td className="mono" title={r.date}>{r.date}</td>
+                    <td className="mono" title={merged ? `最近跟进 ${r.date}（首次 ${g.firstDate}）` : r.date}>{r.date}</td>
                     <td title={`${r.inquiry_no} · ${r.customer_name || '—'}${Number(r.is_key_customer) === 1 ? ' · 重点客户' : ''}${Number(r.is_key_project) === 1 ? ' · 重点项目' : ''}`}>
                       <span className="mono" style={{ fontWeight: 600 }}>{r.inquiry_no}</span>
                       <span className="cell-note">{r.customer_name}</span>
@@ -312,15 +363,22 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                       <span style={{ fontWeight: 600 }}>{r.sales || '—'}</span>
                       {r.by_name && r.by_name !== r.sales && <span className="cell-note">跟进人 {r.by_name}</span>}
                     </td>
-                    <td title={r.method || '—'} style={{ textAlign: 'center' }}><span className="badge">{r.method || '—'}</span></td>
-                    <td title={[r.summary, detail].filter(Boolean).join(' ｜ ') || '—'}>
+                    <td title={g.methods.length > 1 ? `该项目用过：${g.methods.join('、')}` : (r.method || '—')} style={{ textAlign: 'center' }}>
+                      <span className="badge">{hit ? (r.method || '—') : (g.methods[0] || '—')}{!hit && g.methods.length > 1 ? ` +${g.methods.length - 1}` : ''}</span>
+                    </td>
+                    {!hit && (
+                      <td style={{ textAlign: 'center' }} title={merged ? `同一个项目共 ${g.count} 条跟进记录（${rangeTxt}）` : '该项目目前 1 条跟进记录'}>
+                        <span className={'badge' + (merged ? ' new' : '')}>{g.count} 条</span>
+                      </td>
+                    )}
+                    <td title={([merged ? `【${g.count} 条跟进合并】最近一条 ${r.date}：` : '', r.summary, detail].filter(Boolean).join(' ｜ ')) || '—'}>
                       {r.summary && <span style={{ fontWeight: 600 }}>{r.summary}</span>}
                       {detail && <span className={r.summary ? 'cell-note' : ''}>{detail}</span>}
                       {!r.summary && !detail && <span className="hint">—</span>}
                     </td>
                     <td>
                       {(() => {
-                        const cs = r.comments ?? []
+                        const cs = hit ? (r.comments ?? []) : g.comments
                         return (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}>
                             <GuidanceNote compact comments={cs} />
@@ -333,7 +391,7 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                         )
                       })()}
                     </td>
-                    <td title={[...photos.map((_, i) => `图片 ${i + 1}`), ...atts.map((a) => a.name)].join('、') || '—'}>
+                    <td title={[merged ? `（该项目 ${g.count} 条记录合计）` : '', ...photos.map((_, i) => `图片 ${i + 1}`), ...atts.map((a) => a.name)].filter(Boolean).join('、') || '—'}>
                       {photos.length === 0 && atts.length === 0 ? <span className="hint">—</span> : (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                           {photos.length > 0 && <span className="badge">🖼 {photos.length}</span>}
@@ -341,8 +399,8 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                         </span>
                       )}
                     </td>
-                    <td className="mono" title={r.next_followup_at ? r.next_followup_at.replace('T', ' ') : '未设置下次跟进'}>{r.next_followup_at ? r.next_followup_at.replace('T', ' ') : '—'}</td>
-                    <td className="mono hint" title={String(r.created_at || '').slice(0, 19).replace('T', ' ')}>{String(r.created_at || '').slice(0, 16).replace('T', ' ')}</td>
+                    <td className="mono" title={g.nextAt ? String(g.nextAt).replace('T', ' ') : '未设置下次跟进'}>{g.nextAt ? String(g.nextAt).replace('T', ' ') : '—'}</td>
+                    {hit && <td className="mono hint" title={String(r.created_at || '').slice(0, 19).replace('T', ' ')}>{String(r.created_at || '').slice(0, 16).replace('T', ' ')}</td>}
                   </tr>
                 )
               })}
