@@ -223,6 +223,13 @@ export function migrateWonToOrders(): void {
   `)
 }
 
+/** 以销售订单为唯一口径，回写废弃列 is_won / won_date（保持旧接口与统计口径一致，幂等） */
+export function syncWonFlags(): void {
+  getDb().prepare(`UPDATE inquiries SET
+      is_won = CASE WHEN EXISTS (SELECT 1 FROM orders o WHERE o.inquiry_id = inquiries.id) THEN 1 ELSE 0 END,
+      won_date = (SELECT o.won_date FROM orders o WHERE o.inquiry_id = inquiries.id)`).run()
+}
+
 /** 历史明细回填产品档案（幂等，仅补名称/次数/币种/最近价格） */
 export function backfillProducts(): void {
   db.exec(`

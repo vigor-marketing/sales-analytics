@@ -1,7 +1,7 @@
 /** sales-analytics v3 起步：询报价录入页 API */
 import cors from 'cors'
 import express from 'express'
-import { schema, ensurePeople, backfillProducts, migrateWonToOrders, getDb, getSources, getCountries, saveSources, getFollowMethods, saveFollowMethods, getLostReasons, saveLostReasons, getWinReasons, saveWinReasons, getSetting, setSetting, newId, nowIso, todayStr, text, num } from './db.js'
+import { schema, ensurePeople, backfillProducts, migrateWonToOrders, syncWonFlags, getDb, getSources, getCountries, saveSources, getFollowMethods, saveFollowMethods, getLostReasons, saveLostReasons, getWinReasons, saveWinReasons, getSetting, setSetting, newId, nowIso, todayStr, text, num } from './db.js'
 import { existsSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -605,6 +605,7 @@ app.post('/api/orders', (req, res) => {
   if (tooLongOrd) return fail(res, tooLongOrd)
   d.prepare('INSERT INTO orders (id, order_no, inquiry_id, customer_id, won_date, amount, currency, note, win_reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run(oid, orderNo, inquiryId, text(inq.customer_id) || null, wonDate, amount, cur, text(req.body?.note) || null, winReason, t, t)
+  syncWonFlags()
   ok(res, { id: oid, orderNo, wonDate }, 201)
 })
 app.put('/api/orders/:id', (req, res) => {
@@ -625,11 +626,13 @@ app.put('/api/orders/:id', (req, res) => {
   const tooLongOrd2 = overLimit([[orderNo, 60, '订单号'], [winReason, 2000, '成单原因'], [note, 5000, '订单备注']])
   if (tooLongOrd2) return fail(res, tooLongOrd2)
   d.prepare('UPDATE orders SET order_no = ?, won_date = ?, amount = ?, currency = ?, note = ?, win_reason = ?, updated_at = ? WHERE id = ?').run(orderNo, wonDate, amount, cur, note, winReason, nowIso(), req.params.id)
+  syncWonFlags()
   ok(res, { id: req.params.id })
 })
 app.delete('/api/orders/:id', (req, res) => {
   const r = getDb().prepare('DELETE FROM orders WHERE id = ?').run(req.params.id)
   if (!r.changes) return fail(res, '订单不存在', 404)
+  syncWonFlags()
   ok(res, { deleted: 1 })
 })
 
@@ -1003,7 +1006,7 @@ app.put('/api/inquiries/:id', (req, res) => {
 // 询报价不允许删除（如需作废请在编辑中处理；成交以订单为准）
 app.delete('/api/inquiries/:id', (_req, res) => fail(res, '询报价不允许删除', 403))
 
-schema(); ensurePeople(); backfillProducts()
+schema(); ensurePeople(); backfillProducts(); syncWonFlags()
 // 注：历史成交迁移 migrateWonToOrders() 已不再随启动自动执行（避免废弃列 is_won 反向物化订单）；
 // 如需迁移旧库，可手动调用一次。
 cleanupOrphans()
@@ -1036,14 +1039,15 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 const PORT = Number(process.env.PORT ?? 3218)
 const server = app.listen(PORT, '127.0.0.1', () => console.log(`[sales-analytics v3] http://127.0.0.1:${PORT}/api/meta/bootstrap`))
 
-// 优雅退出：停止接收请求并关闭数据库（关闭时会做 WAL 检查点，避免日志无限增长）
+// 优雅退出：先落盘（WAL 检查点）再停止接收请求，最后关闭数据库
 const shutdown = (sig: string) => {
   console.log(`[sales-analytics] 收到 ${sig}，正在关闭…`)
-  server.close(() => {
-    try { getDb().close() } catch { /* 忽略 */ }
-    process.exit(0)
-  })
-  setTimeout(() => process.exit(0), 3000).unref()
+  // 1) 立刻落盘：WAL 检查点 + 关闭数据库（即使有长连接占着也不会丢数据、不残留 WAL）
+  try { getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)') } catch { /* 忽略 */ }
+  try { getDb().close() } catch { /* 忽略 */ }
+  // 2) 让在途请求正常收尾，最多 2 秒后强制退出
+  server.close(() => process.exit(0))
+  setTimeout(() => process.exit(0), 2000).unref()
 }
 process.on('SIGINT', () => shutdown('SIGINT'))
 process.on('SIGTERM', () => shutdown('SIGTERM'))
