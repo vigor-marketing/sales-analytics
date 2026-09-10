@@ -183,10 +183,10 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
 
             {d.status === 'lost' && (
               <div className="lostbox">
-                <b>未成单（丢单）</b>
-                <span style={{ marginLeft: 10 }}>丢单原因：<b>{d.lost_reason || '—'}</b></span>
-                {d.lost_date && <span style={{ marginLeft: 10 }}>丢单日期：<b className="mono">{d.lost_date}</b></span>}
-                <div className="hint" style={{ color: '#b91c1c', marginTop: 2 }}>如需重新跟进：在「编辑」中取消未成单标记并保存，之后才能生成销售订单。</div>
+                <div><b>未成单（丢单）</b></div>
+                <div style={{ marginTop: 3 }}>丢单原因：<b>{d.lost_reason || '—'}</b></div>
+                {d.lost_date && <div>丢单日期：<b className="mono">{d.lost_date}</b></div>}
+                <div className="hint" style={{ color: '#b91c1c', marginTop: 4 }}>如需重新跟进：在「编辑」中取消未成单标记并保存，之后才能生成销售订单。</div>
               </div>
             )}
 
@@ -468,8 +468,13 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                       />
                     </div>
                     <div className="col w1"><label>丢单日期</label><input className="sa" type="date" value={form.lostDate} onChange={(e) => set({ lostDate: e.target.value })} /></div>
-                    <div className="col grow1"><span className="hint">原因必填；下拉选项在「字段与选项设置 → 丢单原因」维护，特殊原因选「其他」手填</span></div>
                   </>)}
+                </div>
+              )}
+              {/* 未成单提示词：独立一行显示在下方 */}
+              {!order && form.isLost && (
+                <div className="hint" style={{ display: 'block', marginTop: 4 }}>
+                  丢单原因必填；下拉选项在「字段与选项设置 → 丢单原因」维护，没有合适选项时选「其他（手动输入）」手填。
                 </div>
               )}
             </div>
