@@ -118,6 +118,20 @@ export default function App() {
   const [page, setPage] = useState<PageKey>(() => initialPage())
   // 仪表盘「去跟进」：跳到跟进页并带出该询价
   const [followTarget, setFollowTarget] = useState<{ sales: string; no: string } | null>(null)
+  // 页面访问历史：让子页面能「返回上一页」
+  const [pageHist, setPageHist] = useState<PageKey[]>([])
+  const navTo = useCallback((k: PageKey) => {
+    setPage((cur) => { if (k !== cur) setPageHist((h) => [...h.slice(-9), cur]); return k })
+  }, [])
+  const goBack = useCallback(() => {
+    setPageHist((h) => {
+      if (!h.length) return h
+      const last = h[h.length - 1]
+      setPage(last)
+      setFollowTarget(null)
+      return h.slice(0, -1)
+    })
+  }, [])
   const noT = useRef<HTMLInputElement>(null)
   // 浏览器页签标题跟随当前页面
   useEffect(() => { document.title = `${TITLES[page]} · 销售数据分析` }, [page])
@@ -214,10 +228,17 @@ export default function App() {
   }
 
   if (page !== 'entry') return (
-    <Shell page={page} onNav={setPage}>
+    <Shell page={page} onNav={navTo}>
       {page === 'manage' && <InquiryManager meta={meta} />}
-      {page === 'dashboard' && <Dashboard onGoFollow={(t) => { setFollowTarget(t); setPage('followups') }} />}
-      {page === 'followups' && <FollowUps meta={meta} target={followTarget} />}
+      {page === 'dashboard' && <Dashboard onGoFollow={(t) => { setFollowTarget(t); navTo('followups') }} />}
+      {page === 'followups' && (
+        <FollowUps
+          meta={meta}
+          target={followTarget}
+          onBack={pageHist.length ? goBack : undefined}
+          backLabel={pageHist.length ? TITLES[pageHist[pageHist.length - 1]] : ''}
+        />
+      )}
       {page === 'contracts' && <Contracts meta={meta} />}
       {page === 'contractsAnalysis' && <ContractsAnalysis meta={meta} />}
       {page === 'customers' && <CustomerArchive />}
@@ -226,7 +247,7 @@ export default function App() {
     </Shell>
   )
   return (
-    <Shell page={page} onNav={setPage}>
+    <Shell page={page} onNav={navTo}>
       {msg && <div className={`msg ${msg.t}`} role="status">{msg.t === 'ok' ? '✔' : '✖'} {msg.text}</div>}
 
       {/* 基本信息（含归属与来源） */}
