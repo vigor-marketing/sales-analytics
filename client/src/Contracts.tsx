@@ -251,6 +251,7 @@ function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
             ) : <div className="hint" style={{ marginTop: 4 }}>该询价暂无跟进记录（可到「询报价跟进」页录入）</div>}
           </>
         )}
+        <div className="modal-foot"><button className="btn" onClick={onClose}>关闭</button></div>
       </div>
     </div>
   )

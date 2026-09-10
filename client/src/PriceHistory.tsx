@@ -25,7 +25,7 @@ export default function PriceHistoryModal({ name, info, onClose }: {
   }, [name])
   return (
     <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 'min(1000px, 97vw)', maxHeight: '88vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="产品价格变动记录">
+      <div className="modal" style={{ width: 'min(1220px, 97vw)', maxHeight: '88vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="产品价格变动记录">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 style={{ margin: 0 }}>价格变动记录 · {name}</h3>
           <button className="btn sm" onClick={onClose}>关闭</button>
@@ -34,11 +34,11 @@ export default function PriceHistoryModal({ name, info, onClose }: {
           当前参考报价 <b className="mono">{money(info?.last_amount)} {info?.currency ?? ''}</b> · 最近数量 <b>{info?.last_qty ?? '—'}</b> · 累计使用 {info?.use_count ?? 0} 次 · 当前版本 <b className="mono">V{rows?.length ?? 0}</b>（首次录入 V1，之后每次金额/数量/币种变化生成新版本）
         </div>
         {err && <div className="msg err">{err}</div>}
-        <div className="tablewrap" style={{ marginTop: 10 }}>
-          <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
+        <div className="tablewrap" style={{ marginTop: 10, maxHeight: '56vh' }}>
+          <table className="grid data-table fixed-table" style={{ fontSize: 12.5, minWidth: 1090 }}>
             <colgroup>
-              <col style={{ width: '9%' }} /><col style={{ width: '13%' }} /><col style={{ width: '10%' }} /><col style={{ width: '25%' }} /><col style={{ width: '11%' }} />
-              <col style={{ width: '8%' }} /><col style={{ width: '9%' }} /><col style={{ width: '10%' }} /><col style={{ width: '5%' }} />
+              <col style={{ width: 95 }} /><col style={{ width: 130 }} /><col style={{ width: 105 }} /><col style={{ width: 240 }} /><col style={{ width: 115 }} />
+              <col style={{ width: 95 }} /><col style={{ width: 110 }} /><col style={{ width: 130 }} /><col style={{ width: 90 }} />
             </colgroup>
             <thead><tr>{['版本', '记录时间', '业务日期', '金额变化', '数量变化', '来源', '询价号', '客户', '销售'].map((h) => <th key={h} style={{ textAlign: h === '版本' ? 'center' : 'left' }}>{h}</th>)}</tr></thead>
             <tbody>
@@ -80,6 +80,7 @@ export default function PriceHistoryModal({ name, info, onClose }: {
             </tbody>
           </table>
         </div>
+        <div className="modal-foot"><button className="btn" onClick={onClose}>关闭</button></div>
       </div>
     </div>
   )

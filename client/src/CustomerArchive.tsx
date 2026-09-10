@@ -82,7 +82,7 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   useEffect(() => { get<CustDetail>(`/customers/${id}`).then(setD).catch((e) => setErr((e as Error).message)) }, [id])
   return (
     <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 'min(880px, 96vw)', maxHeight: '90vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="客户档案">
+      <div className="modal cust-modal" style={{ maxHeight: '90vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="客户档案">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 style={{ margin: 0 }}>客户档案 · {d?.name ?? '加载中…'}</h3>
           <div className="actions" style={{ margin: 0 }}>
@@ -100,10 +100,12 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               <span>已成单 <b>{d.summary?.wonCount ?? 0}</b> 条（{money(d.summary?.wonUsd)} USD）</span><span>未成单 <b style={{ color: '#dc2626' }}>{d.summary?.lostCount ?? 0}</b> 条</span><span>成交率 <b style={{ color: '#059669' }}>{d.summary?.winRate ?? 0}%</b>（成交÷已成单+未成单）</span>
               <span>建档时间 <b className="mono">{((d as unknown as { created_at?: string }).created_at ?? '').slice(0, 16)}</b></span>
             </div>
-            <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
+            {/* 询价列表：窄窗口时在弹窗内横向滚动，列宽始终够用（不再截断） */}
+            <div className="tablewrap" style={{ maxHeight: '52vh' }}>
+            <table className="grid data-table fixed-table" style={{ fontSize: 12.5, minWidth: 1310 }}>
               <colgroup>
-                <col style={{ width: '11%' }} /><col style={{ width: '8%' }} /><col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '7%' }} />
-                <col style={{ width: '9%' }} /><col style={{ width: '13%' }} /><col style={{ width: '11%' }} /><col style={{ width: '6%' }} /><col style={{ width: '13%' }} /><col style={{ width: '8%' }} />
+                <col style={{ width: 135 }} /><col style={{ width: 100 }} /><col style={{ width: 90 }} /><col style={{ width: 90 }} /><col style={{ width: 90 }} />
+                <col style={{ width: 100 }} /><col style={{ width: 210 }} /><col style={{ width: 120 }} /><col style={{ width: 70 }} /><col style={{ width: 200 }} /><col style={{ width: 100 }} />
               </colgroup>
               <thead><tr>{['询价号', '日期', '销售', '采购', '来源', '是否成交', '丢单原因', '是否重点询价', '行数', '报价合计', '折USD'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
               <tbody>
@@ -127,8 +129,10 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                 {(d.inquiries ?? []).length === 0 && <tr><td colSpan={11} className="hint" style={{ textAlign: 'center' }}>该客户暂无询价</td></tr>}
               </tbody>
             </table>
+            </div>
           </>
         )}
+        <div className="modal-foot"><button className="btn" onClick={onClose}>关闭</button></div>
       </div>
       {detailInquiryId && <InquiryDetailModal id={detailInquiryId} onClose={() => setDetailInquiryId(null)} />}
     </div>

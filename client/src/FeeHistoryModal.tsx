@@ -31,11 +31,11 @@ export default function FeeHistoryModal({ inquiryId, inquiryNo, onClose }: { inq
           <b className="mono"> V{latest?.version ?? '—'}</b>
         </div>
         {err && <div className="msg err">{err}</div>}
-        <div className="tablewrap" style={{ marginTop: 10 }}>
+        <div className="tablewrap" style={{ marginTop: 10, maxHeight: '56vh' }}>
           <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
             <colgroup>
-              <col style={{ width: '9%' }} /><col style={{ width: '13%' }} /><col style={{ width: '12%' }} /><col style={{ width: '12%' }} />
-              <col style={{ width: '12%' }} /><col style={{ width: '12%' }} /><col style={{ width: '10%' }} /><col style={{ width: '20%' }} />
+              <col style={{ width: 95 }} /><col style={{ width: 130 }} /><col style={{ width: 95 }} /><col style={{ width: 95 }} />
+              <col style={{ width: 95 }} /><col style={{ width: 110 }} /><col style={{ width: 130 }} /><col style={{ width: 170 }} />
             </colgroup>
             <thead><tr>{['版本', '记录时间', '运费', '税费', '佣金', '其他费用', '合计', '来源'].map((h) => <th key={h} style={{ textAlign: h === '版本' ? 'center' : 'left' }}>{h}</th>)}</tr></thead>
             <tbody>
@@ -56,6 +56,7 @@ export default function FeeHistoryModal({ inquiryId, inquiryNo, onClose }: { inq
             </tbody>
           </table>
         </div>
+        <div className="modal-foot"><button className="btn" onClick={onClose}>关闭</button></div>
       </div>
     </div>
   )

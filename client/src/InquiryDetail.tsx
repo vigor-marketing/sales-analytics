@@ -264,6 +264,7 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
             </div>
           </>
         )}
+        <div className="modal-foot"><button className="btn" onClick={onClose}>关闭</button></div>
       </div>
     </div>
   )
