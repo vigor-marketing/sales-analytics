@@ -95,42 +95,87 @@ function TagBlocks({ r }: { r: { is_key_customer?: number; is_key_project?: numb
     </>
   )
 }
+function Field({ label, value, area, empty }: { label: string; value?: string | number | null; area?: boolean; empty?: boolean }) {
+  const txt = value === null || value === undefined || value === '' ? '—' : String(value)
+  return (
+    <div className={'col' + (area ? ' box-fixed' : '')}>
+      <label>{label}</label>
+      <div className={'ro' + (area ? ' area' : '') + (empty || txt === '—' ? ' empty' : '')}>{txt}</div>
+    </div>
+  )
+}
+
 function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   const [d, setD] = useState<Detail | null>(null)
   const [err, setErr] = useState('')
   useEffect(() => { get<Detail>(`/inquiries/${id}`).then(setD).catch((e) => setErr((e as Error).message)) }, [id])
+  const money2 = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
+  const cycle = d?.won_date && d?.date ? Math.round((Date.parse(d.won_date) - Date.parse(d.date)) / 86400000) : null
   return (
     <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 'min(780px, 96vw)' }} role="dialog" aria-modal="true">
+      <div className="modal" style={{ width: 'min(1040px, 97vw)', maxHeight: '92vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="询价详情">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>{d ? `${d.inquiry_no} · ${d.customer_name}` : '加载中…'}</h3>
+          <h3 style={{ margin: 0 }}>询价查看 · {d?.inquiry_no ?? '加载中…'}{d?.customer_name ? `（${d.customer_name}）` : ''}</h3>
           <button className="btn sm" onClick={onClose}>关闭</button>
         </div>
         {err && <div className="msg err">{err}</div>}
         {d && (
           <>
-            <div className="meta" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', margin: '10px 0', fontSize: 13 }}>
-              <span>日期 <b>{d.date}</b></span><span>状态 <b>{Number(d.is_won) === 1 ? <span className="tag won">已成单</span> : <span className="hint">跟进中</span>}</b></span><span>标签 <b><TagBlocks r={d} /></b></span>{Number(d.is_won) === 1 && <span>成单日期 <b className="mono">{String((d as unknown as { won_date?: string }).won_date || '—')}</b></span>}
-              {Number(d.is_won) === 1 && <span>订单号 <b className="mono">{String((d as unknown as { orderNo?: string }).orderNo || '—')}</b></span>}<span>国别 <b>{d.country || '—'}</b></span><span>使用地 <b>{d.use_location || '—'}</b></span>
-              <span>销售 <b>{d.sales}</b></span><span>采购 <b>{d.purchaser}</b></span><span>来源 <b>{d.source}</b></span>
-              <span>行数 <b>{d.itemCount ?? (d.items || []).length}</b></span>
-              <span>报价合计 <b>{(d.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ')}</b></span>
-              <span>总金额 <b>{money(d.hand_total)}</b></span><span>录入时间 <b className="mono">{d.created_at?.slice(0, 16)}</b></span>
+            {/* 基本信息（与录入页一致） */}
+            <h4 className="sec-title" style={{ marginTop: 8 }}>基本信息</h4>
+            <div className="row">
+              <div className="col w2"><label>询价号</label><div className="ro">{d.inquiry_no}</div></div>
+              <div className="col w1"><label>日期</label><div className="ro">{d.date}</div></div>
+              <div className="col w2"><label>销售人员</label><div className="ro">{d.sales || '—'}</div></div>
+              <div className="col w2"><label>采购人员</label><div className="ro">{d.purchaser || '—'}</div></div>
+              <div className="col w2"><label>询价来源</label><div className="ro">{d.source || '—'}</div></div>
             </div>
-            <table className="grid" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead><tr>{['#', '产品名称', '数量', '金额', '币种'].map((h) => <th key={h} style={{ textAlign: 'left', padding: 6, borderBottom: '1px solid var(--line)' }}>{h}</th>)}</tr></thead>
-              <tbody>{(d.items || []).map((it, i) => (
-                <tr key={i}><td style={{ padding: 6 }}>{i + 1}</td><td style={{ padding: 6 }}>{it.product_name}</td><td style={{ padding: 6 }}>{it.qty ?? '—'}</td><td style={{ padding: 6 }}>{money(it.amount)}</td><td style={{ padding: 6 }}>{it.currency}</td></tr>
-              ))}</tbody>
-            </table>
-            {(d.blockers || d.action_plan || d.support_needed) && (
-              <div style={{ marginTop: 8, fontSize: 13 }}>
-                {d.blockers && <div className="hint">卡点/问题：{d.blockers}</div>}
-                {d.action_plan && <div className="hint">行动计划：{d.action_plan}</div>}
-                {d.support_needed && <div className="hint">需要的支持：{d.support_needed}</div>}
+            <div className="row">
+              <div className="col grow1"><label>客户</label><div className="ro">{d.customer_name || '—'}</div></div>
+              <div className="col" style={{ flex: 1 }}><label>国别</label><div className="ro">{d.country || '—'}</div></div>
+              <div className="col" style={{ flex: 1 }}><label>使用地</label><div className="ro">{d.use_location || '—'}</div></div>
+            </div>
+            <div className="row" style={{ alignItems: 'center', gap: 18 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>重点客户</span>
+              <span className={Number(d.is_key_customer) === 1 ? 'tag kc' : 'badge'}>{Number(d.is_key_customer) === 1 ? '是' : '否'}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)', marginLeft: 10 }}>重点项目</span>
+              <span className={Number(d.is_key_project) === 1 ? 'tag kp' : 'badge'}>{Number(d.is_key_project) === 1 ? '是' : '否'}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)', marginLeft: 10 }}>成交状态</span>
+              {Number(d.is_won) === 1 ? <span className="tag won">已生成销售订单</span> : <span className="badge">跟进中</span>}
+              {Number(d.is_won) === 1 && <span className="hint">订单号 {d.orderNo || '—'} · 成单日期 {d.won_date || '—'}{cycle != null ? ` · 转化 ${cycle} 天` : ''}</span>}
+            </div>
+
+            {/* 询价明细（与录入页一致） */}
+            <h4 className="sec-title" style={{ marginTop: 14 }}>询价明细</h4>
+            {(d.items || []).map((it, i) => (
+              <div key={i} className="item-row">
+                <div className="col w-idx"><label>序号</label><div className="idx-cell">{i + 1}</div></div>
+                <div className="col grow1"><label>产品名称</label><div className="ro">{it.product_name || '—'}</div></div>
+                <div className="col w1"><label>数量</label><div className="ro">{it.qty == null ? '—' : it.qty}</div></div>
+                <div className="col w1"><label>金额</label><div className="ro mono">{money2(it.amount)}</div></div>
+                <div className="col w1"><label>币种</label><div className="ro">{it.currency}</div></div>
               </div>
-            )}
-            {d.note && <div className="hint" style={{ marginTop: 8 }}>备注：{d.note}</div>}
+            ))}
+            {(d.items || []).length === 0 && <div className="hint">暂无明细</div>}
+            <div className="totals" style={{ marginTop: 6 }}>
+              <span className="badge new">总报价金额（自动）：</span>
+              {(d.totals || []).map((t) => <span key={t.currency} className="t">{money2(t.total)} {t.currency}</span>)}
+              {(d.totals || []).some((t) => t.currency !== 'USD') && <span className="badge">折 USD 约 {money2(d.usdApprox)}</span>}
+              {(d.totals || []).length === 0 && <span className="hint">—</span>}
+            </div>
+            <div className="row">
+              <div className="col w2"><label>总金额（手填）</label><div className="ro mono">{money2(d.hand_total)}</div></div>
+            </div>
+
+            {/* 卡点/行动计划/需要的支持/备注（与录入页一致） */}
+            <div style={{ marginTop: 12, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
+              <div className="grid-2">
+                <Field label="卡点/问题" value={(d as unknown as { blockers?: string }).blockers} area />
+                <Field label="行动计划" value={(d as unknown as { action_plan?: string }).action_plan} area />
+                <Field label="需要的支持" value={(d as unknown as { support_needed?: string }).support_needed} area />
+                <Field label="备注" value={d.note} area />
+              </div>
+            </div>
           </>
         )}
       </div>

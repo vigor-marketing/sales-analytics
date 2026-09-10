@@ -110,3 +110,9 @@ ul.sugs li:hover, ul.sugs li.on { background: var(--brand-light) }
 .row-act{flex:0 0 34px;width:34px;display:flex;align-items:center;justify-content:center}
 .icon-del{width:26px;height:26px;border-radius:50%;border:1px solid #f2b8b4;background:#fff;color:var(--danger);font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;padding:0}
 .icon-del:hover{background:var(--danger-soft);border-color:var(--danger);transform:scale(1.06)}
+
+/* 只读字段（查看弹窗与录入页保持一致的观感） */
+.ro{height:34px;display:flex;align-items:center;border:1px solid var(--line);border-radius:var(--radius-sm);background:#f7f9fc;padding:0 10px;font-size:13.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ro.area{height:64px;align-items:flex-start;padding:7px 10px;white-space:pre-wrap;overflow:auto;line-height:1.55}
+.ro.empty{color:var(--sub)}
+.box-fixed .ro.area{width:100%}
