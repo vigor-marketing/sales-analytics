@@ -14,6 +14,9 @@ interface ReasonItem { reason: string; count: number; usd: number; share: number
 interface ReasonStat { total: number; usdTotal: number; items: ReasonItem[]; missing: number }
 interface ReasonData { win: ReasonStat; lost: ReasonStat; reasons: { win: string[]; lost: string[] } }
 
+/** 组内对比卡片的主色（每组一条，便于区分） */
+const TEAM_TONES = ['#0052d9', '#0f7a45', '#a35c00', '#7c3aed', '#dc2626', '#0e7490']
+
 const money = (n: number | null | undefined) => (n == null ? '—' : Math.round(Number(n)).toLocaleString('zh-CN'))
 const cycleTone = (d: number | null) => (d == null ? 'var(--sub)' : d <= 30 ? '#059669' : d <= 90 ? '#a35c00' : 'var(--danger)')
 const niceMax = (v: number) => {
@@ -558,57 +561,61 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         </Panel>
         )}
 
-        {tab === 'group' && (<>
-        <Panel title="小组内成员分析"
-          hint={`${teamFilter ? `已筛「${teamFilter}」· ` : ''}每组一行汇总 + 组内每位成员一行（含本期无成单成员）：订单数 / 客户数 / 金额 / 组内占比 / 单均价 / 客户单价 / 平均周期 / 与组内第一的占比`}
-          style={{ gridColumn: '1 / -1' }}>
-          {shownTeams.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
-            <div className="tablewrap h300">
-              <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
-                <colgroup><col style={{ width: '16%' }} /><col style={{ width: '9%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '9%' }} /><col style={{ width: '10%' }} /><col style={{ width: '10%' }} /><col style={{ width: '9%' }} /><col style={{ width: '8%' }} /></colgroup>
-                <thead><tr>{['小组 / 成员', '组内排名', '订单数', '客户数', '金额（折USD）', '组内占比', '单均价', '客户单价', '平均周期', '与第一'].map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }} title={h === '客户单价' ? '客户单价＝金额÷客户数' : h === '单均价' ? '单均价＝金额÷订单数' : h === '与第一' ? '本成员金额÷组内第一名金额' : undefined}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {shownTeams.map((t) => (
-                    <Fragment key={t.team}>
-                      <tr style={{ background: '#f4f7fc' }}>
-                        <td style={{ padding: '6px 8px', fontWeight: 800 }}>{t.team}<span className="hint" style={{ marginLeft: 6, fontWeight: 400 }}>共 {t.list.length} 人</span></td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>—</td>
-                        <td style={{ padding: '6px 8px', fontWeight: 700, textAlign: 'right' }}>{t.n} 单</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>{t.list.reduce((a, m) => a + (m.customerCount || 0), 0)} 家</td>
-                        <td className="mono" style={{ padding: '6px 8px', fontWeight: 800, textAlign: 'right' }}>{money(t.usd)}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>100%</td>
-                        <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>{t.n ? money(Math.round(t.usd / t.n)) : '—'}</td>
-                        <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }} title="小组客户单价＝金额÷客户数">{(() => { const cc = t.list.reduce((a, m) => a + (m.customerCount || 0), 0); return cc ? money(Math.round(t.usd / cc)) : '—' })()}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right' }} title="组内人均金额">{t.list.length ? money(Math.round(t.usd / t.list.length)) : '—'}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>—</td>
+        {/* 组内对比：每个小组一张独立卡片（组间用卡片边框 + 左侧色条区分，不与其它组混在一张表里） */}
+        {tab === 'group' && shownTeams.map((t, ti) => {
+          const tone = TEAM_TONES[ti % TEAM_TONES.length]
+          const customers = t.list.reduce((a, m) => a + (m.customerCount || 0), 0)
+          const membersWithOrders = t.rows.filter((m) => m.n > 0).length
+          const top = t.rows.find((m) => m.n > 0)
+          return (
+            <Panel key={t.team} title={`第 ${ti + 1} 组 · ${t.team}`}
+              hint={top ? `组内第一：${top.name}（${money(top.usd)} USD）` : '本期无成单成员'}
+              style={{ gridColumn: '1 / -1', borderLeft: `4px solid ${tone}` }}
+              extra={<span className="team-badge" style={{ background: tone }}>{t.list.length} 人 · {t.n} 单 · {money(t.usd)} USD</span>}>
+              {/* 组内汇总：一眼看清这个组整体表现 */}
+              <div className="ana-sum" style={{ margin: '2px 0 8px' }}>
+                <span className="ana-sum-i">成员 <b>{t.list.length}</b> 人（有成单 <b>{membersWithOrders}</b> 人）</span>
+                <span className="ana-sum-i">订单 <b>{t.n}</b> 单</span>
+                <span className="ana-sum-i">客户 <b>{customers}</b> 家</span>
+                <span className="ana-sum-i">金额 <b>{money(t.usd)}</b> USD</span>
+                <span className="ana-sum-i">组内人均 <b>{t.list.length ? money(Math.round(t.usd / t.list.length)) : '—'}</b></span>
+                <span className="ana-sum-i">组内单均价 <b>{t.n ? money(Math.round(t.usd / t.n)) : '—'}</b></span>
+                <span className="ana-sum-i">小组客户单价 <b>{customers ? money(Math.round(t.usd / customers)) : '—'}</b></span>
+              </div>
+              <div className="tablewrap">
+                <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
+                  <colgroup><col style={{ width: '18%' }} /><col style={{ width: '9%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '9%' }} /><col style={{ width: '9%' }} /><col style={{ width: '9%' }} /><col style={{ width: '9%' }} /><col style={{ width: '8%' }} /></colgroup>
+                  <thead><tr>{['成员', '组内排名', '订单数', '客户数', '金额（折USD）', '组内占比', '单均价', '客户单价', '平均周期', '与第一'].map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }} title={h === '客户单价' ? '客户单价＝金额÷客户数' : h === '单均价' ? '单均价＝金额÷订单数' : h === '与第一' ? '本成员金额÷组内第一名金额' : undefined}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {t.rows.map((m, i) => (
+                      <tr key={t.team + m.name} className={i === 0 && m.n > 0 && t.rows.length > 1 ? 'row-top' : undefined} style={{ borderBottom: '1px solid var(--line2)' }}>
+                        <td className="ellip" style={{ padding: '6px 8px' }} title={m.name}>
+                          {m.name}
+                          {i === 0 && m.n > 0 && t.rows.length > 1 && <span className="top-badge">组内第一</span>}
+                          {m.n === 0 && <span className="hint" style={{ marginLeft: 6 }}>本期无成单</span>}
+                        </td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>{m.n === 0 ? '—' : `第 ${i + 1} 名`}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.n} 单</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }} title={m.customers.length ? `名下客户：${m.customers.map((c) => `${c.name} ${money(c.usd)} USD · ${c.n} 单`).join(' ｜ ')}` : '本期无成单客户'}>{m.customerCount}</td>
+                        <td className={'mono' + (i === 0 && m.n > 0 && t.rows.length > 1 ? ' cell-top' : '')} style={{ padding: '6px 8px', textAlign: 'right' }}>{money(m.usd)}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.n === 0 ? '—' : `${m.share}%`}</td>
+                        <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>{m.perOrder == null ? '—' : money(m.perOrder)}</td>
+                        <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>{m.perCustomer == null ? '—' : money(m.perCustomer)}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.avgCycle == null ? '—' : `${m.avgCycle} 天`}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', color: i === 0 ? 'var(--sub)' : '#a35c00', fontWeight: 600 }}>{i === 0 || m.n === 0 ? '—' : `${t.rows[0]?.usd ? Math.round((m.usd / t.rows[0].usd) * 100) : 0}%`}</td>
                       </tr>
-                      {t.rows.map((m, i) => (
-                        <tr key={t.team + m.name} className={i === 0 && m.n > 0 && t.rows.length > 1 ? 'row-top' : undefined} style={{ borderBottom: '1px solid var(--line2)' }}>
-                          <td className="ellip" style={{ padding: '6px 8px', paddingLeft: 22 }} title={m.name}>
-                            {m.name}
-                            {i === 0 && m.n > 0 && t.rows.length > 1 && <span className="top-badge">组内第一</span>}
-                            {m.n === 0 && <span className="hint" style={{ marginLeft: 6 }}>本期无成单</span>}
-                          </td>
-                          <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>{m.n === 0 ? '—' : `第 ${i + 1} 名`}</td>
-                          <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.n} 单</td>
-                          <td style={{ padding: '6px 8px', textAlign: 'right' }} title={m.customers.length ? `名下客户：${m.customers.map((c) => `${c.name} ${money(c.usd)} USD · ${c.n} 单`).join(' ｜ ')}` : '本期无成单客户'}>{m.customerCount}</td>
-                          <td className={'mono' + (i === 0 && m.n > 0 && t.rows.length > 1 ? ' cell-top' : '')} style={{ padding: '6px 8px', textAlign: 'right' }}>{money(m.usd)}</td>
-                          <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.n === 0 ? '—' : `${m.share}%`}</td>
-                          <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>{m.perOrder == null ? '—' : money(m.perOrder)}</td>
-                          <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>{m.perCustomer == null ? '—' : money(m.perCustomer)}</td>
-                          <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.avgCycle == null ? '—' : `${m.avgCycle} 天`}</td>
-                          <td style={{ padding: '6px 8px', textAlign: 'right', color: i === 0 ? 'var(--sub)' : '#a35c00', fontWeight: 600 }}>{i === 0 || m.n === 0 ? '—' : `${t.rows[0]?.usd ? Math.round((m.usd / t.rows[0].usd) * 100) : 0}%`}</td>
-                        </tr>
-                      ))}
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Panel>
-
-        </>)}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Panel>
+          )
+        })}
+        {tab === 'group' && shownTeams.length === 0 && (
+          <Panel title="组内对比" hint={teamFilter ? `已筛「${teamFilter}」` : '全部小组'} style={{ gridColumn: '1 / -1' }}>
+            <div className="hint" style={{ fontSize: 12 }}>当前筛选下暂无成单成员，可调整时间范围或小组筛选。</div>
+          </Panel>
+        )}
 
         {/* 个人分析（独立标签页）：销售汇总 + 该销售名下每个客户的平均订单金额 */}
         {tab === 'person' && (
