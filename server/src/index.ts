@@ -771,6 +771,13 @@ function nextOrderNo(): string {
   const pad = (n: number, w = 2) => String(n).padStart(w, '0')
   return `SO-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(seq, 3)}`
 }
+// 预览「下一个订单号」（只读，不占用序号）：生成销售订单时预填，便于把订单号也设为必填
+app.get('/api/orders/next-no', (_req, res) => {
+  const seq = Number(getSetting('orderSeq', '0')) + 1
+  const now = new Date()
+  const pad = (n: number, w = 2) => String(n).padStart(w, '0')
+  ok(res, { orderNo: `SO-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(seq, 3)}` })
+})
 app.get('/api/orders', (req, res) => {
   const d = getDb()
   const q = str(req.query.q), salesQ = str(req.query.sales), from = str(req.query.from), to = str(req.query.to), productQ = str(req.query.product)
@@ -829,6 +836,11 @@ app.post('/api/orders', (req, res) => {
   const cur = normCurrency(req.body?.currency)
   const amount = num(req.body?.amount)
   if (amount != null && (amount < 0 || amount > 1e12)) return fail(res, '订单金额需为 0 ~ 1e12 之间的数值')
+  // 生成销售订单：所有选项必填（成单日期 / 订单金额 / 币种 / 成交原因 / 订单备注）
+  if (amount == null) return fail(res, '请填写订单金额（生成销售订单为必填）')
+  if (!str(req.body?.currency)) return fail(res, '请选择币种（生成销售订单为必填）')
+  if (!text(req.body?.winReason)) return fail(res, '请选择或填写成交原因（生成销售订单为必填）')
+  if (!text(req.body?.note)) return fail(res, '请填写订单备注（生成销售订单为必填）')
   const t = nowIso()
   const oid = newId()
   const winReason = text(req.body?.winReason) || null

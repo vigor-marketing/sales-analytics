@@ -219,15 +219,27 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
       else { setOrder(null) }
     }).catch(() => { /* */ })
   }, [id])
+  // 生成/修改销售订单：所有选项必填
+  const ordMissing = [
+    !ord.wonDate.trim() ? '成单日期' : null,
+    !ord.orderNo.trim() ? '订单号' : null,
+    !(Number(ord.amount) > 0) ? '订单金额（需大于 0）' : null,
+    !ord.currency ? '币种' : null,
+    !ord.winReason.trim() ? '成交原因' : null,
+    !ord.note.trim() ? '订单备注' : null,
+  ].filter(Boolean) as string[]
+  const ordValid = ordMissing.length === 0
   const genOrder = async () => {
+    if (!ordValid) return setOrdErr(`请填写：${ordMissing.join('、')}`)
     setOrdErr(''); setOrdBusy(true)
-    try { await post('/orders', { inquiryId: id, wonDate: ord.wonDate, orderNo: ord.orderNo.trim() || undefined, amount: ord.amount ? Number(ord.amount) : undefined, currency: ord.currency, note: ord.note, winReason: ord.winReason || undefined }); onSaved() }
+    try { await post('/orders', { inquiryId: id, wonDate: ord.wonDate, orderNo: ord.orderNo.trim(), amount: Number(ord.amount), currency: ord.currency, note: ord.note.trim(), winReason: ord.winReason.trim() }); onSaved() }
     catch (e) { setOrdErr((e as Error).message) } finally { setOrdBusy(false) }
   }
   const saveOrder = async () => {
     if (!order) return
+    if (!ordValid) return setOrdErr(`请填写：${ordMissing.join('、')}`)
     setOrdErr(''); setOrdBusy(true)
-    try { await put(`/orders/${order.id}`, { wonDate: ord.wonDate, orderNo: ord.orderNo.trim() || undefined, amount: ord.amount ? Number(ord.amount) : undefined, currency: ord.currency, note: ord.note, winReason: ord.winReason || undefined }); onSaved() }
+    try { await put(`/orders/${order.id}`, { wonDate: ord.wonDate, orderNo: ord.orderNo.trim(), amount: Number(ord.amount), currency: ord.currency, note: ord.note.trim(), winReason: ord.winReason.trim() }); onSaved() }
     catch (e) { setOrdErr((e as Error).message) } finally { setOrdBusy(false) }
   }
   const delOrder = async () => {
@@ -507,22 +519,32 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                 </div>
               )}
               {ordOpen && (<>
+              {/* 生成销售订单：所有选项均为必填（带 * 标记）；金额与币种同一行 */}
+              <div className="hint" style={{ marginTop: 4 }}>以下均为必填项：成单日期、订单号、订单金额、币种、成交原因、订单备注。</div>
               <div className="row">
                 <div className="col w2"><label>成单日期 *</label><input className="sa" type="date" value={ord.wonDate} onChange={(e) => setOrd({ ...ord, wonDate: e.target.value })} /></div>
-                <div className="col w2"><label>订单号 <span className="hint">（留空自动）</span></label><input className="sa" value={ord.orderNo} onChange={(e) => setOrd({ ...ord, orderNo: e.target.value })} /></div>
-                <div className="col w2"><label>订单金额 <span className="hint">（默认带出报价合计）</span></label><input className="sa" type="number" value={ord.amount} onChange={(e) => setOrd({ ...ord, amount: e.target.value })} /></div>
-                <div className="col w1"><label>币种</label><select className="sa" value={ord.currency} onChange={(e) => setOrd({ ...ord, currency: e.target.value })}>{currencyOptions(meta.currencies, ord.currency).map((c) => <option key={c}>{c}</option>)}</select></div>
+                <div className="col w2"><label>订单号 * <span className="hint">（默认下一个可用号，可改）</span></label><input className="sa" value={ord.orderNo} onChange={(e) => setOrd({ ...ord, orderNo: e.target.value })} placeholder="如 SO-20260911-001" /></div>
+              </div>
+              {/* 金额 + 币种：同一行 */}
+              <div className="row" style={{ marginBottom: 6 }}>
+                <div className="col grow1"><label>订单金额 * <span className="hint">（默认带出报价合计）</span></label>
+                  <input className="sa" style={{ width: '100%' }} type="number" min="0" value={ord.amount} onChange={(e) => setOrd({ ...ord, amount: e.target.value })} placeholder="填写成交金额" />
+                </div>
+                <div className="col" style={{ flex: '0 0 120px' }}><label>币种 *</label>
+                  <select className="sa" style={{ width: '100%' }} value={ord.currency} onChange={(e) => setOrd({ ...ord, currency: e.target.value })}>{currencyOptions(meta.currencies, ord.currency).map((c) => <option key={c}>{c}</option>)}</select>
+                </div>
               </div>
               <div className="row">
-                <div className="col w2"><label>成交原因 <span className="hint">（选填，用于成交原因分析）</span></label>
+                <div className="col w2"><label>成交原因 * <span className="hint">（用于成交原因分析）</span></label>
                   <ReasonPicker value={ord.winReason} onChange={(v) => setOrd({ ...ord, winReason: v })} options={meta.winReasons ?? []} placeholder="— 请选择成交原因 —" />
                 </div>
               </div>
-              <div className="col"><label>订单备注</label><textarea className="sa" rows={2} value={ord.note} onChange={(e) => setOrd({ ...ord, note: e.target.value })} /></div>
+              <div className="col"><label>订单备注 *</label><textarea className="sa" rows={2} value={ord.note} onChange={(e) => setOrd({ ...ord, note: e.target.value })} placeholder="如：分两批交付，首批 9 月内发出" /></div>
+              {ordErr && <div className="msg err" style={{ marginTop: 6 }}>{ordErr}</div>}
               <div className="actions" style={{ marginTop: 8 }}>
                 {order
-                  ? <><button className="btn pri" disabled={ordBusy} onClick={() => void saveOrder()}>保存订单修改</button><button className="btn" disabled={ordBusy} onClick={() => setOrdOpen(false)}>取消</button></>
-                  : <><button className="btn pri" disabled={ordBusy} onClick={() => void genOrder()}>确认生成订单</button><button className="btn" disabled={ordBusy} onClick={() => setOrdOpen(false)}>取消</button></>}
+                  ? <><button className="btn pri" disabled={ordBusy || !ordValid} title={ordValid ? '' : '请填写全部必填项'} onClick={() => void saveOrder()}>保存订单修改</button><button className="btn" disabled={ordBusy} onClick={() => setOrdOpen(false)}>取消</button></>
+                  : <><button className="btn pri" disabled={ordBusy || !ordValid} title={ordValid ? '' : '请填写全部必填项'} onClick={() => void genOrder()}>确认生成订单</button><button className="btn" disabled={ordBusy} onClick={() => setOrdOpen(false)}>取消</button></>}
               </div>
               </>)}
               {!order && !ordOpen && (
@@ -531,6 +553,8 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                     const src = liveTotals.grandList.length ? liveTotals.grandList : quote
                     const best = [...src].sort((a, b) => Number(b.total) - Number(a.total))[0]
                     if (best) setOrd((o) => ({ ...o, amount: String(best.total), currency: best.currency }))
+                    // 预填下一个订单号（所有字段必填，订单号也一并带出，可改）
+                    get<{ orderNo: string }>('/orders/next-no').then((r) => setOrd((o) => ({ ...o, orderNo: o.orderNo || r.orderNo }))).catch(() => { /* 留空则由后端自动生成 */ })
                     setOrdOpen(true)
                   }}>生成销售订单</button>
                   {form.isLost && <span className="hint" style={{ color: 'var(--danger)' }}>已标记「未成单」：请先取消未成单标记并保存，才能生成销售订单</span>}
