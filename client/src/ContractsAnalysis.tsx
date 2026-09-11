@@ -348,6 +348,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   const [fReason, setFReason] = useState<PanelF>({ range: '', product: '' })
   const [fCustomer, setFCustomer] = useState<PanelF>({ range: '', product: '' })
   const [fPerson, setFPerson] = useState<PanelF>({ range: '', product: '' })
+  const [fCust, setFCust] = useState<PanelF>({ range: '', product: '' })
+  const [custPerson, setCustPerson] = useState('')
   const [fGroup, setFGroup] = useState<PanelF>({ range: '', product: '' })
 
   const [allRows, setAllRows] = useState<OrderRow[]>([])
@@ -412,6 +414,11 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   const MO = usePanel(fMonth)
   const CU = usePanel(fCustomer)
   const PE = usePanel(fPerson)
+  /** 客户分析：有自己的筛选（时间范围/产品）与自己的销售选择，不跟随其它表 */
+  const CP = usePanel(fCust)
+  /** 「占全公司」的分母：同一时间范围内、不叠加产品筛选的全公司口径（产品筛选只影响本表展示范围） */
+  const fCustAll = useMemo<PanelF>(() => ({ range: fCust.range, product: '' }), [fCust.range])
+  const CPall = usePanel(fCustAll)
   const GR = usePanel(fGroup)
 
   const years = useMemo(() => {
@@ -571,8 +578,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
             {TM.teamRows.length > 1 && <span className="hint" style={{ fontSize: 11 }}>组均 {money(Math.round(TM.sumUsd / Math.max(1, TM.teamRows.filter((t) => t.n > 0).length)))} USD</span>}
           </span>}>
           <DataTable
-            cols={['排名', '小组', '人数', '订单数', '客户数', '金额（折USD）', '金额占比', '人均金额', '单均价', '客户单价', '平均周期', '占第一组', '与组均']}
-            widths={['6%', '12%', '5%', '6%', '5%', '12%', '8%', '8%', '8%', '8%', '8%', '7%', '7%']}
+            cols={['排名', '小组', '人数', '订单数', '客户数', '金额（USD）', '占比', '人均', '单均价', '客单价', '周期', '占第一', '与组均']}
+            widths={['8%', '13%', '5%', '7%', '7%', '10.5%', '7%', '7%', '7%', '7%', '7%', '7%', '7.5%']}
             topCol={5} topLabel="第一"
             empty="本期暂无成单，无法进行小组业绩对比（可调整时间范围或筛选）"
             rows={TM.teamRows.map((t, i) => [
@@ -592,8 +599,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
             ])}
           />
           <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
-            口径：人数＝该组销售（按人员档案归属，未匹配归「未分组」）；<b>人均金额＝金额÷人数</b>、<b>单均价＝金额÷订单数</b>、<b>客户单价＝金额÷客户数</b>；
-            「占第一组」＝本组金额÷第一名金额，「与组均」＝(本组金额−组均)÷组均；金额取订单上填写的成交金额折 USD，随上方筛选联动。
+            口径：人数＝该组销售（按人员档案归属，未匹配归「未分组」）；<b>人均＝金额÷人数</b>、<b>单均价＝金额÷订单数</b>、<b>客单价＝金额÷客户数</b>、<b>周期＝平均成单周期（天）</b>；
+            「占比」＝本组金额÷全部小组金额、「占第一」＝本组金额÷第一名金额、「与组均」＝(本组金额−组均)÷组均；金额取订单上填写的成交金额折 USD，随上方筛选联动。
             月度趋势见「月度小组分析」，组内成员排名见「组内分析」标签页。
           </div>
         </Panel>
@@ -698,17 +705,25 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         )}
 
         {tab === 'person' && (() => {
-          if (!personRows.length) return (
-            <Panel title="客户分析" hint="当前筛选下暂无数据" style={{ gridColumn: '1 / -1' }}>
-              <div className="hint" style={{ fontSize: 12 }}>当前筛选（小组/个人）下暂无成单客户，可调整上方筛选或时间范围。</div>
+          const pick = custPerson || (personRows[0]?.name ?? '')
+          const cur = CP.salesRows.find((x) => x.name === pick) ?? CP.salesRows[0]
+          if (!cur) return (
+            <Panel title="客户分析" hint="本表当前筛选下暂无数据" style={{ gridColumn: '1 / -1' }} extra={rangeSelect(fCust, setFCust)}>
+              <div className="hint" style={{ fontSize: 12 }}>本表当前筛选（时间范围/产品）下暂无成单客户，可调整筛选条或时间范围。</div>
             </Panel>
           )
-          const cur = personRows.find((x) => x.name === personSel) ?? personRows[0]
           const totalUsd = cur.usd
           return (<>
             <Panel title={`客户分析 · ${cur.name}（${cur.team}）`}
               hint={`名下 ${cur.customerCount} 个客户 · ${cur.n} 单 · ${money(totalUsd)} USD`}
-              style={{ gridColumn: '1 / -1' }}>
+              style={{ gridColumn: '1 / -1' }}
+              extra={<span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                {rangeSelect(fCust, setFCust)}
+                <select className="sa" style={{ width: 200 }} value={cur.name} title="本表选择销售（仅影响这张表）"
+                  onChange={(e) => setCustPerson(e.target.value)}>
+                  {CP.salesRows.map((p) => <option key={p.name} value={p.name}>{p.name}（{p.customerCount} 客户 · {p.n} 单）</option>)}
+                </select>
+              </span>}>
               <div className="ana-sum" style={{ marginBottom: 6 }}>
                 <span className="ana-sum-i">客户数 <b>{cur.customerCount}</b> 家</span>
                 <span className="ana-sum-i">订单数 <b>{cur.n}</b> 单</span>
@@ -719,16 +734,17 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
               </div>
               <DataTable
                 cols={['客户', '订单数', '金额（折USD）', '占其总额', '该客户平均订单金额', '占全公司']}
-                widths={['32%', '13%', '20%', '14%', '13%', '8%']}
+                widths={['30%', '13%', '20%', '14%', '15%', '8%']}
                 topCol={2} topLabel="最高"
                 empty="该销售本期暂无成单客户"
                 rows={cur.customerRows.map((c) => [
-                  c.name, `${c.n} 单`, money(c.usd), `${PE.sumUsd ? Math.round((c.usd / PE.sumUsd) * 1000) / 10 : 0}%`,
-                  c.avgOrder == null ? '—' : money(c.avgOrder), `${c.share}%`,
+                  c.name, `${c.n} 单`, money(c.usd), `${CP.sumUsd ? Math.round((c.usd / CP.sumUsd) * 1000) / 10 : 0}%`,
+                  c.avgOrder == null ? '—' : money(c.avgOrder),
+                  `${CPall.sumUsd ? Math.round((c.usd / CPall.sumUsd) * 1000) / 10 : 0}%`,
                 ])}
               />
               <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
-                该销售名下每个客户一行：订单数 / 金额（折USD）/ <b>占其总额</b>（该客户金额÷该销售总额）/ <b>该客户平均订单金额</b>（＝该客户金额÷该客户订单数）/ <b>占全公司</b>（该客户金额÷当前筛选下全部订单金额）。
+                该销售名下每个客户一行：订单数 / 金额（折USD）/ <b>占其总额</b>（该客户金额÷该销售总额）/ <b>该客户平均订单金额</b>（＝该客户金额÷该客户订单数）/ <b>占全公司</b>（该客户金额÷<b>同一时间范围内全公司 {money(CPall.sumUsd)} USD</b>，不叠加产品筛选，便于横向比较）。
                 上方「客户单价」＝该销售总额÷名下客户数，「单均价」＝该销售总额÷全部订单数；金额均取订单上填写的成交金额折 USD。
               </div>
             </Panel>
