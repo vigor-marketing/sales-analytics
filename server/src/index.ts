@@ -3,6 +3,7 @@ import cors from 'cors'
 import express from 'express'
 import { schema, ensurePeople, backfillProducts, migrateWonToOrders, syncWonFlags, getDb, getSources, getCountries, saveSources, getFollowMethods, saveFollowMethods, getLostReasons, saveLostReasons, getWinReasons, saveWinReasons, getSetting, setSetting, newId, nowIso, todayStr, text, num, getCurrencies, saveCurrencies, currencyCodes, fxRates, fxRateOf, renameCurrencyInData, currencyUsage } from './db.js'
 import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -141,6 +142,24 @@ const isDate = (v: string) => {
   return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d
 }
 const fail = (res: express.Response, msg: string, st = 400) => res.status(st).json({ ok: false, error: msg })
+
+/** /api/* 统一鉴权（注册在所有路由之前）：除登录接口外都必须带工作台会话 */
+const AUTH_OPEN = ['/auth/login']
+app.use('/api', (req, res, next) => {
+  if (AUTH_OPEN.includes(req.path)) return next()
+  const actor = actorOf(req)
+  if (!actor) return res.status(401).json({ ok: false, error: '请先登录（工作台账号）', needLogin: true })
+  ;(req as express.Request & { actor?: SaActor }).actor = actor
+  next()
+})
+/** 设置类写操作（组织架构同步、字段与选项、币种、来源等）：仅「全部」范围可改 */
+const NEED_ALL_SCOPE = ['/org/sync', '/options/save', '/sources', '/currencies', '/countries-custom', '/follow-methods', '/lost-reasons', '/win-reasons']
+app.use('/api', (req, res, next) => {
+  const a = (req as express.Request & { actor?: SaActor }).actor
+  if (!a || req.method === 'GET') return next()
+  if (NEED_ALL_SCOPE.some((x) => req.path === x || req.path.startsWith(x + '/')) && a.scope !== 'all') return fail(res, '仅总经理 / 副总经理（或管理员）可操作设置', 403)
+  next()
+})
 
 // —— 费用（运费/税费/佣金/其他）：金额录入，与明细合并成「总报价」 ——
 const FEE_KEYS = [
@@ -425,6 +444,149 @@ app.post('/api/org/sync', async (_req, res) => {
 // 只读：本系统当前人员档案（不调用工作台）
 app.get('/api/org/local', (_req, res) => ok(res, { base: WORKBENCH_BASE, tokenConfigured: !!WORKBENCH_TOKEN, ...localOrgState() }))
 
+// ============================ 登录与权限（工作台 SSO + 数据范围） ============================
+/**
+ * 登录：用工作台账号密码调 POST {工作台}/api/auth/login，拿到岗位/部门/小组后在本系统建会话。
+ * 数据范围（读）：总经理/副总/管理员＝全部；部门负责人或经理＝本组；其他人＝自己。
+ * 写入范围：只有「全部」权限可以改别人的；组长能看到本组，但只能改自己的（需求：组长只看不改别人的）。
+ */
+type SaScope = 'all' | 'team' | 'self'
+interface SaActor {
+  username: string; name: string; cnName: string; role: string; roleLabel: string
+  department: string; team: string; head: boolean; isAdmin: boolean
+  scope: SaScope; reason: string
+  /** 可查看的销售名集合（null = 不限） */
+  readNames: string[] | null
+  /** 可写入的销售名集合（null = 不限） */
+  writeNames: string[] | null
+}
+const SESSION_COOKIE = 'sa_session'
+const SESSION_HOURS = Number(process.env.SESSION_HOURS ?? 12)
+
+/** 会话签名密钥：环境变量优先，否则写入设置表（服务端，不外泄） */
+function sessionSecret(): string {
+  const env = process.env.SESSION_SECRET
+  if (env && env.length >= 16) return env
+  let v = getSetting('sessionSecret') || ''
+  if (v.length < 16) { v = randomBytes(32).toString('base64url'); setSetting('sessionSecret', v) }
+  return v
+}
+const b64u = (v: string) => Buffer.from(v).toString('base64url')
+function signSession(data: Record<string, unknown>): string {
+  const payload = b64u(JSON.stringify({ ...data, exp: Math.floor(Date.now() / 1000) + SESSION_HOURS * 3600 }))
+  const sig = createHmac('sha256', sessionSecret()).update(payload).digest('base64url')
+  return `${payload}.${sig}`
+}
+function verifySession(token: string): SaActor | null {
+  const [payload, sig] = String(token || '').split('.')
+  if (!payload || !sig) return null
+  const expect = createHmac('sha256', sessionSecret()).update(payload).digest('base64url')
+  const a = Buffer.from(sig); const b = Buffer.from(expect)
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null
+  try {
+    const o = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { exp?: number; actor?: SaActor }
+    if (!o?.exp || o.exp < Math.floor(Date.now() / 1000) || !o.actor) return null
+    return o.actor
+  } catch { return null }
+}
+function cookieOf(req: express.Request, name: string): string {
+  const raw = String(req.headers.cookie || '')
+  const hit = raw.split(';').map((x) => x.trim()).find((x) => x.startsWith(`${name}=`))
+  return hit ? decodeURIComponent(hit.slice(name.length + 1)) : ''
+}
+/** 当前登录人：会话里带着岗位快照，但每次请求都按本系统人员档案重算可读名单，保证组织架构同步后立即生效 */
+function actorOf(req: express.Request): SaActor | null {
+  const raw = cookieOf(req, SESSION_COOKIE) || (String(req.headers.authorization || '').startsWith('Bearer ') ? String(req.headers.authorization).slice(7) : '')
+  const actor = verifySession(raw)
+  if (!actor) return null
+  return { ...actor, ...scopeOf(actor) }
+}
+/** 按人员档案把「可读/可写名单」算出来 */
+function scopeOf(actor: Pick<SaActor, 'scope' | 'name'>): Pick<SaActor, 'readNames' | 'writeNames'> {
+  const d = getDb()
+  if (actor.scope === 'all') return { readNames: null, writeNames: null }
+  if (actor.scope === 'self') return { readNames: [actor.name], writeNames: [actor.name] }
+  const team = (actor as unknown as { team?: string }).team ?? ''
+  const mates = d.prepare("SELECT name FROM people WHERE role = 'sales' AND team_name = ?").all(team) as { name: string }[]
+  const names = Array.from(new Set([actor.name, ...mates.map((m) => m.name)].filter(Boolean)))
+  return { readNames: names.length ? names : [actor.name], writeNames: [actor.name] }   // 组长：读本组，写只写自己的
+}
+/** 工作台人员索引（id/英文名 → 本系统显示名与小组），登录时用于把账号映射到销售名 */
+async function workbenchPeopleIndex(): Promise<Map<string, { name: string; cnName: string; department: string; team: string; roleLabel: string }>> {
+  const { persons } = await fetchWorkbenchOrg()
+  const m = new Map<string, { name: string; cnName: string; department: string; team: string; roleLabel: string }>()
+  persons.forEach((p) => {
+    const rec = { name: p.name, cnName: p.cnName, department: p.department, team: p.team, roleLabel: p.roleLabel }
+    ;[p.id, p.englishName, p.name].filter(Boolean).forEach((k) => m.set(String(k).toLowerCase(), rec))
+  })
+  return m
+}
+/** 岗位 → 数据范围 */
+function scopeFor(u: { role?: string; department?: string; departmentHead?: boolean; isAdmin?: boolean }): { scope: SaScope; reason: string } {
+  const role = String(u.role || '')
+  if (u.isAdmin) return { scope: 'all', reason: '管理员' }
+  if (String(u.department || '') === '总经理办公室' || /general_manager|deputy|gm|副总|总经理/i.test(role)) return { scope: 'all', reason: '总经理 / 副总经理办公室' }
+  if (u.departmentHead || /manager|head|lead|经理|主管|负责人/i.test(role)) return { scope: 'team', reason: '组长 / 部门负责人' }
+  return { scope: 'self', reason: '个人' }
+}
+// —— 登录（工作台账号）——
+app.post('/api/auth/login', async (req, res) => {
+  const username = str(req.body?.username).trim(); const password = str(req.body?.password)
+  if (!username || !password) return fail(res, '请输入账号和密码')
+  try {
+    const r = await fetch(`${WORKBENCH_BASE}/api/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }),
+    })
+    const body = await r.json().catch(() => ({})) as { user?: Record<string, unknown>; message?: string; error?: string }
+    if (!r.ok || !body?.user) return fail(res, body?.message || body?.error || '工作台账号或密码不正确', 401)
+    const u = body.user as { username?: string; displayName?: string; role?: string; department?: string; teamName?: string; departmentHead?: boolean; isAdmin?: boolean }
+    // 账号 → 本系统销售名（英文名）：优先按 id/英文名匹配工作台人员清单
+    let name = String(u.displayName || u.username || ''); let cnName = ''; let team = String(u.teamName || ''); let department = String(u.department || ''); let roleLabel = ''
+    try {
+      const idx = await workbenchPeopleIndex()
+      const hit = idx.get(String(u.username || '').toLowerCase()) || idx.get(name.toLowerCase())
+      if (hit) { name = hit.name || name; cnName = hit.cnName; team = hit.team || team; department = hit.department || department; roleLabel = hit.roleLabel }
+    } catch { /* 工作台组织接口不可用时，退回账号自带信息 */ }
+    const { scope, reason } = scopeFor({ role: u.role, department, departmentHead: u.departmentHead, isAdmin: u.isAdmin })
+    const actor: SaActor = {
+      username: String(u.username || ''), name, cnName, role: String(u.role || ''), roleLabel,
+      department, team, head: !!u.departmentHead, isAdmin: !!u.isAdmin, scope, reason,
+      readNames: null, writeNames: null,
+    }
+    const full = { ...actor, ...scopeOf(actor) }
+    const token = signSession({ actor: full })
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_HOURS * 3600}`)
+    ok(res, { actor: full, sessionHours: SESSION_HOURS })
+  } catch (e) { fail(res, `无法连接工作台登录：${(e as Error).message}`, 502) }
+})
+app.get('/api/auth/session', (req, res) => {
+  const a = actorOf(req)
+  if (!a) return res.status(401).json({ ok: false, error: '请先登录（工作台账号）', needLogin: true })
+  ok(res, { actor: a, sessionHours: SESSION_HOURS })
+})
+app.post('/api/auth/logout', (_req, res) => { res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`); ok(res, { ok: true }) })
+
+const actorIn = (req: express.Request): SaActor => (req as express.Request & { actor?: SaActor }).actor as SaActor
+/** 只读范围条件：返回 ` AND col IN (?,?)`（全部权限时为空串） */
+function scopeSql(actor: SaActor | undefined, col: string): { sql: string; args: string[] } {
+  const names = actor?.readNames
+  if (!actor || !names) return { sql: '', args: [] }
+  return { sql: ` AND ${col} IN (${names.map(() => '?').join(',')})`, args: names }
+}
+/** 是否允许写这条（按销售名）：全部权限随便写，其它人只能写自己的 */
+function canWrite(actor: SaActor | undefined, salesName: unknown): boolean {
+  if (!actor) return false
+  if (!actor.writeNames) return true
+  const n = String(salesName || '').trim().toLowerCase()
+  return actor.writeNames.some((x) => x.toLowerCase() === n)
+}
+/** 读校验：能否看这条（按销售名） */
+function canRead(actor: SaActor | undefined, salesName: unknown): boolean {
+  if (!actor) return false
+  if (!actor.readNames) return true
+  const n = String(salesName || '').trim().toLowerCase()
+  return actor.readNames.some((x) => x.toLowerCase() === n)
+}
 // —— 产品档案：录入自动沉淀 + 查询/维护 ——
 app.get('/api/products', (req, res) => {
   const d = getDb()
@@ -588,6 +750,7 @@ app.get('/api/customers', (req, res) => {
   const parts: string[] = []; const args: unknown[] = []
   if (q) { parts.push('(name LIKE ? ESCAPE \'!\' OR country LIKE ? ESCAPE \'!\')'); args.push(like, like) }
   if (salesQ) { parts.push('EXISTS (SELECT 1 FROM inquiries i WHERE i.customer_id = customers.id AND i.sales = ?)'); args.push(salesQ) }
+  { const a = actorIn(req); if (a?.readNames) { const names = a.readNames; parts.push(`EXISTS (SELECT 1 FROM inquiries i WHERE i.customer_id = customers.id AND i.sales IN (${names.map(() => '?').join(',')}))`); args.push(...names) } }
   const where = parts.length ? `WHERE ${parts.join(' AND ')}` : ''
   const rows = d.prepare(`SELECT id, name, country, use_location, source, stars, created_at, updated_at FROM customers ${where} ORDER BY updated_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
   const out = rows.map((c) => {
@@ -605,9 +768,12 @@ app.get('/api/customers/:id', (req, res) => {
   const d = getDb()
   const c = d.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
   if (!c) return fail(res, '客户不存在', 404)
+  const a0 = actorIn(req)
+  const scope0 = a0?.readNames ? ` AND i.sales IN (${a0.readNames.map(() => '?').join(',')})` : ''
+  const inqsArgs: unknown[] = [req.params.id, ...(a0?.readNames ?? [])]
   const inqs = d.prepare(`SELECT i.*, o.order_no AS order_no, o.won_date AS order_won_date, CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END AS won_flag,
       (SELECT COALESCE(SUM(amount * COALESCE(NULLIF(qty,0),1)),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw_amount
-    FROM inquiries i LEFT JOIN orders o ON o.inquiry_id = i.id WHERE i.customer_id = ? ORDER BY i.date DESC`).all(req.params.id) as Record<string, unknown>[]
+    FROM inquiries i LEFT JOIN orders o ON o.inquiry_id = i.id WHERE i.customer_id = ?${scope0} ORDER BY i.date DESC`).all(...inqsArgs) as Record<string, unknown>[]
   const list = inqs.map((i) => {
     const items = d.prepare('SELECT currency, amount, qty FROM inquiry_items WHERE inquiry_id = ?').all(i.id) as { currency: string; amount: number; qty: number | null }[]
     const feeBuckets = feeTotalsOf(i)
@@ -725,6 +891,7 @@ app.post('/api/options/save', (req, res) => {
 // —— 录入询报价（新客户名自动建档） ——
 app.post('/api/inquiries', (req, res) => {
   const d = getDb()
+  if (!canWrite(actorIn(req), req.body?.sales)) return fail(res, '只能录入自己名下的询价（销售需为你本人）', 403)
   const no = str(req.body?.inquiryNo)
   const date = str(req.body?.date) || todayStr()
   const country = str(req.body?.country) || null
@@ -827,6 +994,7 @@ app.get('/api/inquiries/lookup', (req, res) => {
   if (!no) return fail(res, '请提供询价号')
   const parts = ['i.inquiry_no = ?']; const args: unknown[] = [no]
   if (salesQ) { parts.push('i.sales = ?'); args.push(salesQ) }
+  { const sc = scopeSql(actorIn(req), 'i.sales'); if (sc.sql) { parts.push(sc.sql.replace(/^ AND /, '')); args.push(...sc.args) } }
   const r = d.prepare(`SELECT i.*, c.name AS customer_name, o.order_no AS order_no, o.won_date AS order_won_date,
       CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END AS won_flag
     FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id LEFT JOIN orders o ON o.inquiry_id = i.id
@@ -845,6 +1013,7 @@ app.get('/api/followups', (req, res) => {
   const d = getDb()
   const inquiryId = str(req.query.inquiryId), salesQ = str(req.query.sales), q = str(req.query.q)
   const parts: string[] = ['1=1']; const args: unknown[] = []
+  { const sc = scopeSql(actorIn(req), 'i.sales'); if (sc.sql) { parts.push(sc.sql.replace(/^ AND /, '')); args.push(...sc.args) } }
   if (inquiryId) { parts.push('f.inquiry_id = ?'); args.push(inquiryId) }
   if (salesQ) { parts.push('i.sales = ?'); args.push(salesQ) }
   if (q) { parts.push('(i.inquiry_no LIKE ? ESCAPE \'!\' OR f.content LIKE ? ESCAPE \'!\' OR c.name LIKE ? ESCAPE \'!\')'); const l = likeArg(q); args.push(l, l, l) }
@@ -888,6 +1057,7 @@ app.post('/api/followups', (req, res) => {
   const inquiryId = str(req.body?.inquiryId)
   const iq = d.prepare('SELECT * FROM inquiries WHERE id = ?').get(inquiryId) as Record<string, unknown> | undefined
   if (!iq) return fail(res, '询价不存在', 404)
+  if (!canWrite(actorIn(req), iq.sales)) return fail(res, '只能对自己名下的询价添加跟进', 403)
   const date = str(req.body?.date) || todayStr()
   const summary = text(req.body?.summary) || null
   const detail = text(req.body?.detail) || text(req.body?.content) || null
@@ -923,6 +1093,8 @@ app.put('/api/followups/:id', (req, res) => {
   const fid = str(req.params.id)
   const old = d.prepare('SELECT * FROM followups WHERE id = ?').get(fid) as Record<string, unknown> | undefined
   if (!old) return fail(res, '跟进记录不存在', 404)
+  { const iqRow = d.prepare('SELECT sales FROM inquiries WHERE id = ?').get(text(old.inquiry_id)) as { sales: string } | undefined
+    if (!canWrite(actorIn(req), iqRow?.sales)) return fail(res, '只能修改自己名下询价的跟进记录', 403) }
   const inquiryId = text(old.inquiry_id)
   const latest = d.prepare('SELECT id FROM followups WHERE inquiry_id = ? ORDER BY date DESC, created_at DESC, rowid DESC LIMIT 1').get(inquiryId) as { id: string } | undefined
   if (!latest || latest.id !== fid) return fail(res, '只能编辑该项目最新一条跟进记录；较早的记录只能查看', 409)
@@ -967,6 +1139,7 @@ app.get('/api/orders', (req, res) => {
   const q = str(req.query.q), salesQ = str(req.query.sales), from = str(req.query.from), to = str(req.query.to), productQ = str(req.query.product)
   const orderNoQ = str(req.query.orderNo), customerQ = str(req.query.customer), purchaserQ = str(req.query.purchaser), sourceQ = str(req.query.source)
   const parts: string[] = ['1=1']; const args: unknown[] = []
+  { const sc = scopeSql(actorIn(req), 'i.sales'); if (sc.sql) { parts.push(sc.sql.replace(/^ AND /, '')); args.push(...sc.args) } }
   if (q) { parts.push('(o.order_no LIKE ? ESCAPE \'!\' OR i.inquiry_no LIKE ? ESCAPE \'!\' OR c.name LIKE ? ESCAPE \'!\')'); const l = likeArg(q); args.push(l, l, l) }
   if (orderNoQ) { parts.push('(o.order_no LIKE ? ESCAPE \'!\' OR i.inquiry_no LIKE ? ESCAPE \'!\')'); const l = likeArg(orderNoQ); args.push(l, l) }
   if (customerQ) { parts.push('c.name LIKE ? ESCAPE \'!\''); args.push(likeArg(customerQ)) }
@@ -1013,6 +1186,7 @@ app.post('/api/orders', (req, res) => {
   const inquiryId = str(req.body?.inquiryId)
   const inq = d.prepare('SELECT * FROM inquiries WHERE id = ?').get(inquiryId) as Record<string, unknown> | undefined
   if (!inq) return fail(res, '询价不存在', 404)
+  if (!canWrite(actorIn(req), inq.sales)) return fail(res, '只能对自己名下的询价生成销售订单', 403)
   if (d.prepare('SELECT id FROM orders WHERE inquiry_id = ?').get(inquiryId)) return fail(res, '该询价已生成销售订单', 409)
   if (Number(inq.is_lost) === 1) return fail(res, '该询价已标记「未成单」，请先撤销未成单后再生成销售订单', 409)
   const wonDate = str(req.body?.wonDate) || todayStr()
@@ -1040,8 +1214,9 @@ app.post('/api/orders', (req, res) => {
 })
 app.put('/api/orders/:id', (req, res) => {
   const d = getDb()
-  const o = d.prepare('SELECT o.*, i.date FROM orders o JOIN inquiries i ON i.id = o.inquiry_id WHERE o.id = ?').get(req.params.id) as Record<string, unknown> | undefined
+  const o = d.prepare('SELECT o.*, i.date, i.sales FROM orders o JOIN inquiries i ON i.id = o.inquiry_id WHERE o.id = ?').get(req.params.id) as Record<string, unknown> | undefined
   if (!o) return fail(res, '订单不存在', 404)
+  if (!canWrite(actorIn(req), o.sales)) return fail(res, '只能修改自己名下询价的订单', 403)
   const wonDate = req.body?.wonDate !== undefined ? str(req.body.wonDate) : str(o.won_date)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(wonDate)) return fail(res, '成单日期格式应为 YYYY-MM-DD')
   if (wonDate < str(o.date)) return fail(res, '成单日期不能早于询价日期')
@@ -1067,7 +1242,7 @@ app.delete('/api/orders/:id', (req, res) => {
 })
 
 // —— 仪表盘：本月数据 + 跟进提醒 ——
-app.get('/api/dashboard', (_req, res) => {
+app.get('/api/dashboard', (req2, res) => {
   const d = getDb()
   const month = todayStr().slice(0, 7)
   const today = todayStr()
@@ -1076,18 +1251,21 @@ app.get('/api/dashboard', (_req, res) => {
   const usdOf = (inquiryId: string) => inquiryUsdTotal(d, inquiryId)
   const rowsOf = (sql: string, ...args: unknown[]) => d.prepare(sql).all(...args) as Record<string, unknown>[]
 
-  // 本月询价（按询价日期）
+  // 本月询价（按询价日期）；按登录人的数据范围过滤
+  const dsc = scopeSql(actorIn(req2), 'i.sales')
   const inqs = rowsOf(`SELECT i.*, c.name AS customer_name FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id
-    WHERE i.date >= ? AND i.date <= ? ORDER BY i.date DESC`, monthFrom, monthTo)
+    WHERE i.date >= ? AND i.date <= ?${dsc.sql} ORDER BY i.date DESC`, monthFrom, monthTo, ...dsc.args)
   const inqUsd = inqs.reduce((s2, r) => s2 + usdOf(text(r.id)), 0)
-  const wonMonth = rowsOf(`SELECT o.id, o.won_date, o.amount, o.currency, o.inquiry_id FROM orders o WHERE o.won_date >= ? AND o.won_date <= ?`, monthFrom, monthTo)
+  const wonMonth = rowsOf(`SELECT o.id, o.won_date, o.amount, o.currency, o.inquiry_id FROM orders o JOIN inquiries i2 ON i2.id = o.inquiry_id
+    WHERE o.won_date >= ? AND o.won_date <= ?${dsc.sql.replace(/\bi\.sales\b/g, 'i2.sales')}`, monthFrom, monthTo, ...dsc.args)
   // 本月成单金额：订单上填写的金额为准（未填则回退到询价报价合计）
   const wonUsd = wonMonth.reduce((s2, o) => s2 + orderUsdOf(d, o), 0)
   const lostMonth = inqs.filter((r) => Number(r.is_lost) === 1)
   const lostUsd = lostMonth.reduce((s2, r) => s2 + usdOf(text(r.id)), 0)
   const decided = wonMonth.length + lostMonth.length
   const newCustomers = (d.prepare('SELECT COUNT(*) AS n FROM customers WHERE created_at >= ? AND created_at <= ?').get(`${monthFrom}T00:00:00`, `${monthTo}T23:59:59`) as { n: number }).n
-  const followMonth = (d.prepare('SELECT COUNT(*) AS n FROM followups WHERE date >= ? AND date <= ?').get(monthFrom, monthTo) as { n: number }).n
+  const fsc = scopeSql(actorIn(req2), 'i.sales')
+  const followMonth = (d.prepare(`SELECT COUNT(*) AS n FROM followups f JOIN inquiries i ON i.id = f.inquiry_id WHERE f.date >= ? AND f.date <= ?${fsc.sql}`).get(monthFrom, monthTo, ...fsc.args) as { n: number }).n
 
   // 本月排行
   const bySales = new Map<string, { n: number; usd: number }>()
@@ -1212,6 +1390,7 @@ app.get('/api/analysis/reasons', (req, res) => {
   const blank = (v: unknown) => text(v) || '未填写'
 
   const wParts: string[] = ['1=1']; const wArgs: unknown[] = []
+  { const sc = scopeSql(actorIn(req), 'i.sales'); if (sc.sql) { wParts.push(sc.sql.replace(/^ AND /, '')); wArgs.push(...sc.args) } }
   if (salesQ) { wParts.push('i.sales = ?'); wArgs.push(salesQ) }
   if (from) { wParts.push('o.won_date >= ?'); wArgs.push(from) }
   if (to) { wParts.push('o.won_date <= ?'); wArgs.push(to) }
@@ -1220,6 +1399,7 @@ app.get('/api/analysis/reasons', (req, res) => {
     .all(...wArgs) as { inquiry_id: string; inq_date: string; won_date: string; win_reason: string | null; amount: number | null; currency: string | null }[]
 
   const lParts: string[] = ['o.id IS NULL', 'COALESCE(i.is_lost, 0) = 1']; const lArgs: unknown[] = []
+  { const sc = scopeSql(actorIn(req), 'i.sales'); if (sc.sql) { lParts.push(sc.sql.replace(/^ AND /, '')); lArgs.push(...sc.args) } }
   if (salesQ) { lParts.push('i.sales = ?'); lArgs.push(salesQ) }
   if (from) { lParts.push('COALESCE(i.lost_date, i.date) >= ?'); lArgs.push(from) }
   if (to) { lParts.push('COALESCE(i.lost_date, i.date) <= ?'); lArgs.push(to) }
@@ -1331,6 +1511,7 @@ function fmtTotals(items: { currency: string; amount: number; qty?: number | nul
 app.get('/api/inquiries', (req, res) => {
   const d = getDb()
   const parts: string[] = []; const args: unknown[] = []
+  { const sc = scopeSql(actorIn(req), 'i.sales'); if (sc.sql) { parts.push(sc.sql.replace(/^ AND /, '')); args.push(...sc.args) } }
   const q = str(req.query.q), from = str(req.query.from), to = str(req.query.to)
   const sales = str(req.query.sales), purchaser = str(req.query.purchaser), source = str(req.query.source), country = str(req.query.country)
   const statusQ = str(req.query.status)
@@ -1395,6 +1576,7 @@ app.get('/api/inquiries/:id', (req, res) => {
   const d = getDb()
   const r = d.prepare('SELECT i.*, c.name AS customer_name FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id WHERE i.id = ?').get(req.params.id) as Record<string, unknown> | undefined
   if (!r) return fail(res, '询价不存在', 404)
+  if (!canRead(actorIn(req), r.sales)) return fail(res, '无权查看该询价（不在你的数据范围内）', 403)
   const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(req.params.id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
   const order = d.prepare('SELECT id, order_no, won_date, amount, currency, note, win_reason FROM orders WHERE inquiry_id = ?').get(req.params.id) as Record<string, unknown> | undefined
   const { is_won: _legacyWon, won_date: _legacyWonDate, ...base } = r
@@ -1417,6 +1599,7 @@ app.put('/api/inquiries/:id', (req, res) => {
   const d = getDb()
   const old = d.prepare('SELECT * FROM inquiries WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
   if (!old) return fail(res, '询价不存在', 404)
+  if (!canWrite(actorIn(req), old.sales)) return fail(res, '只能修改自己名下的询价（组长可查看本组，但不修改他人记录）', 403)
   const date = str(req.body?.date) || str(old.date)
   if (!isDate(date)) return fail(res, '询价日期格式应为 YYYY-MM-DD（且为真实日期）')
   const country = req.body?.country !== undefined ? str(req.body?.country) || null : str(old.country) || null

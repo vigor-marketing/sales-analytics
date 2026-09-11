@@ -4,11 +4,12 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   let r: Response
   const path = url.startsWith('/api') || /^https?:\/\//.test(url) ? url : `/api${url.startsWith('/') ? url : '/' + url}`
   try {
-    r = await fetch(path, { method, signal: ctrl.signal, headers: body === undefined ? undefined : { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
+    r = await fetch(path, { method, signal: ctrl.signal, credentials: 'same-origin', headers: body === undefined ? undefined : { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
   } catch (e) {
     throw new Error(`无法连接后端（${(e as Error).name === 'AbortError' ? '超时' : '请确认服务已启动'}），当前地址 ${location.origin}`)
   } finally { clearTimeout(timer) }
-  const j = (await r.json().catch(() => ({}))) as { ok?: boolean; data?: T; error?: string }
+  const j = (await r.json().catch(() => ({}))) as { ok?: boolean; data?: T; error?: string; needLogin?: boolean }
+  if (r.status === 401 || j.needLogin) window.dispatchEvent(new Event('sa:need-login'))
   if (!r.ok || j.ok === false) throw new Error(j.error || `HTTP ${r.status}`)
   return j.data as T
 }

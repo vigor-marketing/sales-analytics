@@ -12,6 +12,7 @@ import ContractsAnalysis from './ContractsAnalysis'
 import FollowUps from './FollowUps'
 import InquiryManager from './InquiryManager'
 import Settings from './Settings'
+import Login, { SCOPE_LABEL, type SaActor } from './Login'
 import { currencyOptions } from './currencies'
 
 interface ItemD { productName: string; qty: string; amount: string; currency: string }
@@ -56,7 +57,11 @@ function initialPage(): PageKey {
   return 'entry'
 }
 const TITLES: Record<PageKey, string> = { dashboard: '仪表盘', entry: '询报价录入', manage: '询报价管理', followups: '询报价跟进', contracts: '销售订单管理', contractsAnalysis: '销售订单分析', customers: '客户档案', products: '产品档案', settings: '设置' }
-function Shell({ page, onNav, children, headRight }: { page: PageKey; onNav: (p: PageKey) => void; children: React.ReactNode; headRight?: React.ReactNode }) {
+function Shell({ page, onNav, children, headRight, actor, onLogout }: {
+  page: PageKey; onNav: (p: PageKey) => void; children: React.ReactNode; headRight?: React.ReactNode
+  actor?: SaActor | null; onLogout?: () => void
+}) {
+  const nav = actor ? NAV.filter((n) => n.key !== 'settings' || actor.scope === 'all') : NAV
   return (
     <div className="sa-layout">
       <aside className="sa-sider">
@@ -68,13 +73,25 @@ function Shell({ page, onNav, children, headRight }: { page: PageKey; onNav: (p:
           </div>
         </div>
         <nav className="sa-menu">
-          {NAV.map((n) => (
+          {nav.map((n) => (
             <button key={n.key} className={`sa-item${page === n.key ? ' on' : ''}`} onClick={() => onNav(n.key)}>
               <span className="sa-ic">{n.icon}</span>
               <span>{n.label}</span>
             </button>
           ))}
         </nav>
+        {actor && (
+          <div style={{ marginTop: 'auto', padding: '10px 12px', borderTop: '1px solid #eef0f5' }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${actor.cnName ? `${actor.cnName} / ` : ''}${actor.name} · ${actor.department}${actor.team ? ` / ${actor.team}` : ''} · ${actor.roleLabel || actor.role} · ${SCOPE_LABEL[actor.scope]}`}>
+              {actor.name}
+              <span className="hint" style={{ marginLeft: 4 }}>{SCOPE_LABEL[actor.scope]}</span>
+            </div>
+            <div className="hint" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${actor.department}${actor.team ? ` / ${actor.team}` : ''} · ${actor.roleLabel || actor.role}`}>
+              {actor.department}{actor.team && actor.team !== actor.department ? ` / ${actor.team}` : ''}
+            </div>
+            <button className="btn xs" style={{ marginTop: 6 }} onClick={onLogout}>退出登录</button>
+          </div>
+        )}
         <div className="sa-foot">v{__BUILD_ID__}</div>
       </aside>
       <main className="sa-main">
@@ -90,6 +107,8 @@ function Shell({ page, onNav, children, headRight }: { page: PageKey; onNav: (p:
   )
 }
 export default function App() {
+  const [actor, setActor] = useState<SaActor | null>(null)
+  const [authReady, setAuthReady] = useState(false)
   const [meta, setMeta] = useState<Bootstrap>(DEFAULTS)
   const [no, setNo] = useState('')
   const [noTaken, setNoTaken] = useState(false)
@@ -165,8 +184,31 @@ export default function App() {
   const loadMeta = useCallback(() => {
     get<Bootstrap>('/meta/bootstrap').then(setMeta).catch(() => { /* 使用内置默认，保存时会再报后端错误 */ })
   }, [])
-  useEffect(() => { loadMeta() }, [loadMeta])
-  useEffect(() => { loadMeta() }, [page, loadMeta])
+  /** 登录态：进页面先问一次会话；401 时 api.ts 会广播 sa:need-login */
+  const logout = useCallback(async () => {
+    try { await post('/auth/logout', {}) } catch { /* 忽略 */ }
+    setActor(null)
+  }, [])
+  useEffect(() => {
+    let alive = true
+    get<{ actor: SaActor }>('/auth/session')
+      .then((r) => { if (alive) { setActor(r.actor); setAuthReady(true) } })
+      .catch(() => { if (alive) { setActor(null); setAuthReady(true) } })
+    const onNeed = () => { setActor(null); setAuthReady(true) }
+    window.addEventListener('sa:need-login', onNeed)
+    return () => { alive = false; window.removeEventListener('sa:need-login', onNeed) }
+  }, [])
+
+  /** 非「全部」权限：录入页把销售固定为本人（小组跟随本人所在组） */
+  useEffect(() => {
+    if (!actor || actor.scope === 'all') return
+    setSales(actor.name)
+    const hit = (meta.sales ?? []).find((x) => x.name.toLowerCase() === actor.name.toLowerCase())
+    if (hit) setSalesTeam(hit.team)
+  }, [actor, meta.sales])
+
+  useEffect(() => { loadMeta() }, [loadMeta, actor])          // 登录/退出后重新拉取基础数据（人员/小组/选项）
+  useEffect(() => { loadMeta() }, [page, loadMeta, actor])
   useEffect(() => {
     const onChanged = () => loadMeta()
     window.addEventListener('sa:meta-changed', onChanged)
@@ -284,8 +326,12 @@ export default function App() {
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) } finally { setBusy(false) }
   }
 
+  // 登录态：未登录先显示登录页
+  if (!authReady) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5a6b85' }}>正在校验登录状态…</div>
+  if (!actor) return <Login onDone={(a) => { setActor(a); setAuthReady(true) }} />
+
   if (page !== 'entry') return (
-    <Shell page={page} onNav={navTo}>
+    <Shell page={page} onNav={navTo} actor={actor} onLogout={logout}>
       {page === 'manage' && <InquiryManager meta={meta} onGoFollow={(t) => { setFollowTarget({ ...t, openForm: true }); navTo('followups') }} />}
       {page === 'dashboard' && <Dashboard people={meta.sales.map((x) => x.name)} onGoFollow={(t) => { setFollowTarget(t); navTo('followups') }} />}
       {page === 'followups' && (
@@ -299,7 +345,7 @@ export default function App() {
     </Shell>
   )
   return (
-    <Shell page={page} onNav={navTo}>
+    <Shell page={page} onNav={navTo} actor={actor} onLogout={logout}>
       {msg && <div className={`msg ${msg.t}`} role="status">{msg.t === 'ok' ? '✔' : '✖'} {msg.text}</div>}
 
       {/* 基本信息（含归属与来源） */}
@@ -309,18 +355,25 @@ export default function App() {
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>状态</span>
           <StatusChip status="following" />
           <span className="hint">新录入的询价自动为「跟进中」；生成销售订单后自动变「已成单」，客户丢单时在「询报价管理 → 编辑」里标记「未成单」并填写原因</span>
+          {actor && actor.scope !== 'all' && (
+            <span className="badge" title="按工作台岗位自动判定：销售经理看本组、销售员只看自己">你的范围：{SCOPE_LABEL[actor.scope]}（录入自动归属 {actor.name}，销售已锁定）</span>
+          )}
         </div>
         <div className="row">
           <div className="col w2"><label>询价号 *</label><input ref={noT} className="sa" value={no} onChange={(e) => { setNo(e.target.value); checkNo(e.target.value) }} onBlur={() => checkNo(no)} placeholder="手动录入，全库唯一" /></div>
           <div className="col w1"><label>日期 *</label><input className="sa" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
           <div className="col w1"><label>销售小组 <span className="hint">（先选组）</span></label>
-            <select className="sa" style={{ width: 140 }} value={salesTeam} onChange={(e) => { const v = e.target.value; setSalesTeam(v); if (sales && !(salesTeams.find(([t]) => t === v)?.[1] ?? []).some((x) => x.name === sales)) setSales('') }}>
+            <select className="sa" style={{ width: 140 }} value={salesTeam} disabled={!!actor && actor.scope !== 'all'}
+              title={actor && actor.scope !== 'all' ? '你的数据范围不含他人，销售固定为本人' : undefined}
+              onChange={(e) => { const v = e.target.value; setSalesTeam(v); if (sales && !(salesTeams.find(([t]) => t === v)?.[1] ?? []).some((x) => x.name === sales)) setSales('') }}>
               <option value="">全部小组</option>
               {salesTeams.map(([team]) => <option key={team} value={team}>{team}</option>)}
             </select>
           </div>
           <div className="col w2"><label>销售人员 *</label>
-            <select className="sa" style={{ width: 180 }} value={sales} onChange={(e) => setSales(e.target.value)}>
+            <select className="sa" style={{ width: 180 }} value={sales} disabled={!!actor && actor.scope !== 'all'}
+              title={actor && actor.scope !== 'all' ? '只能录入自己名下的询价' : undefined}
+              onChange={(e) => setSales(e.target.value)}>
               <option value="">{salesTeam ? `— 请选择${salesTeam}成员 —` : '— 请选择 —'}</option>
               {salesTeams.filter(([team]) => !salesTeam || team === salesTeam).map(([team, list]) => (
                 <optgroup key={team} label={team}>{list.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}</optgroup>
