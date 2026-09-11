@@ -525,13 +525,17 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                 <div className="col w2"><label>成单日期 *</label><input className="sa" type="date" value={ord.wonDate} onChange={(e) => setOrd({ ...ord, wonDate: e.target.value })} /></div>
                 <div className="col w2"><label>订单号 * <span className="hint">（默认下一个可用号，可改）</span></label><input className="sa" value={ord.orderNo} onChange={(e) => setOrd({ ...ord, orderNo: e.target.value })} placeholder="如 SO-20260911-001" /></div>
               </div>
-              {/* 金额 + 币种：同一行 */}
+              {/* 金额 + 币种：同一行；金额输入框与上方「成单日期」等宽（w2 = 220px） */}
               <div className="row" style={{ marginBottom: 6 }}>
-                <div className="col grow1"><label>订单金额 * <span className="hint">（默认带出报价合计）</span></label>
-                  <input className="sa" style={{ width: '100%' }} type="number" min="0" value={ord.amount} onChange={(e) => setOrd({ ...ord, amount: e.target.value })} placeholder="填写成交金额" />
+                <div className="col w2"><label>订单金额 * <span className="hint">（默认带出报价合计）</span></label>
+                  <input className="sa" type="number" min="0" value={ord.amount} onChange={(e) => setOrd({ ...ord, amount: e.target.value })} placeholder="填写成交金额" />
                 </div>
                 <div className="col" style={{ flex: '0 0 120px' }}><label>币种 *</label>
                   <select className="sa" style={{ width: '100%' }} value={ord.currency} onChange={(e) => setOrd({ ...ord, currency: e.target.value })}>{currencyOptions(meta.currencies, ord.currency).map((c) => <option key={c}>{c}</option>)}</select>
+                </div>
+                <div className="col" style={{ flex: 1, minWidth: 220 }}>
+                  <label>&nbsp;</label>
+                  <span className="hint" style={{ lineHeight: '34px' }}>该金额即真实订单金额，销售订单管理/分析（金额、客单价、单均价、小组与个人对比）均以它为准。</span>
                 </div>
               </div>
               <div className="row">

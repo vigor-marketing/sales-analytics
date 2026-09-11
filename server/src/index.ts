@@ -177,6 +177,15 @@ function readFxOverrides(v: unknown): string | null {
   })
   return Object.keys(out).length ? JSON.stringify(out) : null
 }
+/** 订单金额折 USD：订单上填写的金额为准（按订单币种与本单汇率折算）；未填金额时回退到询价报价合计 */
+function orderUsdOf(d: ReturnType<typeof getDb>, o: { inquiry_id?: unknown; amount?: unknown; currency?: unknown }, inqRow?: Record<string, unknown>): number {
+  const amount = num(o.amount)
+  if (amount != null) {
+    const row = inqRow ?? (d.prepare('SELECT * FROM inquiries WHERE id = ?').get(text(o.inquiry_id)) as Record<string, unknown> | undefined)
+    return amount / rateIn(ratesOf(row), str(o.currency) || 'USD')
+  }
+  return inquiryUsdTotal(d, text(o.inquiry_id), inqRow)
+}
 const rateIn = (rates: Record<string, number>, currency: string) => (rates[str(currency).trim().toUpperCase()] || 1)
 const usdOfTotals = (totals: { currency: string; total: number }[], rates?: Record<string, number>) =>
   totals.reduce((s, x) => s + x.total / ((rates ? rateIn(rates, x.currency) : fxRateOf(x.currency)) || 1), 0)
@@ -808,8 +817,11 @@ app.get('/api/orders', (req, res) => {
     const feeTotal = Math.round(feeBuckets.reduce((a, b) => a + b.total / rateIn(rates, b.currency), 0))
     const grand = grandTotals(totals, feeBuckets)
     const cycle = (r.won_date && r.date) ? Math.round((Date.parse(String(r.won_date)) - Date.parse(String(r.date))) / 86400000) : null
+    // 订单金额（手填）为真实成交金额：分析与统计一律以它为准；未填时才回退到询价报价合计
+    const quoteUsd = Math.round(usdOfTotals(grand, rates))
+    const usdApprox = num(r.order_amount) != null ? Math.round(Number(num(r.order_amount)) / rateIn(rates, str(r.order_currency) || 'USD')) : quoteUsd
     return { ...r, items, itemCount: items.length, totals, feeTotal, feeBuckets, fees: feeBreakdown(r), fxUsed: rates, grandTotals: grand,
-      usdApprox: Math.round(usdOfTotals(grand, rates)), quoteUsdApprox: Math.round(usdOfTotals(totals, rates)), cycleDays: cycle, productNames: items.map((x) => x.product_name).join(' / ') }
+      usdApprox, quoteUsd, quoteUsdApprox: Math.round(usdOfTotals(totals, rates)), cycleDays: cycle, productNames: items.map((x) => x.product_name).join(' / ') }
   })
   const cycles = list.map((x) => x.cycleDays).filter((x): x is number => typeof x === 'number' && x >= 0).sort((a, b) => a - b)
   const sum = cycles.reduce((a, b) => a + b, 0)
@@ -894,7 +906,8 @@ app.get('/api/dashboard', (_req, res) => {
     WHERE i.date >= ? AND i.date <= ? ORDER BY i.date DESC`, monthFrom, monthTo)
   const inqUsd = inqs.reduce((s2, r) => s2 + usdOf(text(r.id)), 0)
   const wonMonth = rowsOf(`SELECT o.id, o.won_date, o.amount, o.currency, o.inquiry_id FROM orders o WHERE o.won_date >= ? AND o.won_date <= ?`, monthFrom, monthTo)
-  const wonUsd = wonMonth.reduce((s2, o) => s2 + usdOf(text(o.inquiry_id)), 0)
+  // 本月成单金额：订单上填写的金额为准（未填则回退到询价报价合计）
+  const wonUsd = wonMonth.reduce((s2, o) => s2 + orderUsdOf(d, o), 0)
   const lostMonth = inqs.filter((r) => Number(r.is_lost) === 1)
   const lostUsd = lostMonth.reduce((s2, r) => s2 + usdOf(text(r.id)), 0)
   const decided = wonMonth.length + lostMonth.length
@@ -1028,8 +1041,8 @@ app.get('/api/analysis/reasons', (req, res) => {
   if (from) { wParts.push('o.won_date >= ?'); wArgs.push(from) }
   if (to) { wParts.push('o.won_date <= ?'); wArgs.push(to) }
   if (productQ) { wParts.push('EXISTS (SELECT 1 FROM inquiry_items it WHERE it.inquiry_id = i.id AND it.product_name LIKE ? ESCAPE \'!\')'); wArgs.push(likeArg(productQ)) }
-  const wins = d.prepare(`SELECT i.id AS inquiry_id, i.date AS inq_date, o.won_date, o.win_reason FROM orders o JOIN inquiries i ON i.id = o.inquiry_id WHERE ${wParts.join(' AND ')}`)
-    .all(...wArgs) as { inquiry_id: string; inq_date: string; won_date: string; win_reason: string | null }[]
+  const wins = d.prepare(`SELECT i.id AS inquiry_id, i.date AS inq_date, o.won_date, o.win_reason, o.amount, o.currency FROM orders o JOIN inquiries i ON i.id = o.inquiry_id WHERE ${wParts.join(' AND ')}`)
+    .all(...wArgs) as { inquiry_id: string; inq_date: string; won_date: string; win_reason: string | null; amount: number | null; currency: string | null }[]
 
   const lParts: string[] = ['o.id IS NULL', 'COALESCE(i.is_lost, 0) = 1']; const lArgs: unknown[] = []
   if (salesQ) { lParts.push('i.sales = ?'); lArgs.push(salesQ) }
@@ -1062,7 +1075,7 @@ app.get('/api/analysis/reasons', (req, res) => {
 
   const winRows = wins.map((w) => ({
     reason: blank(w.win_reason),
-    usd: usdOf(w.inquiry_id),
+    usd: orderUsdOf(d, { inquiry_id: w.inquiry_id, amount: w.amount, currency: w.currency }),
     cycle: (w.won_date && w.inq_date) ? Math.round((Date.parse(String(w.won_date)) - Date.parse(String(w.inq_date))) / 86400000) : null,
   }))
   // 丢单周期：询价日期 → 丢单日期（同成交的转化周期口径）
