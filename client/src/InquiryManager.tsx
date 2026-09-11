@@ -148,10 +148,13 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.purchaser || '—'}</td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap', textAlign: 'center' }}><span className="badge">{r.source || '—'}</span></td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
-                  <button className="btn sm" onClick={() => setViewId(r.id)}>查看</button>
-                  <button className="btn sm" onClick={() => setEditId(r.id)}>编辑</button>
-                  <button className="btn sm" title="跳转到「询报价跟进」页面对该询价做跟进"
-                    onClick={() => onGoFollow ? onGoFollow({ sales: r.sales, no: r.inquiry_no }) : setFollowOf({ id: r.id, no: r.inquiry_no, customer: r.customer_name })}>跟进</button>
+                  {/* 操作：竖排分段式按钮组，统一宽度、悬停各自高亮（查看=蓝 / 编辑=琥珀 / 跟进=绿） */}
+                  <span className="act-group">
+                    <button className="act-btn view" title="查看该询价详情（产品明细、报价、跟进记录）" onClick={() => setViewId(r.id)}>查看</button>
+                    <button className="act-btn edit" title="编辑该询价（客户、金额、标签、跟进计划等）" onClick={() => setEditId(r.id)}>编辑</button>
+                    <button className="act-btn follow" title="跳转到「询报价跟进」页面对该询价做跟进"
+                      onClick={() => onGoFollow ? onGoFollow({ sales: r.sales, no: r.inquiry_no }) : setFollowOf({ id: r.id, no: r.inquiry_no, customer: r.customer_name })}>跟进</button>
+                  </span>
                 </td>
               </tr>
             ))}
