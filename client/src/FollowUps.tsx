@@ -30,7 +30,7 @@ const today = () => new Date().toISOString().slice(0, 10)
 
 export default function FollowUps({ meta, target }: {
   meta: MetaLite
-  target?: { sales: string; no: string } | null
+  target?: { sales: string; no: string; openForm?: boolean } | null
 }) {
   const methods = meta.methods?.length ? meta.methods : DEFAULT_METHODS
   const [sales, setSales] = useState('')
@@ -69,10 +69,13 @@ export default function FollowUps({ meta, target }: {
 
   // 进入跟进（仪表盘跳转 / 点击跟进记录行）时保留已选询价，仅手动切换销售才清空
   const keepNoRef = useRef(false)
+  // 带 openForm 的进入（询报价管理点「跟进」）：看该询价全部跟进记录的同时，自动在下面展开「建立跟进」表单
+  const autoOpenRef = useRef(false)
   useEffect(() => {
     if (!target?.sales || !target?.no) return
     keepNoRef.current = true
     setSales(target.sales); setNo(target.no)
+    if (target.openForm) { autoOpenRef.current = true; setFormOpen(true) }
   }, [target])
 
   useEffect(() => {
@@ -100,6 +103,7 @@ export default function FollowUps({ meta, target }: {
   // 仅在切换到「另一个询价」时收起表单（同一询价由后台补全信息时不收起）
   const lastHitIdRef = useRef<string | null>(null)
   useEffect(() => {
+    if (autoOpenRef.current) { autoOpenRef.current = false; lastHitIdRef.current = hit?.id ?? null; return }
     if (lastHitIdRef.current && lastHitIdRef.current !== (hit?.id ?? null)) setFormOpen(false)
     lastHitIdRef.current = hit?.id ?? null
   }, [hit?.id])

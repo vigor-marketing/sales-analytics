@@ -129,7 +129,7 @@ export default function App() {
   const [cusFocus, setCusFocus] = useState(false)
   const [page, setPage] = useState<PageKey>(() => initialPage())
   // 仪表盘「去跟进」：跳到跟进页并带出该询价
-  const [followTarget, setFollowTarget] = useState<{ sales: string; no: string } | null>(null)
+  const [followTarget, setFollowTarget] = useState<{ sales: string; no: string; openForm?: boolean } | null>(null)
   // Esc 键关闭最上层弹窗（所有弹窗都用 .modal-mask，点遮罩空白处即可关闭）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -285,7 +285,7 @@ export default function App() {
 
   if (page !== 'entry') return (
     <Shell page={page} onNav={navTo}>
-      {page === 'manage' && <InquiryManager meta={meta} onGoFollow={(t) => { setFollowTarget(t); navTo('followups') }} />}
+      {page === 'manage' && <InquiryManager meta={meta} onGoFollow={(t) => { setFollowTarget({ ...t, openForm: true }); navTo('followups') }} />}
       {page === 'dashboard' && <Dashboard people={meta.sales.map((x) => x.name)} onGoFollow={(t) => { setFollowTarget(t); navTo('followups') }} />}
       {page === 'followups' && (
         <FollowUps meta={meta} target={followTarget} />
