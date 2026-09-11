@@ -85,11 +85,11 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
       <div className="tablewrap">
         <table className="grid data-table fixed-table fit-table" style={{ fontSize: 12.5 }}>
           <colgroup>
-            <col style={{ width: '9%' }} /><col style={{ width: '8%' }} /><col style={{ width: '7%' }} /><col style={{ width: '14%' }} /><col style={{ width: '9%' }} />
-            <col style={{ width: '5%' }} /><col style={{ width: '7%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '4%' }} />
-            <col style={{ width: '5%' }} /><col style={{ width: '7%' }} /><col style={{ width: '9%' }} />
+            <col style={{ width: '8%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} /><col style={{ width: '12%' }} /><col style={{ width: '8%' }} />
+            <col style={{ width: '5%' }} /><col style={{ width: '6%' }} /><col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
+            <col style={{ width: '11%' }} /><col style={{ width: '5%' }} /><col style={{ width: '8%' }} /><col style={{ width: '4%' }} />
           </colgroup>
-          <thead><tr>{['订单号', '询价号', '客户', '标签', '产品', '采购', '来源', '询价日期', '成单日期', '转化周期', '销售', '订单金额', '操作'].map((h) => <th key={h} style={{ textAlign: h === '来源' ? 'center' : 'left' }}>{h}</th>)}</tr></thead>
+          <thead><tr>{['订单号', '询价号', '客户', '标签', '产品', '采购', '来源', '询价日期', '成单日期', '转化周期', '成交原因', '销售', '订单金额', '操作'].map((h) => <th key={h} style={{ textAlign: h === '来源' ? 'center' : 'left' }} title={h === '成交原因' ? '本页均为已成交订单，只显示成交原因（不存在未成交/丢单原因）；成交原因在生成销售订单时填写，选项可在「字段与选项设置 → 成交原因」维护' : undefined}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.order_id}>
@@ -103,6 +103,10 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
                 <td className="mono" title={r.date}>{r.date}</td>
                 <td className="mono" title={r.won_date}>{r.won_date}</td>
                 <td className="mono" style={{ fontWeight: 700, color: cycleTone(r.cycleDays) }} title={r.cycleDays == null ? '无转化周期' : `询价到成单 ${r.cycleDays} 天`}>{r.cycleDays == null ? '—' : r.cycleDays + ' 天'}</td>
+                {/* 本页均为已成交订单：只显示成交原因（不存在未成交原因） */}
+                <td title={r.win_reason || '该订单未填写成交原因（生成/编辑销售订单时可填写，用于成交原因分析）'}>
+                  {r.win_reason ? <span className="badge latest">{r.win_reason}</span> : <span className="hint">未填写</span>}
+                </td>
                 <td title={r.sales}>{r.sales}</td>
                 <td className="mono" title={r.order_amount == null ? `按报价合计折 USD ≈ ${money(r.usdApprox)}` : `${money(r.order_amount)} ${r.order_currency}`}>{r.order_amount == null ? `≈USD ${money(r.usdApprox)}` : `${money(r.order_amount)} ${r.order_currency}`}</td>
                 <td>
@@ -110,7 +114,7 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={13} className="hint" style={{ textAlign: 'center' }}>暂无销售订单（到「询报价管理」点“生成销售订单”并填写成单日期）</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={14} className="hint" style={{ textAlign: 'center' }}>暂无销售订单（到「询报价管理」点“生成销售订单”并填写成单日期）</td></tr>}
           </tbody>
         </table>
       </div>
