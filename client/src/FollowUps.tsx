@@ -218,27 +218,16 @@ export default function FollowUps({ meta, target }: {
         <div className="tablewrap" style={{ overflowX: 'auto' }}>
           <table className="grid follow-table fit-table" style={{ borderCollapse: 'collapse', fontSize: 12.5 }}>
             <colgroup>
-              <col style={{ width: '7%' }} /><col style={{ width: '11%' }} /><col style={{ width: '12%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
-              <col style={{ width: '15%' }} /><col style={{ width: '13%' }} /><col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
-              <col style={{ width: '9%' }} />
+              <col style={{ width: '8%' }} /><col style={{ width: '12%' }} /><col style={{ width: '13%' }} /><col style={{ width: '8%' }} /><col style={{ width: '7%' }} />
+              <col style={{ width: '17%' }} /><col style={{ width: '10%' }} /><col style={{ width: '9%' }} /><col style={{ width: '7%' }} /><col style={{ width: '9%' }} />
             </colgroup>
-            <thead><tr>{['跟进日期', '第几次跟进', '询价号 / 客户', '销售 / 跟进人', '方式', '跟进简述与内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '操作' ? '查看该询价的全部跟进详情（简述、详情、图片、附件、指导）' : (h === '第几次跟进' ? '按跟进日期先后排序（同一天按录入先后）：第 1 次 = 该询价最早的一次跟进，最新一次标注「最新」' : undefined)}>{h === '第几次跟进' ? '第几次跟进（按日期）' : h}</th>)}</tr></thead>
+            <thead><tr>{['跟进日期', '第几次跟进', '询价号 / 客户', '销售 / 跟进人', '方式', '跟进简述与内容', '跟进指导', '下次跟进', '录入时间', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '操作' ? '为该询价新增一条跟进记录（展开下方「建立跟进」表单）' : (h === '第几次跟进' ? '按跟进日期先后排序（同一天按录入先后）：第 1 次 = 该询价最早的一次跟进，最新一次标注「最新」' : undefined)}>{h === '第几次跟进' ? '第几次跟进（按日期）' : h}</th>)}</tr></thead>
             <tbody>
               {list.map((r) => {
                 const detail = r.detail || r.content || ''
-                const photos = r.photos || []
-                const atts = r.attachments || []
                 return (
-                  <tr key={r.id} className="row-click" title="点击进入该询价的跟进" style={{ borderBottom: '1px solid var(--line2)' }}
-                    onClick={(e) => {
-                      // 行内按钮（查看/追加指导）不触发行点击
-                      if ((e.target as HTMLElement).closest('button,a,input,select,textarea')) return
-                      // 已在某个合同的跟进详情里：点击任意一条 → 进入新建跟进表单
-                      if (hit) { openFormFrom(r); return }
-                      // 列表里：先进入该合同（查看它的多条跟进）
-                      keepNoRef.current = true
-                      setSales(r.sales); setNo(r.inquiry_no)
-                    }}>
+                  // 行点击不再进入跟进详情：要进入某询价请用「操作」列的「添加跟进」
+                  <tr key={r.id} style={{ borderBottom: '1px solid var(--line2)' }}>
                     <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.date}</td>
                     {/* 第几次跟进：按跟进日期先后自动编号（同日按录入先后） */}
                     <td className="cell-seq" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}
@@ -288,26 +277,6 @@ export default function FollowUps({ meta, target }: {
                         {hit ? '查看指导' : '添加指导'}
                       </button>
                     </td>
-                    <td style={{ padding: '7px 8px' }}>
-                      {photos.length === 0 && atts.length === 0 ? <span className="hint">—</span> : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          {photos.map((p) => (
-                            <a key={p} href={p} target="_blank" rel="noreferrer" title="查看原图">
-                              <img src={p} alt="图" style={{ width: 44, height: 34, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line)', display: 'block' }} />
-                            </a>
-                          ))}
-                          {atts.length > 0 && (
-                            <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                              {atts.map((a) => (
-                                <a key={a.url} className="filelink" href={a.url} target="_blank" rel="noreferrer" title={a.name}>
-                                  📎 {a.name}{a.size != null ? `（${(a.size / 1024).toFixed(0)}KB）` : ''}
-                                </a>
-                              ))}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </td>
                     <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.next_followup_at ? r.next_followup_at.replace('T', ' ') : '—'}</td>
                     <td className="mono hint" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{String(r.created_at || '').slice(0, 16).replace('T', ' ')}</td>
                     {/* 操作：为该询价再添加一条跟进（详情/图片/附件看上方「简述与内容」列的「查看详情」） */}
@@ -325,7 +294,7 @@ export default function FollowUps({ meta, target }: {
                   </tr>
                 )
               })}
-              {list.length === 0 && <tr><td colSpan={11} style={{ textAlign: 'center', padding: 20, color: 'var(--sub)' }}>暂无跟进记录</td></tr>}
+              {list.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 20, color: 'var(--sub)' }}>暂无跟进记录</td></tr>}
             </tbody>
           </table>
         </div>
