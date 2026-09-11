@@ -48,9 +48,9 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
   const [fuOf, setFuOf] = useState<{ id: string; no: string; customer?: string } | null>(null)
   const [err, setErr] = useState('')
   // 分组选择记忆（与其它页面一致：刷新后保持）
-  const [group, setGroup] = useState<'all' | 'overdue' | 'dueSoon' | 'stale'>(() => {
+  const [group, setGroup] = useState<'all' | 'overdue' | 'dueSoon' | 'stale' | 'guidance'>(() => {
     const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('sa:remGroup') : null
-    return saved === 'overdue' || saved === 'dueSoon' || saved === 'stale' ? saved : 'all'
+    return saved === 'overdue' || saved === 'dueSoon' || saved === 'stale' || saved === 'guidance' ? saved : 'all'
   })
   const load = useCallback(() => {
     get<Dash>('/dashboard').then((x) => {
@@ -60,16 +60,22 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
   }, [])
   useEffect(() => { load() }, [load])
 
+  const allReminders = [...(d?.reminders.overdue ?? []), ...(d?.reminders.dueSoon ?? []), ...(d?.reminders.stale ?? [])]
+  const withGuidanceCount = allReminders.filter((r) => (r.comments ?? []).length > 0).length
   const groupMeta = [
     { key: 'all' as const, label: '全部提醒', tone: 'var(--brand)', note: '三类提醒合并查看，可按类型筛选' },
     { key: 'overdue' as const, label: '逾期未跟进', tone: '#dc2626', note: '计划跟进时间已过且尚未跟进' },
     { key: 'dueSoon' as const, label: '本周待跟进', tone: '#a35c00', note: `今天 ~ 本周末（${d?.weekEnd ?? ''}）计划跟进` },
     { key: 'stale' as const, label: '超期未跟进', tone: '#7c3aed', note: `距上次跟进超过 ${d?.reminders.staleDays ?? 7} 天（或从未跟进）` },
+    { key: 'guidance' as const, label: '有最新指导', tone: '#0f7a45', note: '只看「最新指导」列有内容的提醒（已给出指导、待落实的询价）' },
   ]
   const cur = groupMeta.find((g) => g.key === group)!
+  // 「有最新指导」按最新指导筛选；其余按提醒类型筛选
   const list = group === 'all'
-    ? [...(d?.reminders.overdue ?? []), ...(d?.reminders.dueSoon ?? []), ...(d?.reminders.stale ?? [])]
-    : (d?.reminders[group] ?? [])
+    ? allReminders
+    : group === 'guidance'
+      ? allReminders.filter((r) => (r.comments ?? []).length > 0)
+      : (d?.reminders[group] ?? [])
   const kindTone = (k?: string) => (k === 'overdue' ? { bg: '#fee2e2', color: '#b91c1c' } : k === 'dueSoon' ? { bg: '#fef3c7', color: '#92400e' } : { bg: '#ede9fe', color: '#5b21b6' })
 
   return (
@@ -111,16 +117,18 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
 
       <section className="card panel-tight">
         <div className="panel-head">
-          <h4 className="panel-title">跟进提醒与指导</h4>
+          <h4 className="panel-title">跟进提醒</h4>
           <span className="hint panel-hint">
-            {d ? `共 ${list.length} 条需要处理 · 含该询价的全部跟进指导 · 时间与「询报价跟进」实时一致，已跟进的自动移除` : '加载中…'}
+            {d ? `${cur.note} · 共 ${list.length} 条需要处理 · 时间与「询报价跟进」实时一致，已跟进的自动移除` : '加载中…'}
           </span>
           <span style={{ flex: 1 }} />
           <span className="rem-tabs">
             {groupMeta.map((g) => {
               const n = g.key === 'all'
-                ? (d?.reminders.overdue.length ?? 0) + (d?.reminders.dueSoon.length ?? 0) + (d?.reminders.stale.length ?? 0)
-                : (d?.reminders.counts[g.key] ?? 0)
+                ? allReminders.length
+                : g.key === 'guidance'
+                  ? withGuidanceCount
+                  : (d?.reminders.counts[g.key] ?? 0)
               return (
                 <button key={g.key} className={group === g.key ? 'on' : ''} onClick={() => { setGroup(g.key); try { localStorage.setItem('sa:remGroup', g.key) } catch { /* 忽略 */ } }} title={g.note}
                   style={group === g.key ? { background: g.tone, borderColor: g.tone } : undefined}>
@@ -131,7 +139,6 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
             })}
           </span>
         </div>
-        <div className="hint" style={{ marginTop: 6 }}>{cur.note}</div>
 
         <div className="tablewrap" style={{ marginTop: 8 }}>
           <table className="grid data-table fixed-table fit-table rem-table rem-data-table" style={{ fontSize: 12.5 }}>
