@@ -174,7 +174,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   // 分析子页面：拆分查看，避免一屏堆叠混乱；选择记在本地，刷新后保持
   type TabKey = 'all' | 'team' | 'group'
   const TABS: { key: TabKey; label: string; note: string }[] = [
-    { key: 'all', label: '整体数据', note: '关键指标、金额趋势、按产品/按销售、成交与丢单原因、客户排行' },
+    { key: 'all', label: '整体数据', note: '关键指标、金额趋势、按产品、小组对比、个人分析、成交与丢单原因、客户排行' },
     { key: 'team', label: '小组', note: '小组汇总与月度小组拆解' },
     { key: 'group', label: '组内', note: '小组内部各成员的成单明细与排名' },
   ]
@@ -340,20 +340,36 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   const shownTeams = useMemo(() => (teamFilter ? teamMembers.filter((t) => t.team === teamFilter) : teamMembers), [teamMembers, teamFilter])
 
   /** 按销售：成单次数、金额折USD、平均转化周期 */
+  /** 个人分析：该销售名下所有客户的订单、客户数、客单价（金额÷客户数）、单均价（金额÷订单数） */
   const salesRows = useMemo(() => {
-    const m = new Map<string, { n: number; usd: number; cycles: number[] }>()
+    const m = new Map<string, { n: number; usd: number; cycles: number[]; customers: Map<string, { usd: number; n: number }> }>()
     rows.forEach((r) => {
       const k = r.sales || '未指定'
-      const a = m.get(k) ?? { n: 0, usd: 0, cycles: [] }
+      const a = m.get(k) ?? { n: 0, usd: 0, cycles: [] as number[], customers: new Map<string, { usd: number; n: number }>() }
       a.n += 1; a.usd += r.usdApprox || 0
       if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
+      const cust = r.customer_name || '未知客户'
+      const c = a.customers.get(cust) ?? { usd: 0, n: 0 }
+      c.usd += r.usdApprox || 0; c.n += 1
+      a.customers.set(cust, c)
       m.set(k, a)
     })
-    return Array.from(m.entries()).map(([name, v]) => ({
-      name, n: v.n, usd: Math.round(v.usd),
-      avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
-    })).sort((a, b) => b.usd - a.usd)
-  }, [rows])
+    // 本期没有成单的销售也列出来（便于对比），归到其所属小组
+    meta.sales.forEach((x) => { if (!m.has(x.name)) m.set(x.name, { n: 0, usd: 0, cycles: [], customers: new Map() }) })
+    const all = Array.from(m.entries()).map(([name, v]) => {
+      const customers = Array.from(v.customers.entries())
+        .map(([cname, cv]) => ({ name: cname, usd: Math.round(cv.usd), n: cv.n }))
+        .sort((a, b) => b.usd - a.usd)
+      return {
+        name, n: v.n, usd: Math.round(v.usd), team: teamOf.get(name) ?? '未分组',
+        customerCount: customers.length, customers,
+        perCustomer: customers.length ? Math.round(v.usd / customers.length) : null,
+        perOrder: v.n ? Math.round(v.usd / v.n) : null,
+        avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
+      }
+    })
+    return all.sort((a, b) => b.usd - a.usd)
+  }, [rows, meta.sales, teamOf])
 
   const sumUsd = rows.reduce((s, r) => s + (r.usdApprox || 0), 0)
   const winSum = reasons?.win
@@ -405,7 +421,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           <span className="ana-sum-i"><b>{money(stats?.usdTotal ?? 0)}</b> USD</span>
           <span className="ana-sum-i">平均周期 <b>{stats?.avgCycle == null ? '—' : `${stats.avgCycle} 天`}</b></span>
           <span className="ana-sum-i">成交 <b>{winSum?.total ?? 0}</b> · 丢单 <b>{lostSum?.total ?? 0}</b></span>
-          <span className="ana-sum-i">客户 <b>{topCustomers.length}</b> 家 · 产品 <b>{productRows.length}</b> 个 · 小组 <b>{teamRows.length}</b> 个</span>
+          <span className="ana-sum-i">客户 <b>{topCustomers.length}</b> 家 · 产品 <b>{productRows.length}</b> 个 · 小组 <b>{teamRows.length}</b> 个 · 销售 <b>{salesRows.length}</b> 名</span>
         </>)}
         {tab === 'team' && (<>
           <span className="ana-sum-i">小组 <b>{teamRows.length}</b> 个</span>
@@ -532,17 +548,30 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         </>)}
 
         {tab === 'all' && (<>
-        <Panel title="按销售" hint={`成单次数 · 金额 · 金额占比 · 平均周期 · 合计 ${money(sumUsd)} USD`}>
+        <Panel title="个人分析"
+          hint={`${salesRows.length} 名销售 · 合计 ${money(sumUsd)} USD · 含该销售名下所有客户的订单`}
+          style={{ gridColumn: '1 / -1' }}
+          extra={<span className="hint" style={{ fontSize: 11 }}>客单价＝金额÷客户数 · 单均价＝金额÷订单数（悬停「客户数」看客户明细）</span>}>
           <DataTable
-            cols={['销售', '成单次数', '金额（折USD）', '金额占比', '平均周期']}
-            widths={['34%', '15%', '20%', '15%', '16%']}
-            topCol={2} topLabel="第一"
-            empty="暂无成单销售"
+            cols={['销售', '小组', '客户数', '订单数', '金额（折USD）', '金额占比', '客单价', '单均价', '平均周期']}
+            widths={['14%', '10%', '9%', '8%', '14%', '10%', '12%', '12%', '11%']}
+            topCol={4} topLabel="第一"
+            empty="暂无成单销售（可调整时间范围或筛选）"
             rows={salesRows.map((p) => [
-              p.name, `${p.n} 单`, money(p.usd), `${sumUsd ? Math.round((p.usd / sumUsd) * 1000) / 10 : 0}%`,
+              p.name,
+              p.team,
+              <span title={p.customers.length ? `该销售名下客户（${p.customers.length} 个）：` + p.customers.map((c) => `${c.name} ${money(c.usd)} USD · ${c.n} 单`).join(' ｜ ') : '本期暂无成单客户'}>{p.customerCount} 个</span>,
+              `${p.n} 单`,
+              money(p.usd),
+              `${sumUsd ? Math.round((p.usd / sumUsd) * 1000) / 10 : 0}%`,
+              p.perCustomer == null ? '—' : money(p.perCustomer),
+              p.perOrder == null ? '—' : money(p.perOrder),
               p.avgCycle == null ? '—' : `${p.avgCycle} 天`,
             ])}
           />
+          <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
+            口径：只统计「成单日期」落在当前筛选范围内的销售订单（含各客户的多笔订单）；本期无成单的销售也会列出（金额 0），便于横向对比。
+          </div>
         </Panel>
 
         </>)}
