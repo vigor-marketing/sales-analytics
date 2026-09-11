@@ -3,6 +3,7 @@ import { get } from './api'
 import { StatusChip } from './StatusChip'
 import GuidanceNote from './Guidance'
 import GuidanceModal from './GuidanceModal'
+import InquiryFollowupsModal from './InquiryFollowupsModal'
 
 interface Brief {
   id: string; inquiry_no: string; date: string; sales: string; purchaser: string; customer_name: string
@@ -43,6 +44,8 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
     date: string; method: string | null; summary: string | null; detail: string | null; by_name: string | null
     comments: { id: string; content: string; by_name: string | null; created_at: string }[]
   } | null>(null)
+  // 查看该询价全部跟进（与「询报价管理 / 询报价跟进」页同一个「跟进详情」弹窗，只读）
+  const [fuOf, setFuOf] = useState<{ id: string; no: string; customer?: string } | null>(null)
   const [err, setErr] = useState('')
   // 分组选择记忆（与其它页面一致：刷新后保持）
   const [group, setGroup] = useState<'all' | 'overdue' | 'dueSoon' | 'stale'>(() => {
@@ -88,6 +91,10 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
           <div className="kpi-chip" style={{ borderTopColor: 'var(--danger)' }}><span className="kpi-label">待跟进询价</span><b className="kpi-value" style={{ color: 'var(--danger)' }}>{d?.kpi.openCount ?? 0}<small style={{ fontSize: 13, fontWeight: 600, color: 'var(--sub)' }}> 条</small></b><span className="kpi-note">跟进中的询价（未成交未丢单）</span></div>
         </div>
       </section>
+
+      {fuOf && (
+        <InquiryFollowupsModal inquiryId={fuOf.id} inquiryNo={fuOf.no} customerName={fuOf.customer} onClose={() => setFuOf(null)} />
+      )}
 
       {guideOf && (
         <GuidanceModal
@@ -154,28 +161,18 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
                     <td className="mono" style={{ padding: '0 8px' }} title={r.last_followup_at ? String(r.last_followup_at).replace('T', ' ') : '从未跟进'}>{fmt(r.last_followup_at)}</td>
                     <td className="mono" style={{ padding: '0 8px', fontWeight: r.kind === 'overdue' ? 700 : 400, color: r.kind === 'overdue' ? 'var(--danger)' : undefined }} title={r.next_followup_at ? String(r.next_followup_at).replace('T', ' ') : '未设置下次跟进'}>{fmt(r.next_followup_at)}</td>
                     <td className="mono cell-top" style={{ padding: '0 8px', textAlign: 'right' }} title={`报价合计折 USD ≈ ${money(r.usd)}`}>{money(r.usd)}</td>
-                    {/* 展示最新一条指导的完整内容；点击该列就在本页弹窗查看/追加全部指导（不跳转页面） */}
-                    <td className="cell-guidance" style={{ cursor: r.lastFollowupId ? 'pointer' : 'default' }}
+                    {/* 展示最新一条指导的完整内容；点击该列打开与「询报价管理」完全相同的「跟进详情」弹窗（不跳转页面） */}
+                    <td className="cell-guidance" style={{ cursor: 'pointer' }}
                       title={(r.comments ?? []).map((c) => `${c.by_name || '—'}：${c.content}`).join('\n') || '暂无跟进指导'}
                       onClick={(e) => {
                         e.stopPropagation()   // 不触发行点击（避免跳到询报价跟进页）
-                        if (r.lastFollowupId) setGuideOf({
-                          id: r.lastFollowupId, inquiry_no: r.inquiry_no, customer_name: r.customer_name, sales: r.sales,
-                          date: r.last_followup_date || r.date || '', method: r.last_followup_method ?? null,
-                          summary: r.last_followup_summary ?? null, detail: r.last_followup_detail ?? null,
-                          by_name: r.last_followup_by ?? null, comments: r.comments ?? [],
-                        })
+                        setFuOf({ id: r.id, no: r.inquiry_no, customer: r.customer_name })
                       }}>
                       {r.comments && r.comments.length
                         ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, maxWidth: '100%' }}>
                             <GuidanceNote comments={r.comments} />
-                            <button className="btn xs" style={{ flex: '0 0 auto' }} title="在本页弹窗查看全部指导 / 继续追加（不跳转页面）"
-                              onClick={(e) => { e.stopPropagation(); if (r.lastFollowupId) setGuideOf({
-                          id: r.lastFollowupId, inquiry_no: r.inquiry_no, customer_name: r.customer_name, sales: r.sales,
-                          date: r.last_followup_date || r.date || '', method: r.last_followup_method ?? null,
-                          summary: r.last_followup_summary ?? null, detail: r.last_followup_detail ?? null,
-                          by_name: r.last_followup_by ?? null, comments: r.comments ?? [],
-                        }) }}>查看指导</button>
+                            <button className="btn xs" style={{ flex: '0 0 auto' }} title="在本页弹窗查看该询价的全部跟进详情（简述、详情、图片、附件、跟进指导），与「询报价管理」一致"
+                              onClick={(e) => { e.stopPropagation(); setFuOf({ id: r.id, no: r.inquiry_no, customer: r.customer_name }) }}>查看详情</button>
                           </span>
                         : <span className="hint">—</span>}
                     </td>
