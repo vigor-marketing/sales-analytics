@@ -276,7 +276,8 @@ export default function FollowUps({ meta, target }: {
           <span style={{ fontWeight: 700 }}>跟进记录{hit ? `（本询价 ${list.length} 条）` : sales ? `（${sales} 名下 ${list.length} 条）` : ''}</span>
           {hit && <span className="hint">{list.length > 1 ? '点击下面任意一条跟进即可新建跟进' : '点击该条跟进即可新建跟进'}</span>}
           {hit && <span style={{ flex: 1 }} />}
-          {hit && !formOpen && <button className="btn sm pri" onClick={() => { setFormOpen(true); setTimeout(() => { formRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }); sumRef.current?.focus() }, 60) }}>＋ 新建跟进</button>}
+          {hit && !formOpen && <button className="btn sm pri" title="展开下方的跟进录入表（从询报价管理点「跟进」进来时默认已展开）"
+            onClick={() => { setFormOpen(true); setTimeout(() => { formRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }); sumRef.current?.focus() }, 60) }}>展开跟进表</button>}
         </div>
         <div className="tablewrap" style={{ overflowX: 'auto' }}>
           <table className="grid follow-table fit-table" style={{ borderCollapse: 'collapse', fontSize: 12.5 }}>
@@ -337,15 +338,12 @@ export default function FollowUps({ meta, target }: {
                     </td>
                     <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.next_followup_at ? r.next_followup_at.replace('T', ' ') : '—'}</td>
                     <td className="mono hint" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{String(r.created_at || '').slice(0, 16).replace('T', ' ')}</td>
-                    {/* 操作：为该询价再添加一条跟进（详情/图片/附件看上方「简述与内容」列的「查看详情」） */}
+                    {/* 操作：列表态点「添加跟进」进入该项目（自动带出并展开跟进录入表）；进入后表单已默认展开，无需再点 */}
                     <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>
-                      <button className="btn xs pri" title="为该询价新增一条跟进记录（填写简述与具体内容，可上传图片/附件）"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (hit) { openFormFrom(r); return }
-                          // 列表态：先用该行已有信息立即进入并展开表单（不等接口），随后后台补全询价信息
-                          enterFromRow(r)
-                        }}>添加跟进</button>
+                      {hit
+                        ? <span className="hint" title="已进入该项目：下方跟进录入表默认已展开">已展开</span>
+                        : <button className="btn xs pri" title="进入该项目并展开跟进录入表（含该项目的全部跟进记录）"
+                            onClick={(e) => { e.stopPropagation(); enterFromRow(r) }}>添加跟进</button>}
                     </td>
                   </tr>
                 )
