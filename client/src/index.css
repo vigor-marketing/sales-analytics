@@ -481,3 +481,8 @@ input.sa:disabled, select.sa:disabled { background: #f6f8fb; color: var(--sub) }
 table.fit-table > tbody > tr > td.cell-seq { white-space: nowrap !important; text-overflow: clip !important }
 td.cell-seq .badge { padding: 2px 7px; font-size: 11.5px }
 td.cell-seq .cell-note, td.cell-seq .cell-latest { margin-left: 3px; font-size: 10px }
+
+/* 单元格内「上文字 / 下操作」两段式竖排居中：用于询报价管理的「跟进简述与详情」列 */
+td .cell-stack { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; max-width: 100% }
+td .cell-stack-txt { max-width: 100%; overflow: hidden; text-overflow: ellipsis }
+td .cell-stack-actions { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap }

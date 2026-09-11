@@ -121,23 +121,28 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                 </td>
                 {/* 简述与详情合并在一列；完整内容（含图片/附件）点「查看详情」 */}
                 <td style={{ padding: '6px 8px' }} title={[r.last_followup_summary, r.last_followup_detail].filter(Boolean).join(' ｜ ') || '还没有跟进记录'}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {/* 简述/详情在上，操作按钮另起一行居中显示（与「询报价跟进」页一致） */}
+                  <div className="cell-stack">
+                    <span className="cell-stack-txt">
                       {r.last_followup_summary && <b>{r.last_followup_summary}</b>}
                       {r.last_followup_detail && <span className={r.last_followup_summary ? 'cell-note' : ''}>{r.last_followup_detail}</span>}
                       {!r.last_followup_summary && !r.last_followup_detail && <span className="hint">—</span>}
                       {r.last_followup_by ? <span className="cell-note">（{r.last_followup_by}）</span> : null}
                     </span>
-                    {r.followup_count ? (
-                      <button className="btn xs" style={{ flex: '0 0 auto' }} title="查看该询价全部跟进详情（含简述、详情、图片、附件、跟进指导）"
-                        onClick={() => setFollowOf({ id: r.id, no: r.inquiry_no, customer: r.customer_name })}>查看详情{r.followup_count > 1 ? `（${r.followup_count}）` : ''}</button>
+                    {(r.followup_count || Number(r.last_followup_photos) || Number(r.last_followup_files)) ? (
+                      <span className="cell-stack-actions">
+                        {r.followup_count ? (
+                          <button className="btn xs" title="查看该询价全部跟进详情（含简述、详情、图片、附件、跟进指导）"
+                            onClick={() => setFollowOf({ id: r.id, no: r.inquiry_no, customer: r.customer_name })}>查看详情{r.followup_count > 1 ? `（${r.followup_count}）` : ''}</button>
+                        ) : null}
+                        {(() => {
+                          const ph = Number(r.last_followup_photos) || 0, fi = Number(r.last_followup_files) || 0
+                          if (!ph && !fi) return null
+                          return <span className="badge" title={`最近一条跟进上传：${ph} 张图片 · ${fi} 个附件`}>{ph ? `🖼${ph}` : ''}{fi ? ` 📎${fi}` : ''}</span>
+                        })()}
+                      </span>
                     ) : null}
-                    {(() => {
-                      const ph = Number(r.last_followup_photos) || 0, fi = Number(r.last_followup_files) || 0
-                      if (!ph && !fi) return null
-                      return <span className="badge" style={{ flex: '0 0 auto' }} title={`最近一条跟进上传：${ph} 张图片 · ${fi} 个附件`}>{ph ? `🖼${ph}` : ''}{fi ? ` 📎${fi}` : ''}</span>
-                    })()}
-                  </span>
+                  </div>
                 </td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.sales}</td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{r.purchaser || '—'}</td>
