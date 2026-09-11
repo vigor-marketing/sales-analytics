@@ -338,9 +338,11 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
               </div>
               <div className="totals" style={{ marginBottom: 6 }}>
                 <span className="badge new">总报价（含费用）：</span>
-                {liveTotals.grandList.map((t) => <span key={t.currency} className="t">{money(t.total)} {t.currency}</span>)}
-                {liveTotals.grandList.some((t) => t.currency !== 'USD') && <span className="badge">折 USD 约 {money(Math.round(liveTotals.grandUsd))}</span>}
-                {liveTotals.grandList.length === 0 && <span className="hint">填一行金额后自动合计</span>}
+                {liveTotals.grandList.length === 0
+                  ? <span style={{ color: 'var(--sub)' }}>填一行金额后自动合计</span>
+                  : <span className="t" title={`按各自币种合计：${liveTotals.grandList.map((t) => `${money(t.total)} ${t.currency}`).join(' + ')}（非美元按本单实际汇率折 USD）`}>
+                      {money(Math.round(liveTotals.grandUsd))} USD
+                    </span>}
               </div>
               <div className="row" style={{ marginBottom: 0 }}>
                 <div className="col w2"><label>总金额（手填 · 选填）</label>

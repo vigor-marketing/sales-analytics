@@ -494,9 +494,11 @@ export default function App() {
           </div>
           <div className="totals" style={{ marginTop: 8 }}>
             <span className="badge new">总报价（含费用）：</span>
-            {grandByCur.map(([c, v]) => <span key={c} className="t">{money(v)} {c}</span>)}
-            {grandByCur.some(([c]) => c !== 'USD') && <span className="badge">折 USD 约 {money(Math.round(grandUsd))}</span>}
-            {grandByCur.length === 0 && <span className="hint">填一行金额后自动合计</span>}
+            {grandByCur.length === 0
+              ? <span style={{ color: 'var(--sub)' }}>填一行金额后自动合计</span>
+              : <span className="t" title={`按各自币种合计：${grandByCur.map(([c, v]) => `${money(v)} ${c}`).join(' + ')}（非美元按本单实际汇率折 USD）`}>
+                  {money(Math.round(grandUsd))} USD
+                </span>}
           </div>
           <div className="hint" style={{ display: 'block', marginTop: 4 }}>
             产品合计 {quoteByCur.length ? quoteByCur.map(([c, v]) => `${money(v)} ${c}`).join(' + ') : '—'}
