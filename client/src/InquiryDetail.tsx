@@ -226,22 +226,21 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                 <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 8 }}>
                   <table className="grid fit-table" style={{ borderCollapse: 'collapse', fontSize: 12.5 }}>
                     <colgroup>
-                      <col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} /><col style={{ width: '11%' }} /><col style={{ width: '18%' }} /><col style={{ width: '6%' }} />
-                      <col style={{ width: '8%' }} /><col style={{ width: '15%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '8%' }} />
+                      <col style={{ width: '7%' }} /><col style={{ width: '11%' }} /><col style={{ width: '6%' }} /><col style={{ width: '11%' }} /><col style={{ width: '16%' }} /><col style={{ width: '6%' }} />
+                      <col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '8%' }} />
                     </colgroup>
                     <thead><tr>{['跟进日期', '第几次跟进', '方式', '简述', '具体内容', '图片', '附件', '跟进指导', '下次跟进', '跟进人', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
                     <tbody>
                       {fus.map((f) => (
                         <tr key={f.id} style={{ borderBottom: '1px solid var(--line2)' }}>
                           <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.date}</td>
-                          <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}
+                          <td className="cell-seq" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}
                             title={f.seq ? `该询价共 ${f.seq_total} 次跟进，本条是第 ${f.seq} 次${Number(f.seq) === Number(f.seq_total) ? '（最新一次）' : '（较早的记录）'}` : '暂无跟进次数信息'}>
+                            {/* 单行：徽标＝第 N 次，后面并排「共M次」或「最新」，不再换行 */}
                             {f.seq
-                              ? <>
-                                  <span className="badge new">第 {f.seq} 次</span>
-                                  {f.seq_total ? <span className="cell-note">共 {f.seq_total} 次</span> : null}
-                                  {Number(f.seq) === Number(f.seq_total) ? <span className="badge" style={{ marginLeft: 4 }}>最新</span> : null}
-                                </>
+                              ? (Number(f.seq) === Number(f.seq_total)
+                                  ? <><span className="badge latest">第 {f.seq} 次</span><span className="cell-latest">最新</span></>
+                                  : <><span className="badge new">第 {f.seq} 次</span>{f.seq_total ? <span className="cell-note">共{f.seq_total}次</span> : null}</>)
                               : '—'}
                           </td>
                           <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.method || '—'}</td>

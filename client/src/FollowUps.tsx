@@ -223,9 +223,9 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
         <div className="tablewrap" style={{ overflowX: 'auto' }}>
           <table className="grid follow-table fit-table" style={{ borderCollapse: 'collapse', fontSize: 12.5 }}>
             <colgroup>
-              <col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '12%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
-              <col style={{ width: '16%' }} /><col style={{ width: '14%' }} /><col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
-              <col style={{ width: '11%' }} />
+              <col style={{ width: '7%' }} /><col style={{ width: '11%' }} /><col style={{ width: '12%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
+              <col style={{ width: '15%' }} /><col style={{ width: '13%' }} /><col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
+              <col style={{ width: '9%' }} />
             </colgroup>
             <thead><tr>{['跟进日期', '第几次跟进', '询价号 / 客户', '销售 / 跟进人', '方式', '跟进简述与内容', '跟进指导', '图片 / 附件', '下次跟进', '录入时间', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '操作' ? '查看该询价的全部跟进详情（简述、详情、图片、附件、指导）' : (h === '第几次跟进' ? '按跟进日期先后排序（同一天按录入先后）：第 1 次 = 该询价最早的一次跟进，最新一次标注「最新」' : undefined)}>{h === '第几次跟进' ? '第几次跟进（按日期）' : h}</th>)}</tr></thead>
             <tbody>
@@ -246,16 +246,21 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
                     }}>
                     <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.date}</td>
                     {/* 第几次跟进：按跟进日期先后自动编号（同日按录入先后） */}
-                    <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}
+                    <td className="cell-seq" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}
                       title={r.seq
                         ? `该询价共 ${r.seq_total} 次跟进，本条是第 ${r.seq} 次${Number(r.seq) === Number(r.seq_total) ? '（最新一次）' : '（较早的记录）'}；排序依据：跟进日期先后，同一天按录入先后`
                         : '暂无跟进次数信息'}>
+                      {/* 单行显示：徽标＝第 N 次；后面并排显示「共M次」或（最新一次）「最新」——编号按 1..M 连续，最新那条的次数即总次数 */}
                       {r.seq
-                        ? <>
-                            <span className="badge new">第 {r.seq} 次</span>
-                            {r.seq_total ? <span className="cell-note">共 {r.seq_total} 次</span> : null}
-                            {Number(r.seq) === Number(r.seq_total) ? <span className="badge" style={{ marginLeft: 4 }}>最新</span> : null}
-                          </>
+                        ? (Number(r.seq) === Number(r.seq_total)
+                            ? <>
+                                <span className="badge latest" title={`该询价共 ${r.seq_total} 次跟进，本条是第 ${r.seq} 次（最新一次，故总次数即 ${r.seq}）；排序依据：跟进日期先后，同一天按录入先后`}>第 {r.seq} 次</span>
+                                <span className="cell-latest" title="这是该询价最新的一次跟进（编号即总次数）">最新</span>
+                              </>
+                            : <>
+                                <span className="badge new" title={`该询价共 ${r.seq_total} 次跟进，本条是第 ${r.seq} 次（较早的记录）；排序依据：跟进日期先后，同一天按录入先后`}>第 {r.seq} 次</span>
+                                {r.seq_total ? <span className="cell-note" title={`该询价共 ${r.seq_total} 次跟进`}>共{r.seq_total}次</span> : null}
+                              </>)
                         : <span className="hint">—</span>}
                     </td>
                     <td style={{ padding: '7px 8px' }}>
