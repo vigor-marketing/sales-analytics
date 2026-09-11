@@ -3,7 +3,7 @@ import cors from 'cors'
 import express from 'express'
 import { schema, ensurePeople, backfillProducts, migrateWonToOrders, syncWonFlags, getDb, getSources, getCountries, saveSources, getFollowMethods, saveFollowMethods, getLostReasons, saveLostReasons, getWinReasons, saveWinReasons, getSetting, setSetting, newId, nowIso, todayStr, text, num, getCurrencies, saveCurrencies, currencyCodes, fxRates, fxRateOf, renameCurrencyInData, currencyUsage } from './db.js'
 import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHmac, pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -99,16 +99,31 @@ function upsertProducts(
     }
   })
 }
+/** 启动时把 .env 里的账号导入账号表（只做一次，之后一律在「设置 → 账号与权限」里维护） */
+function seedUsersFromEnv(): void {
+  try {
+    const d = getDb()
+    const n = (d.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n
+    if (n > 0) return
+    const list = localLoginUsers()
+    if (!list.length) return
+    const t = nowIso()
+    const ins = d.prepare('INSERT INTO users (id, username, display_name, password_hash, scope, team, disabled, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)')
+    list.forEach((u) => ins.run(newId(), u.username, u.name, hashPassword(u.password), u.scope, u.team || null, '由 server/.env 导入', t, t))
+    console.log(`[auth] 已把 .env 里的 ${list.length} 个账号导入账号表，后续请在「设置 → 账号与权限」维护`)
+  } catch (e) { console.log(`[auth] 导入 .env 账号失败：${(e as Error).message}`) }
+}
+
 /** 首次启动没有配置任何登录账号时，生成一个管理员账号并写回 server/.env（可随时改成自己的密码） */
 function bootstrapLocalAdmin(): void {
+  try { if ((getDb().prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n > 0) return } catch { /* 忽略 */ }
   if (localLoginUsers().length) return
   try {
     const pw = `sa-${randomBytes(6).toString('base64url')}`
-    const line = `\n# （自动生成）本系统登录账号：用户名:密码:显示名:范围\nLOCAL_LOGIN_USERS=admin:${pw}:管理员:all\n`
-    const file = path.join(__dirname, '..', '.env')
-    writeFileSync(file, (existsSync(file) ? readFileSyncSafe(file) : '') + line)
-    process.env.LOCAL_LOGIN_USERS = `admin:${pw}:管理员:all`
-    console.log(`[auth] 已生成初始登录账号：admin / ${pw}（已写入 server/.env，请尽快修改密码）`)
+    const t = nowIso()
+    getDb().prepare('INSERT INTO users (id, username, display_name, password_hash, scope, team, disabled, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, 0, ?, ?, ?)')
+      .run(newId(), 'admin', '管理员', hashPassword(pw), 'all', '首次启动自动创建', t, t)
+    console.log(`[auth] 已创建初始管理员账号：admin / ${pw}（请在「设置 → 账号与权限」里修改密码）`)
   } catch (e) { console.log(`[auth] 生成初始账号失败：${(e as Error).message}`) }
 }
 
@@ -166,7 +181,7 @@ app.use('/api', (req, res, next) => {
   next()
 })
 /** 设置类写操作（组织架构同步、字段与选项、币种、来源等）：仅「全部」范围可改 */
-const NEED_ALL_SCOPE = ['/org/sync', '/options/save', '/sources', '/currencies', '/countries-custom', '/follow-methods', '/lost-reasons', '/win-reasons']
+const NEED_ALL_SCOPE = ['/org/sync', '/options/save', '/sources', '/currencies', '/countries-custom', '/follow-methods', '/lost-reasons', '/win-reasons', '/admin']
 app.use('/api', (req, res, next) => {
   const a = (req as express.Request & { actor?: SaActor }).actor
   if (!a || req.method === 'GET') return next()
@@ -550,6 +565,33 @@ async function workbenchPeopleIndex(): Promise<Map<string, { name: string; cnNam
   })
   return m
 }
+/** 口令哈希（PBKDF2-SHA256，与工作台同款参数）：存库用，永不存明文 */
+function hashPassword(pw: string, salt = randomBytes(16).toString('base64url')): string {
+  return `${salt}:${pbkdf2Sync(pw, salt, 210000, 32, 'sha256').toString('base64url')}`
+}
+function verifyPassword(pw: string, stored: string): boolean {
+  const [salt, val] = String(stored || '').split(':')
+  if (!salt || !val) return false
+  const calc = pbkdf2Sync(pw, salt, 210000, 32, 'sha256').toString('base64url')
+  const a = Buffer.from(calc); const b = Buffer.from(val)
+  return a.length === b.length && timingSafeEqual(a, b)   // 比较 base64url 串（不是原始字节）
+}
+/** 账号表里的一行（设置页维护） */
+interface UserRow { id: string; username: string; display_name: string | null; password_hash: string; scope: SaScope; team: string | null; disabled: number; note: string | null; created_at: string; updated_at: string }
+/** 组织架构同事的统一初始密码（设置页可改；没设置过时用 .env 的 LOGIN_DEFAULT_PASSWORD） */
+const defaultLoginPassword = (): string => {
+  const d = getDb().prepare("SELECT v FROM settings WHERE k = 'loginDefaultPassword'").get() as { v: string } | undefined
+  return d ? String(d.v) : String(process.env.LOGIN_DEFAULT_PASSWORD ?? '')   // 页面保存过就以页面为准（空串＝关闭）
+}
+/** 账号行 → 登录人 */
+function actorOfUser(u: UserRow): SaActor {
+  return {
+    username: u.username, name: u.display_name || u.username, cnName: '', role: 'account', roleLabel: '系统账号',
+    department: '', team: u.team ?? '', head: u.scope !== 'self', isAdmin: u.scope === 'all',
+    scope: u.scope, reason: '账号管理', readNames: null, writeNames: null,
+  }
+}
+
 /**
  * 应急/临时本地账号（可选）：server/.env 里配 LOCAL_LOGIN_USERS
  * 格式：用户名:密码:显示名:范围(all|team|self)[:小组]，多条用英文逗号分隔
@@ -575,7 +617,7 @@ function scopeFor(u: { role?: string; department?: string; departmentHead?: bool
   return { scope: 'self', reason: '个人' }
 }
 /** 签发会话并写 Cookie（登录成功统一出口） */
-function issueSession(res: express.Response, actor: SaActor, mode: 'local' | 'org'): void {
+function issueSession(res: express.Response, actor: SaActor, mode: 'local' | 'org' | 'account'): void {
   const full = { ...actor, ...scopeOf(actor) }
   const token = signSession({ actor: full })
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_HOURS * 3600}`)
@@ -586,7 +628,14 @@ function issueSession(res: express.Response, actor: SaActor, mode: 'local' | 'or
 app.post('/api/auth/login', (req, res) => {
   const username = str(req.body?.username).trim(); const password = str(req.body?.password)
   if (!username || !password) return fail(res, '请输入账号和密码')
-  // ① 显式配置的账号（LOCAL_LOGIN_USERS，可单独指定范围）
+  // ① 账号表（设置 → 账号与权限 里维护，密码为 PBKDF2 哈希）
+  const row = getDb().prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(username) as UserRow | undefined
+  if (row) {
+    if (Number(row.disabled) === 1) return fail(res, '该账号已停用，请联系管理员', 403)
+    if (verifyPassword(password, row.password_hash)) return issueSession(res, actorOfUser(row), 'account')
+    return fail(res, '账号或密码不正确', 401)
+  }
+  // ② .env 里显式配置的账号（LOCAL_LOGIN_USERS，可作为应急入口）
   const users = localLoginUsers()
   const hit = users.find((u) => u.username.toLowerCase() === username.toLowerCase() && u.password === password)
   if (hit) {
@@ -598,7 +647,7 @@ app.post('/api/auth/login', (req, res) => {
     return issueSession(res, actor, 'local')
   }
   // ② 组织架构里的同事：账号＝英文名/工号（如 vera、joseph），密码＝统一初始密码 LOGIN_DEFAULT_PASSWORD
-  const defPw = String(process.env.LOGIN_DEFAULT_PASSWORD ?? '')
+  const defPw = defaultLoginPassword()
   if (defPw && password === defPw) {
     const p2 = getDb().prepare('SELECT name, department, team_name, role, role_label, is_head FROM people WHERE name = ? COLLATE NOCASE').get(username) as
       { name: string; department: string; team_name: string; role: string; role_label: string | null; is_head: number } | undefined
@@ -614,7 +663,7 @@ app.post('/api/auth/login', (req, res) => {
       return issueSession(res, actor, 'org')
     }
   }
-  if (!users.length && !defPw) return fail(res, '本系统还没有配置登录账号，请在服务端 server/.env 里配置 LOCAL_LOGIN_USERS 或 LOGIN_DEFAULT_PASSWORD', 503)
+  if (!users.length && !defPw && !(getDb().prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n) return fail(res, '还没有任何登录账号：请用管理员账号进入「设置 → 账号与权限」新建，或在服务端 .env 配置', 503)
   return fail(res, '账号或密码不正确', 401)
 })
 app.get('/api/auth/session', (req, res) => {
@@ -625,6 +674,13 @@ app.get('/api/auth/session', (req, res) => {
 app.post('/api/auth/logout', (_req, res) => { res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`); ok(res, { ok: true }) })
 
 const actorIn = (req: express.Request): SaActor => (req as express.Request & { actor?: SaActor }).actor as SaActor
+/** 仅「全部数据」范围可操作的接口：不满足时回 403 并返回 false */
+function requireAll(req: express.Request, res: express.Response): boolean {
+  const a = actorIn(req)
+  if (a?.scope === 'all') return true
+  fail(res, '仅总经理 / 副总经理（或管理员）可操作', 403)
+  return false
+}
 /** 只读范围条件：返回 ` AND col IN (?,?)`（全部权限时为空串） */
 function scopeSql(actor: SaActor | undefined, alias = 'i'): { sql: string; args: string[] } {
   if (!actor || !actor.readNames) return { sql: '', args: [] }
@@ -652,6 +708,79 @@ function canRead(actor: SaActor | undefined, salesName: unknown, purchaserName?:
   if (actor.readNames.some((x) => x.toLowerCase() === n)) return true
   return !!p && (actor.readPurchasers ?? []).some((x) => x.toLowerCase() === p)
 }
+// ============================ 账号与权限（设置页维护；仅全部数据范围可操作） ============================
+const accountView = (u: UserRow) => ({
+  id: u.id, username: u.username, displayName: u.display_name || u.username, scope: u.scope,
+  team: u.team ?? '', disabled: Number(u.disabled) === 1, note: u.note ?? '',
+  createdAt: u.created_at, updatedAt: u.updated_at,
+})
+/** 账号列表 + 统一初始密码状态 + 组织架构同事数量（可凭英文名 + 初始密码登录） */
+app.get('/api/admin/accounts', (req, res) => {
+  if (!requireAll(req, res)) return
+  const d = getDb()
+  const users = (d.prepare('SELECT * FROM users ORDER BY scope DESC, username').all() as unknown as UserRow[]).map(accountView)
+  const people = d.prepare("SELECT COUNT(*) AS n FROM people WHERE role IN ('sales','support','other')").get() as { n: number }
+  ok(res, {
+    users,
+    defaultPassword: defaultLoginPassword(),
+    defaultPasswordFromEnv: !getDb().prepare("SELECT 1 FROM settings WHERE k = 'loginDefaultPassword'").get(),
+    orgPeopleCount: Number(people?.n ?? 0),
+    scopeHelp: { all: '全部数据', team: '本组数据', self: '只看自己' },
+  })
+})
+app.post('/api/admin/accounts', (req, res) => {
+  if (!requireAll(req, res)) return
+  const d = getDb()
+  const username = str(req.body?.username).trim()
+  const password = str(req.body?.password)
+  const displayName = str(req.body?.displayName).trim() || username
+  const scopeRaw = str(req.body?.scope) || 'self'
+  const scope: SaScope = scopeRaw === 'all' || scopeRaw === 'team' ? scopeRaw : 'self'
+  const team = str(req.body?.team).trim() || null
+  if (!/^[A-Za-z0-9._-]{2,32}$/.test(username)) return fail(res, '账号需为 2–32 位字母/数字/._-')
+  if (password.length < 6) return fail(res, '密码至少 6 位')
+  const dup = d.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(username)
+  if (dup) return fail(res, '该账号已存在')
+  const t = nowIso()
+  d.prepare('INSERT INTO users (id, username, display_name, password_hash, scope, team, disabled, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)')
+    .run(newId(), username, displayName, hashPassword(password), scope, team, str(req.body?.note).trim() || null, t, t)
+  ok(res, { username }, 201)
+})
+app.put('/api/admin/accounts/:id', (req, res) => {
+  if (!requireAll(req, res)) return
+  const d = getDb()
+  const u = d.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id) as UserRow | undefined
+  if (!u) return fail(res, '账号不存在', 404)
+  const password = str(req.body?.password)
+  if (password && password.length < 6) return fail(res, '密码至少 6 位')
+  const scopeRaw = req.body?.scope === undefined ? u.scope : str(req.body?.scope)
+  const scope: SaScope = scopeRaw === 'all' || scopeRaw === 'team' || scopeRaw === 'self' ? scopeRaw : u.scope
+  const displayName = req.body?.displayName === undefined ? (u.display_name || u.username) : (str(req.body?.displayName).trim() || u.username)
+  const team = req.body?.team === undefined ? u.team : (str(req.body?.team).trim() || null)
+  const disabled = req.body?.disabled === undefined ? Number(u.disabled) : (req.body?.disabled ? 1 : 0)
+  d.prepare('UPDATE users SET display_name = ?, scope = ?, team = ?, disabled = ?, password_hash = ?, note = ?, updated_at = ? WHERE id = ?')
+    .run(displayName, scope, team, disabled, password ? hashPassword(password) : u.password_hash, str(req.body?.note).trim() || u.note, nowIso(), u.id)
+  ok(res, { id: u.id })
+})
+app.delete('/api/admin/accounts/:id', (req, res) => {
+  if (!requireAll(req, res)) return
+  const d = getDb()
+  const u = d.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id) as UserRow | undefined
+  if (!u) return fail(res, '账号不存在', 404)
+  const me = actorIn(req)
+  if (me.username.toLowerCase() === u.username.toLowerCase()) return fail(res, '不能删除当前登录的账号')
+  d.prepare('DELETE FROM users WHERE id = ?').run(u.id)
+  ok(res, { id: u.id })
+})
+/** 组织架构同事的统一初始密码（留空＝关闭该登录方式） */
+app.post('/api/admin/login-default', (req, res) => {
+  if (!requireAll(req, res)) return
+  const pw = str(req.body?.password)
+  if (pw && pw.length < 6) return fail(res, '初始密码至少 6 位')
+  setSetting('loginDefaultPassword', pw)
+  ok(res, { defaultPassword: pw })
+})
+
 // —— 产品档案：录入自动沉淀 + 查询/维护 ——
 app.get('/api/products', (req, res) => {
   const d = getDb()
@@ -1770,7 +1899,7 @@ app.put('/api/inquiries/:id', (req, res) => {
 // 询报价不允许删除（如需作废请在编辑中处理；成交以订单为准）
 app.delete('/api/inquiries/:id', (_req, res) => fail(res, '询报价不允许删除', 403))
 
-schema(); ensurePeople(); backfillProducts(); syncWonFlags(); bootstrapLocalAdmin()
+schema(); ensurePeople(); backfillProducts(); syncWonFlags(); seedUsersFromEnv(); bootstrapLocalAdmin()
 // 注：历史成交迁移 migrateWonToOrders() 已不再随启动自动执行（避免废弃列 is_won 反向物化订单）；
 // 如需迁移旧库，可手动调用一次。
 cleanupOrphans()

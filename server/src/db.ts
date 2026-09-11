@@ -149,6 +149,14 @@ export function schema(): void {
       id TEXT PRIMARY KEY, followup_id TEXT NOT NULL, content TEXT NOT NULL,
       by_name TEXT, created_at TEXT NOT NULL)`)
   } catch { /* 已存在 */ }
+  // 登录账号表（在「设置 → 账号与权限」里维护：新增/改密码/改范围/停用/删除）
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY, username TEXT NOT NULL, display_name TEXT, password_hash TEXT NOT NULL,
+      scope TEXT NOT NULL DEFAULT 'self', team TEXT, disabled INTEGER NOT NULL DEFAULT 0, note TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`)
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username COLLATE NOCASE)')
+  } catch { /* 已存在 */ }
   // 产品价格变动记录表（旧库补建）
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS product_prices (
