@@ -13,7 +13,7 @@ import { COUNTRIES } from './countries'
 import { currencyOptions } from './currencies'
 
 interface TotalItem { currency: string; total: number }
-interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; customer_stars?: number | null; won_date?: string | null; orderNo?: string | null; orderId?: string | null; last_followup_at?: string | null; next_followup_at?: string | null; is_lost?: number; lost_reason?: string | null; lost_date?: string | null; status?: Status; blockers?: string | null; action_plan?: string | null; support_needed?: string | null; last_followup_summary?: string | null; last_followup_detail?: string | null; last_followup_by?: string | null; followup_count?: number; last_followup_photos?: number; last_followup_files?: number; freight?: number | null; tax?: number | null; commission?: number | null; other_fee?: number | null; fee_currency?: string | null; feeTotal?: number; grandTotals?: TotalItem[]; quoteUsdApprox?: number }
+interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; hand_total_currency?: string | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; customer_stars?: number | null; won_date?: string | null; orderNo?: string | null; orderId?: string | null; last_followup_at?: string | null; next_followup_at?: string | null; is_lost?: number; lost_reason?: string | null; lost_date?: string | null; status?: Status; blockers?: string | null; action_plan?: string | null; support_needed?: string | null; last_followup_summary?: string | null; last_followup_detail?: string | null; last_followup_by?: string | null; followup_count?: number; last_followup_photos?: number; last_followup_files?: number; freight?: number | null; tax?: number | null; commission?: number | null; other_fee?: number | null; fee_currency?: string | null; feeTotal?: number; grandTotals?: TotalItem[]; quoteUsdApprox?: number; handTotalUsd?: number | null; quoteUsd?: number }
 interface Detail extends Row { hand_total_currency?: string | null; feeVersions?: { id: string; version: number; is_latest?: boolean; total: number; fee_currency: string; created_at: string }[]; items: { product_name: string; qty: number | null; amount: number; currency: string }[]; order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null }
 interface MetaLite { currencies?: string[]; sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; lostReasons?: string[]; winReasons?: string[]; fx?: Record<string, number> }
 
@@ -33,7 +33,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
   const [q, setQ] = useState(''); const [range, setRange] = useState<RangeKey>('')
   const [sales, setSales] = useState(''); const [pur, setPur] = useState(''); const [src, setSrc] = useState(''); const [st, setSt] = useState('')
   const [rows, setRows] = useState<Row[]>([]); const [total, setTotal] = useState(0)
-  const [sum, setSum] = useState<{ usdTotal: number; wonCount: number; lostCount: number; winRate: number; wonUsd: number }>({ usdTotal: 0, wonCount: 0, lostCount: 0, winRate: 0, wonUsd: 0 })
+  const [sum, setSum] = useState<{ usdTotal: number; autoUsdTotal?: number; handTotalCount?: number; wonCount: number; lostCount: number; winRate: number; wonUsd: number }>({ usdTotal: 0, wonCount: 0, lostCount: 0, winRate: 0, wonUsd: 0 })
   const [msg, setMsg] = useState(''); const [busy, setBusy] = useState(false)
   const [viewId, setViewId] = useState<string | null>(null)
   const [editId, setEditId] = useState<string | null>(null)
@@ -48,10 +48,10 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
       if (q) p.set('q', q); if (from) p.set('from', from); if (to) p.set('to', to)
       if (sales) p.set('sales', sales); if (pur) p.set('purchaser', pur); if (src) p.set('source', src); if (st) p.set('status', st)
       const url = `/inquiries?${p.toString()}`
-      const d = await get<{ rows: Row[]; meta: { total: number; usdTotal: number; wonCount: number; lostCount: number; winRate: number; wonUsd: number } }>(url)
+      const d = await get<{ rows: Row[]; meta: { total: number; usdTotal: number; autoUsdTotal?: number; handTotalCount?: number; wonCount: number; lostCount: number; winRate: number; wonUsd: number } }>(url)
       void get<ProductLite[]>('/products').then((l) => setProducts(Array.isArray(l) ? l : [])).catch(() => { /* */ })
       if (!d || !d.rows) throw new Error(`接口 ${url} 返回异常：${JSON.stringify(d)}`)
-      setRows(d.rows); setTotal(d.meta.total); setSum({ usdTotal: d.meta.usdTotal ?? 0, wonCount: d.meta.wonCount ?? 0, lostCount: d.meta.lostCount ?? 0, winRate: d.meta.winRate ?? 0, wonUsd: d.meta.wonUsd ?? 0 })
+      setRows(d.rows); setTotal(d.meta.total); setSum({ usdTotal: d.meta.usdTotal ?? 0, autoUsdTotal: d.meta.autoUsdTotal ?? 0, handTotalCount: d.meta.handTotalCount ?? 0, wonCount: d.meta.wonCount ?? 0, lostCount: d.meta.lostCount ?? 0, winRate: d.meta.winRate ?? 0, wonUsd: d.meta.wonUsd ?? 0 })
     } catch (e) { setMsg('加载失败：' + (e as Error).message); return }
     setMsg('')
   }, [q, range, sales, pur, src, st])
@@ -62,7 +62,9 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
     <div className="card">
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 style={{ margin: 0 }}>询报价管理</h3>
-        <span className="hint">{RANGE_LABEL[range]} · 命中 {total} 条 · 累计金额 ≈USD {money(sum.usdTotal)} · 已成单 {sum.wonCount} 条（{money(sum.wonUsd)} USD）· 未成单 {sum.lostCount} 条 · 成交率 {sum.winRate}%（成交÷已出结果）</span>
+        <span className="hint" title={sum.handTotalCount ? `其中 ${sum.handTotalCount} 条有手填总金额，按手填金额计入；无手填的按自动合计（产品明细＋费用）计入。自动合计口径合计 ≈USD ${money(sum.autoUsdTotal ?? 0)}` : '累计金额＝各询价「报价合计（含费用）」之和，即自动合计（产品明细＋费用）'}>
+          {RANGE_LABEL[range]} · 命中 {total} 条 · 累计金额 ≈USD {money(sum.usdTotal)}{sum.handTotalCount ? `（含 ${sum.handTotalCount} 条手填）` : ''} · 已成单 {sum.wonCount} 条（{money(sum.wonUsd)} USD）· 未成单 {sum.lostCount} 条 · 成交率 {sum.winRate}%（成交÷已出结果）
+        </span>
       </header>
       {msg && <div className="msg err">{msg}</div>}
       <div className="row" style={{ margin: '10px 0' }}>
@@ -100,7 +102,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
             <col style={{ width: '10%' }} /><col style={{ width: '7%' }} /><col style={{ width: '17%' }} /><col style={{ width: '5%' }} /><col style={{ width: '5%' }} />
             <col style={{ width: '5%' }} /><col style={{ width: '9%' }} />
           </colgroup>
-          <thead><tr>{['询价号', '日期', '客户', '状态', '标签', '报价合计（含费用）', '最近跟进', '跟进简述与详情', '销售', '采购', '来源', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: h === '来源' ? 'center' : 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '报价合计（含费用）' ? '产品明细合计 ＋ 运费/税费/佣金/其他费用' : (h === '跟进简述与详情' ? '该询价最近一条跟进的简述与详情；点行内「查看详情」看全部跟进与附件' : undefined)}>{h}</th>)}</tr></thead>
+          <thead><tr>{['询价号', '日期', '客户', '状态', '标签', '报价合计（含费用）', '最近跟进', '跟进简述与详情', '销售', '采购', '来源', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: h === '来源' ? 'center' : 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '报价合计（含费用）' ? '默认＝产品明细合计 ＋ 运费/税费/佣金/其他费用（自动统计）；该询价若手填了「总金额」，则以手填金额为准（显示「手填」标记）' : (h === '跟进简述与详情' ? '该询价最近一条跟进的简述与详情；点行内「查看详情」看全部跟进与附件' : undefined)}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} className={r.status === 'lost' ? 'row-lost' : undefined} style={{ borderBottom: '1px solid var(--line2)' }}>
@@ -112,9 +114,22 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                   {r.status === 'lost' && <div className="lost-line">丢单原因：{r.lost_reason || '—'}{r.lost_date ? `（${r.lost_date}）` : ''}</div>}
                 </td>
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><TagBlocks r={r} /></td>
-                <td style={{ padding: '6px 8px' }} title={`产品合计 ${fmtT(r) || '—'}${(r.feeTotal ?? 0) > 0 ? ` ＋ 费用 ${money(r.feeTotal)} ${r.fee_currency || 'USD'}` : ''}（折 USD 约 ${money(r.usdApprox)}）`}>
-                  ≈USD {money(r.usdApprox)}
-                  <div className="hint">{fmtT(r)}{(r.feeTotal ?? 0) > 0 ? ` ＋费用 ${money(r.feeTotal)} ${r.fee_currency || 'USD'}` : ''}</div>
+                <td style={{ padding: '6px 8px' }}
+                  title={r.handTotalUsd != null
+                    ? `已手填总金额：${money(r.hand_total)} ${r.hand_total_currency || 'USD'}（≈USD ${money(r.handTotalUsd)}），以手填为准。\n自动合计：产品明细 ${fmtT(r) || '—'}${(r.feeTotal ?? 0) > 0 ? ` ＋ 费用 ${money(r.feeTotal)} ${r.fee_currency || 'USD'}` : ''} ≈USD ${money(r.usdApprox)}`
+                    : `报价合计（含费用）＝产品合计 ${fmtT(r) || '—'}${(r.feeTotal ?? 0) > 0 ? ` ＋ 费用 ${money(r.feeTotal)} ${r.fee_currency || 'USD'}` : ''}（折 USD 约 ${money(r.usdApprox)}）`}>
+                  {r.handTotalUsd != null ? (
+                    <>
+                      <span className="badge latest" style={{ marginRight: 4 }} title="该询价已手填总金额，报价合计以手填为准">手填</span>
+                      <span className="mono">{money(r.hand_total)} {r.hand_total_currency || 'USD'}</span>
+                      <div className="hint">≈USD {money(r.handTotalUsd)} · 自动合计 {money(r.usdApprox)}</div>
+                    </>
+                  ) : (
+                    <>
+                      ≈USD {money(r.usdApprox)}
+                      <div className="hint">{fmtT(r)}{(r.feeTotal ?? 0) > 0 ? ` ＋费用 ${money(r.feeTotal)} ${r.fee_currency || 'USD'}` : ''}</div>
+                    </>
+                  )}
                 </td>
                 {/* 最近跟进时间 + 该条跟进的简述/具体内容（悬停看全文） */}
                 <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }} title={r.last_followup_at ? `最近跟进：${r.last_followup_at}${r.followup_count ? `（共 ${r.followup_count} 次）` : ''}` : '还没有跟进记录'}>

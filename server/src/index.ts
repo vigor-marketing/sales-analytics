@@ -1086,17 +1086,23 @@ app.get('/api/inquiries', (req, res) => {
     const { _won, _won_date, _order_no, _order_id, ...rest } = r
     return { ...rest, is_won: Number(_won) === 1 ? 1 : 0, status: inquiryStatus(Number(_won) === 1, r.is_lost), won_date: (str(_won_date) || null), orderNo: str(_order_no) || null, orderId: str(_order_id) || null,
       itemCount: (totalsOf.get(str(r.id)) ?? []).length, totals: t, feeTotal, grandTotals: grand,
-      quoteUsdApprox: Math.round(usdOfTotals(t)), usdApprox: Math.round(usdOfTotals(grand)) }
+      quoteUsdApprox: Math.round(usdOfTotals(t)), usdApprox: Math.round(usdOfTotals(grand)),
+      // 手填总金额（若有）：按手填币种折算 USD，供列表「报价合计」以手填为准
+      handTotalUsd: num(r.hand_total) == null ? null : Math.round(Number(num(r.hand_total)) / fxRateOf(str(r.hand_total_currency) || 'USD')),
+      quoteUsd: Math.round(num(r.hand_total) == null ? usdOfTotals(grand) : Number(num(r.hand_total)) / fxRateOf(str(r.hand_total_currency) || 'USD')) }
   })
   const totalN = (d.prepare(`SELECT COUNT(*) AS n FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id LEFT JOIN orders o ON o.inquiry_id = i.id ${where}`).get(...args) as { n: number }).n
   // 全量（当前筛选）累计金额 / 成单统计
   const allRows = out
-  const usdTotal = Math.round(allRows.reduce((s, r) => s + (r.usdApprox || 0), 0))
+  const usdVal = (r: Record<string, unknown>) => Number((r.handTotalUsd ?? r.usdApprox) || 0)
+  const usdTotal = Math.round(allRows.reduce((s, r) => s + usdVal(r), 0))
+  const autoUsdTotal = Math.round(allRows.reduce((s, r) => s + Number(r.usdApprox || 0), 0))
+  const handTotalCount = allRows.filter((r) => (r as { handTotalUsd?: number | null }).handTotalUsd != null).length
   const wonCount = allRows.filter((r) => Number((r as Record<string, unknown>).is_won) === 1).length
-  const wonUsd = Math.round(allRows.filter((r) => Number((r as Record<string, unknown>).is_won) === 1).reduce((s, r) => s + (r.usdApprox || 0), 0))
+  const wonUsd = Math.round(allRows.filter((r) => Number((r as Record<string, unknown>).is_won) === 1).reduce((s, r) => s + usdVal(r), 0))
   const lostCount = allRows.filter((r) => (r as { status?: string }).status === 'lost').length
   const decided = wonCount + lostCount
-  ok(res, { rows: out, meta: { total: totalN, shown: out.length, usdTotal, wonCount, lostCount, winRate: decided ? Math.round((wonCount / decided) * 1000) / 10 : 0, wonUsd } })
+  ok(res, { rows: out, meta: { total: totalN, shown: out.length, usdTotal, autoUsdTotal, handTotalCount, wonCount, lostCount, winRate: decided ? Math.round((wonCount / decided) * 1000) / 10 : 0, wonUsd } })
 })
 app.get('/api/inquiries/:id', (req, res) => {
   const d = getDb()

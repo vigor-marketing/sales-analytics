@@ -188,7 +188,9 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                   费用 {money2(d.feeTotal)} {d.fee_currency || 'USD'}
                 </span>
               )}
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--brand)' }}>总报价（含费用）</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--brand)' }} title={d.hand_total == null ? '产品明细合计 ＋ 运费/税费/佣金/其他费用' : '以下为自动合计（产品明细 ＋ 费用）；本询价已手填总金额，列表「报价合计」以手填为准'}>
+                总报价（含费用）{d.hand_total == null ? '' : '（自动合计）'}
+              </span>
               {(d.grandTotals || d.totals || []).map((t) => (
                 <span key={`g-${t.currency}`} className="ro mono" style={{ width: 'auto', display: 'inline-flex', fontWeight: 700, color: 'var(--brand)' }}>{money2(t.total)} {t.currency}</span>
               ))}
@@ -198,7 +200,9 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
               {(d.totals || []).length === 0 && <span className="hint">—</span>}
             </div>
             <div className="row">
-              <div className="col w2"><label>总金额（手填）</label><div className="ro mono">{d.hand_total == null ? '—' : `${money2(d.hand_total)} ${d.hand_total_currency || 'USD'}`}</div></div>
+              <div className="col w2"><label>总金额（手填{d.hand_total == null ? ' · 选填' : ' · 优先'}）</label>
+                <div className="ro mono" title={d.hand_total == null ? '留空时按上面的自动合计（产品明细 ＋ 费用）统计' : '已手填：报价合计以该金额为准'}>{d.hand_total == null ? '—' : `${money2(d.hand_total)} ${d.hand_total_currency || 'USD'}`}</div>
+              </div>
             </div>
 
             {/* 卡点/行动计划/需要的支持/备注（与录入页一致） */}
