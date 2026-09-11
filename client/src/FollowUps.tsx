@@ -95,20 +95,40 @@ export default function FollowUps({ meta, target }: {
     try { setHit(await get<Lookup>(`/inquiries/lookup?sales=${encodeURIComponent(sales)}&no=${encodeURIComponent(no.trim())}`)) }
     catch (e) { setLookErr((e as Error).message) }
   }, [sales, no])
-  useEffect(() => { const t = setTimeout(() => { void lookup() }, 400); return () => clearTimeout(t) }, [lookup])
-  // 切换合同（询价）时收起表单，先看该合同的全部跟进
-  useEffect(() => { setFormOpen(false) }, [hit?.id])
-  // 「添加跟进」在列表态触发时：询价信息带出后自动展开建立跟进表单
+  // 点选/带出后立即查询（原 400ms 防抖会让「添加跟进」有等待感，这里改为立即执行）
+  useEffect(() => { void lookup() }, [lookup])
+  // 仅在切换到「另一个询价」时收起表单（同一询价由后台补全信息时不收起）
+  const lastHitIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (lastHitIdRef.current && lastHitIdRef.current !== (hit?.id ?? null)) setFormOpen(false)
+    lastHitIdRef.current = hit?.id ?? null
+  }, [hit?.id])
+  // 兜底：若仍有待展开（历史上排队的情况），询价信息就绪后补开一次表单
   useEffect(() => {
     if (!hit || !pendingOpenRef.current) return
     const r = pendingOpenRef.current
     pendingOpenRef.current = null
-    openFormFrom(r)
+    setFormOpen(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hit])
   // 点击某条跟进 → 展开建立跟进表单（沿用该条的跟进方式/跟进人），不跳回页面顶部
-  // 列表态点「添加跟进」：先把该询价带出来，等询价信息就绪后再展开表单
+  // 列表态点「添加跟进」：先用行内已有信息立即渲染「项目详情 + 跟进表单」，再后台补齐完整询价信息（避免等待感）
   const pendingOpenRef = useRef<Fu | null>(null)
+  const enterFromRow = (r: Fu) => {
+    keepNoRef.current = true
+    setSales(r.sales)
+    setNo(r.inquiry_no)
+    setLookErr('')
+    // 乐观数据：字段名与 /inquiries/lookup 返回保持一致，缺少的项先留空、由后台补全
+    setHit((prev) => (prev && prev.id === r.inquiry_id ? prev : {
+      id: r.inquiry_id, inquiry_no: r.inquiry_no, date: r.date, customer_name: r.customer_name,
+      country: null, use_location: null, sales: r.sales, purchaser: '—', source: '—',
+      is_won: 0, productNames: '', usdApprox: 0, totals: [], items: [],
+      last_followup_at: r.date, next_followup_at: r.next_followup_at,
+      status: 'following', is_key_customer: r.is_key_customer, is_key_project: r.is_key_project,
+    }))
+    openFormFrom(r)
+  }
   const openFormFrom = (r: Fu) => {
     setF((prev) => ({ ...prev, date: today(), method: r.method || prev.method, byName: r.by_name || r.sales || prev.byName, summary: '', detail: '', nextFollowupAt: '' }))
     setFormOpen(true)
@@ -184,26 +204,45 @@ export default function FollowUps({ meta, target }: {
       </div>
 
       {hit && (
-        <div style={{ marginTop: 10, border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px', background: '#fbfcff' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-            <span style={{ fontWeight: 700, fontSize: 13 }}>跟进详情</span>
-            <span className="hint">询价 {hit.inquiry_no}</span>
+        <div className="proj">
+          {/* 头部：项目（询价）标识 + 状态/标签一眼可见 */}
+          <div className="proj-head">
+            <span className="proj-no mono">{hit.inquiry_no}</span>
+            <span className="proj-cust">{hit.customer_name}</span>
+            <StatusChip status={hit.status ?? (Number(hit.is_won) === 1 ? 'won' : 'following')} />
+            <KeyTags kc={hit.is_key_customer} kp={hit.is_key_project} compact />
+            <span style={{ flex: 1 }} />
+            <span className="hint">{hit.itemCount ? `${hit.itemCount} 行明细` : ''}</span>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', fontSize: 13 }}>
-            <span>询价号 <b className="mono">{hit.inquiry_no}</b></span>
-            <span>客户 <b>{hit.customer_name}</b></span>
-            <span>国别 <b>{hit.country || '—'}</b></span>
-            <span>销售 <b>{hit.sales}</b></span>
-            <span>采购 <b>{hit.purchaser}</b></span>
-            <span>来源 <b>{hit.source}</b></span>
-            <span>询价日期 <b className="mono">{hit.date}</b></span>
-            <span>报价合计 <b>{(hit.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</b>（≈USD {money(hit.usdApprox)}）</span>
-            <span>状态 <b><StatusChip status={hit.status ?? (Number(hit.is_won) === 1 ? 'won' : 'following')} /></b></span>
-            <span>标签 <b><KeyTags kc={hit.is_key_customer} kp={hit.is_key_project} compact /></b></span>
-            <span>最近跟进 <b className="mono">{hit.last_followup_at || '—'}</b></span>
-            <span>下次跟进 <b className="mono">{hit.next_followup_at || '—'}</b></span>
+
+          {/* 重点数据：报价 / 跟进节奏 用卡片突出 */}
+          <div className="proj-kpis">
+            <div className="proj-kpi">
+              <span className="proj-kpi-label">报价合计（含费用）</span>
+              <b className="proj-kpi-value">{(hit.totals || []).map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</b>
+              <span className="proj-kpi-note">折 USD ≈ {money(hit.usdApprox)}</span>
+            </div>
+            <div className="proj-kpi">
+              <span className="proj-kpi-label">最近跟进</span>
+              <b className="proj-kpi-value">{hit.last_followup_at || '—'}</b>
+              <span className="proj-kpi-note">按销售 + 询价号自动带出</span>
+            </div>
+            <div className="proj-kpi">
+              <span className="proj-kpi-label">下次跟进</span>
+              <b className="proj-kpi-value" style={{ color: hit.next_followup_at ? 'var(--brand)' : 'var(--sub)' }}>{hit.next_followup_at || '未设置'}</b>
+              <span className="proj-kpi-note">建立跟进时可修改</span>
+            </div>
           </div>
-          <div className="hint" style={{ marginTop: 6 }}>产品：{hit.productNames || '—'}</div>
+
+          {/* 明细信息：表格展示，标签在左、值在右，逐行对齐 */}
+          <table className="proj-table">
+            <tbody>
+              <tr><th>客户</th><td>{hit.customer_name || '—'}</td><th>询价日期</th><td className="mono">{hit.date || '—'}</td></tr>
+              <tr><th>国别 / 使用地</th><td>{hit.country || '—'}{hit.use_location ? ` / ${hit.use_location}` : ''}</td><th>来源</th><td>{hit.source || '—'}</td></tr>
+              <tr><th>销售</th><td>{hit.sales || '—'}</td><th>采购</th><td>{hit.purchaser || '—'}</td></tr>
+              <tr><th>产品明细</th><td colSpan={3} title={hit.productNames || '—'}>{hit.productNames || '—'}</td></tr>
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -283,10 +322,8 @@ export default function FollowUps({ meta, target }: {
                         onClick={(e) => {
                           e.stopPropagation()
                           if (hit) { openFormFrom(r); return }
-                          // 列表态：先按该行的销售 + 询价号带出询价，再自动展开表单
-                          pendingOpenRef.current = r
-                          keepNoRef.current = true
-                          setSales(r.sales); setNo(r.inquiry_no)
+                          // 列表态：先用该行已有信息立即进入并展开表单（不等接口），随后后台补全询价信息
+                          enterFromRow(r)
                         }}>添加跟进</button>
                     </td>
                   </tr>

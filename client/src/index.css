@@ -545,3 +545,18 @@ td .act-group .act-btn:focus-visible { outline: 2px solid rgba(0, 82, 217, .35);
 .cust-stars { color: #e3a008; font-weight: 700; letter-spacing: 1px; font-size: 13px; white-space: nowrap }
 .cust-stars i { margin-left: 4px; font-size: 11.5px; font-style: normal; color: #a35c00; font-weight: 600; letter-spacing: 0 }
 .cust-stars.sm { font-size: 12px; letter-spacing: .5px }
+
+/* ===== 询报价跟进：项目详情（重点突出 + 表格化） ===== */
+.proj { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #fbfcff }
+.proj-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-bottom: 6px; border-bottom: 1px dashed var(--line) }
+.proj-no { font-size: 15px; font-weight: 800; letter-spacing: .3px }
+.proj-cust { font-size: 13px; font-weight: 700; color: var(--text) }
+.proj-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin: 8px 0 }
+.proj-kpi { border: 1px solid var(--line); border-radius: 9px; padding: 6px 9px; background: linear-gradient(180deg, #fff, #f4f8ff) }
+.proj-kpi-label { display: block; font-size: 11.5px; color: var(--sub) }
+.proj-kpi-value { display: block; font-size: 15px; font-weight: 800; margin: 1px 0 }
+.proj-kpi-note { display: block; font-size: 11px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.proj-table { width: 100%; border-collapse: collapse; font-size: 12.5px; table-layout: fixed }
+.proj-table th, .proj-table td { padding: 5px 8px; border-bottom: 1px dashed #eef1f6; text-align: left; vertical-align: middle }
+.proj-table th { width: 12%; font-weight: 600; color: var(--sub); background: #f7f9fd; white-space: nowrap }
+.proj-table td { width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
