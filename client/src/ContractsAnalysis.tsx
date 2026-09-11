@@ -578,8 +578,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
             {TM.teamRows.length > 1 && <span className="hint" style={{ fontSize: 11 }}>组均 {money(Math.round(TM.sumUsd / Math.max(1, TM.teamRows.filter((t) => t.n > 0).length)))} USD</span>}
           </span>}>
           <DataTable
-            cols={['排名', '小组', '人数', '订单数', '客户数', '金额（USD）', '占比', '人均', '单均价', '客单价', '周期', '占第一', '与组均']}
-            widths={['8%', '13%', '5%', '7%', '7%', '10.5%', '7%', '7%', '7%', '7%', '7%', '7%', '7.5%']}
+            cols={['排名', '小组', '人数', '订单数', '客户数', '金额（USD）', '占比', '人均', '单均价', '客单价', '周期']}
+            widths={['9%', '15%', '6%', '8%', '8%', '12%', '8%', '9%', '8%', '9%', '8%']}
             topCol={5} topLabel="第一"
             empty="本期暂无成单，无法进行小组业绩对比（可调整时间范围或筛选）"
             rows={TM.teamRows.map((t, i) => [
@@ -594,13 +594,11 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
               t.perOrder == null ? '—' : money(t.perOrder),
               t.perCustomer == null ? '—' : money(t.perCustomer),
               t.avgCycle == null || t.n === 0 ? '—' : `${t.avgCycle} 天`,
-              t.n === 0 ? '—' : `${t.vsTop}%`,
-              t.n === 0 ? '—' : `${t.vsAvg >= 0 ? '+' : ''}${t.vsAvg}%`,
             ])}
           />
           <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
             口径：人数＝该组销售（按人员档案归属，未匹配归「未分组」）；<b>人均＝金额÷人数</b>、<b>单均价＝金额÷订单数</b>、<b>客单价＝金额÷客户数</b>、<b>周期＝平均成单周期（天）</b>；
-            「占比」＝本组金额÷全部小组金额、「占第一」＝本组金额÷第一名金额、「与组均」＝(本组金额−组均)÷组均；金额取订单上填写的成交金额折 USD，随上方筛选联动。
+            「占比」＝本组金额÷全部小组金额；金额取订单上填写的成交金额折 USD，随上方筛选联动。
             月度趋势见「月度小组分析」，组内成员排名见「组内分析」标签页。
           </div>
         </Panel>
