@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { get } from './api'
 import { StatusChip } from './StatusChip'
-import PriceHistoryModal from './PriceHistory'
-import FeeHistoryModal, { type FeeVersion } from './FeeHistoryModal'
+import ChangeHistoryModal from './ChangeHistory'
+import { type FeeVersion } from './ChangeHistory'
 import InquiryFollowupsModal from './InquiryFollowupsModal'
 
 interface TotalItem { currency: string; total: number }
@@ -49,8 +49,7 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
   // 与「询报价跟进」联动：查看时一并带出该询价下的全部跟进记录
   const [fus, setFus] = useState<FuRow[]>([])
   const [fuLoaded, setFuLoaded] = useState(false)
-  const [histName, setHistName] = useState<string | null>(null)
-  const [feeHist, setFeeHist] = useState(false)
+  const [changeHist, setChangeHist] = useState(false)
   // 「跟进简述」列的「查看详情」：打开与询报价管理/询报价跟进共用的跟进详情弹窗（详情+图片+附件+指导）
   const [fuDetail, setFuDetail] = useState(false)
   useEffect(() => { get<Detail>(`/inquiries/${id}`).then(setD).catch((e) => setErr((e as Error).message)) }, [id])
@@ -139,6 +138,9 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 12.5, fontWeight: 700 }}>金额版本</span>
                     <span className="hint">（在「编辑」里改金额保存后，会同步生成产品档案的新版本）</span>
+                    <span style={{ flex: 1 }} />
+                    <button className="btn xs" title="产品价格变更与费用变更合并查看"
+                      onClick={() => setChangeHist(true)}>变更记录</button>
                   </div>
                   {list.map(({ it, p: pr }, i) => (
                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap', fontSize: 12.5 }}>
@@ -152,7 +154,6 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                           {pr.prev_amount != null && <span className="hint">（上一版 {money2(pr.prev_amount)}）</span>}
                         </>
                         : <span className="badge">未建档</span>}
-                      <button className="btn xs" disabled={!pr} onClick={() => pr && setHistName(pr.name)}>查看记录</button>
                     </div>
                   ))}
                   {(() => {
@@ -170,7 +171,6 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                             )}
                           </>
                           : <span className="badge">未填写费用</span>}
-                        <button className="btn xs" disabled={!(d.feeVersions ?? []).length} onClick={() => setFeeHist(true)}>查看记录</button>
                       </div>
                     )
                   })()}
@@ -225,10 +225,9 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
               </div>
             </div>
 
-            {feeHist && <FeeHistoryModal inquiryId={id} inquiryNo={d?.inquiry_no} onClose={() => setFeeHist(false)} />}
+            {changeHist && <ChangeHistoryModal inquiryId={id} inquiryNo={d?.inquiry_no} productNames={(d?.items ?? []).map((x) => x.product_name)} onClose={() => setChangeHist(false)} />}
             {fuDetail && <InquiryFollowupsModal inquiryId={id} inquiryNo={d?.inquiry_no || ''} customerName={d?.customer_name} onClose={() => setFuDetail(false)} />}
 
-            {histName && <PriceHistoryModal name={histName} info={(() => { const pr = products.find((x) => x.name === histName); return pr ? { last_amount: pr.last_amount, currency: pr.currency, last_qty: pr.last_qty, use_count: pr.use_count } : undefined })()} onClose={() => setHistName(null)} />}
 
             {/* 跟进记录（与「询报价跟进」联动） */}
             <div style={{ marginTop: 12, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>

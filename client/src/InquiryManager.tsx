@@ -4,9 +4,8 @@ import { StatusChip, type Status } from './StatusChip'
 import ReasonPicker from './ReasonPicker'
 import ProductPicker, { type ProductLite } from './ProductPicker'
 import { KeyTags } from './KeyTags'
-import PriceHistoryModal from './PriceHistory'
 import InquiryFollowupsModal from './InquiryFollowupsModal'
-import FeeHistoryModal from './FeeHistoryModal'
+import ChangeHistoryModal from './ChangeHistory'
 import InquiryDetailModal from './InquiryDetail'
 import { RANGE_LABEL, rangeDates, type RangeKey } from './dateRange'
 import { COUNTRIES } from './countries'
@@ -199,14 +198,13 @@ const TagBlocks = ({ r }: { r: { is_key_customer?: number; is_key_project?: numb
 function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, products = [], onClose, onSaved }: { id: string; meta?: MetaLite; products?: ProductLite[]; onClose: () => void; onSaved: () => void }) {
   const [order, setOrder] = useState<{ id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null>(null)
   const [ord, setOrd] = useState({ wonDate: new Date().toISOString().slice(0, 10), orderNo: '', amount: '', currency: 'USD', note: '', winReason: '' })
-  const [histName, setHistName] = useState<string | null>(null)
   const [ordErr, setOrdErr] = useState('')
   const [ordBusy, setOrdBusy] = useState(false)
   const [ordOpen, setOrdOpen] = useState(false)
   // 询价报价合计（与录入页一致：按币种自动合计 + 折USD），并用于生成订单时带出金额
   const [quote, setQuote] = useState<{ currency: string; total: number }[]>([])
   const [detail, setDetail] = useState<Detail | null>(null)
-  const [feeHist, setFeeHist] = useState(false)
+  const [changeHist, setChangeHist] = useState(false)
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
   const [form, setForm] = useState<{ freight: string; tax: string; commission: string; otherFee: string; feeCurrency: string; feeCurFreight: string; feeCurTax: string; feeCurCommission: string; feeCurOther: string; fxRates: Record<string, string>; inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; handTotalCur: string; note: string; blockers: string; actionPlan: string; supportNeeded: string; stars: string; keyCust: boolean; keyProj: boolean; isLost: boolean; lostReason: string; lostDate: string; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
   const set = (patch: Partial<typeof form>) => setForm((f) => (f ? { ...f, ...patch } : f))
@@ -373,6 +371,8 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12.5, fontWeight: 700 }}>金额版本记录</span>
                 <span className="hint">保存后自动同步到产品档案：为每个产品生成一个新版本（单价/数量/币种有变化时）</span>
+                <span style={{ flex: 1 }} />
+                <button className="btn xs" title="产品价格变更与费用变更合并查看" onClick={() => setChangeHist(true)}>变更记录</button>
               </div>
               {(() => {
                 // 与后端同一顺序对齐旧明细（都按「有产品名且单价>0」的有效行顺序），识别「这一行换了产品」
@@ -420,7 +420,6 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                             <span className="badge">未建档</span>
                             <span style={{ color: '#a35c00', fontWeight: 700 }}>保存后创建 V1</span>
                           </>}
-                        <button className="btn xs" disabled={!pr} onClick={() => pr && setHistName(pr.name)}>查看记录</button>
                       </div>
                     )
                   })
@@ -442,7 +441,6 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                           : <span className="hint" style={{ color: '#059669' }}>与当前一致，保存后版本不变</span>}
                       </>
                       : <span className="badge">未填写费用</span>}
-                    <button className="btn xs" disabled={!(detail?.feeVersions ?? []).length} onClick={() => setFeeHist(true)}>查看记录</button>
                   </div>
                 )
               })()}
@@ -595,9 +593,10 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
               )}
             </div>
 
-            {feeHist && <FeeHistoryModal inquiryId={id} inquiryNo={form?.inquiryNo} onClose={() => setFeeHist(false)} />}
+            {changeHist && <ChangeHistoryModal inquiryId={id} inquiryNo={form?.inquiryNo}
+              productNames={(form?.items ?? []).map((x) => x.productName).filter((x) => x.trim())}
+              onClose={() => setChangeHist(false)} />}
 
-            {histName && <PriceHistoryModal name={histName} info={(() => { const pr = products.find((x) => x.name === histName); return pr ? { last_amount: pr.last_amount, currency: pr.currency, last_qty: pr.last_qty, use_count: pr.use_count } : undefined })()} onClose={() => setHistName(null)} />}
 
             {/* 保存按钮固定在弹窗最下方右下角 */}
             <div className="modal-foot">
