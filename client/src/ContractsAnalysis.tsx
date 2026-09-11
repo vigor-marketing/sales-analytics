@@ -286,36 +286,51 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
     return Array.from(m.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.usd - a.usd).slice(0, 10)
   }, [rows])
 
-  /** 按小组：成单次数、金额折USD、金额占比、平均转化周期、组内人数 */
+  const teamNamesAll = useMemo(() => Array.from(new Set(meta.sales.map((x) => (x.team || '未分组')))), [meta.sales])
+  /** 小组业绩：订单数 / 客户数 / 人数 / 金额 / 占比 / 人均金额 / 单均价 / 客户单价 / 平均周期 */
   const teamRows = useMemo(() => {
-    const m = new Map<string, { n: number; usd: number; cycles: number[]; people: Set<string> }>()
+    const m = new Map<string, { n: number; usd: number; cycles: number[]; people: Set<string>; customers: Set<string> }>()
     rows.forEach((r) => {
       const team = teamOf.get(r.sales) ?? '未分组'
-      const a = m.get(team) ?? { n: 0, usd: 0, cycles: [], people: new Set<string>() }
-      a.n += 1; a.usd += r.usdApprox || 0; a.people.add(r.sales || '未指定')
+      const a = m.get(team) ?? { n: 0, usd: 0, cycles: [] as number[], people: new Set<string>(), customers: new Set<string>() }
+      a.n += 1; a.usd += r.usdApprox || 0; a.people.add(r.sales || '未指定'); a.customers.add(r.customer_name || '未知客户')
       if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
       m.set(team, a)
     })
-    const total = Array.from(m.values()).reduce((x, v) => x + v.usd, 0)
-    return Array.from(m.entries()).map(([name, v]) => ({
-      name, n: v.n, usd: Math.round(v.usd), people: v.people.size,
-      share: total ? Math.round((v.usd / total) * 1000) / 10 : 0,
+    // 本期无成单的小组也列出（人数取自人员档案），便于横向对比
+    teamNamesAll.forEach((t) => { if (!m.has(t)) m.set(t, { n: 0, usd: 0, cycles: [], people: new Set(meta.sales.filter((x) => (x.team || '未分组') === t).map((x) => x.name)), customers: new Set<string>() }) })
+    const list = Array.from(m.entries()).map(([name, v]) => ({
+      name, n: v.n, usd: Math.round(v.usd), people: Math.max(v.people.size, meta.sales.filter((x) => (x.team || '未分组') === name).length),
+      customerCount: v.customers.size,
+      share: 0,
+      perPerson: v.people.size ? Math.round(v.usd / Math.max(v.people.size, meta.sales.filter((x) => (x.team || '未分组') === name).length)) : null,
+      perOrder: v.n ? Math.round(v.usd / v.n) : null,
+      perCustomer: v.customers.size ? Math.round(v.usd / v.customers.size) : null,
       avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
-    })).sort((a, b) => b.usd - a.usd)
-  }, [rows, teamOf])
+    }))
+    const total = list.reduce((x, v) => x + v.usd, 0)
+    const teamCount = list.filter((t) => t.n > 0).length || 1
+    const avg = total / teamCount
+    return list.map((t) => ({
+      ...t,
+      share: total ? Math.round((t.usd / total) * 1000) / 10 : 0,
+      vsTop: 0, gapTop: 0, vsAvg: total ? Math.round(((t.usd - avg) / avg) * 1000) / 10 : 0,
+    })).sort((a, b) => b.usd - a.usd).map((t, _i, arr) => ({ ...t, vsTop: arr[0]?.usd ? Math.round((t.usd / arr[0].usd) * 1000) / 10 : 0, gapTop: Math.max(0, (arr[0]?.usd ?? 0) - t.usd) }))
+  }, [rows, teamOf, meta.sales, teamNamesAll])
 
-  /** 小组内成员明细：每个小组下各成员的订单数/金额/组内占比/平均周期（含本期无成单的成员） */
-  const teamNames = useMemo(() => {
-    const names = Array.from(new Set(meta.sales.map((x) => x.team || '未分组')))
-    return names
-  }, [meta.sales])
+  /** 全部小组名（含本期无成单的小组），供小组业绩对比与组内分析使用 */
+  const teamNames = teamNamesAll
 
   const teamMembers = useMemo(() => {
-    const byMember = new Map<string, { n: number; usd: number; cycles: number[] }>()
+    const byMember = new Map<string, { n: number; usd: number; cycles: number[]; customers: Map<string, { usd: number; n: number }> }>()
     rows.forEach((r) => {
       const k = r.sales || '未指定'
-      const a = byMember.get(k) ?? { n: 0, usd: 0, cycles: [] }
+      const a = byMember.get(k) ?? { n: 0, usd: 0, cycles: [] as number[], customers: new Map<string, { usd: number; n: number }>() }
       a.n += 1; a.usd += r.usdApprox || 0
+      const cust = r.customer_name || '未知客户'
+      const c = a.customers.get(cust) ?? { usd: 0, n: 0 }
+      c.usd += r.usdApprox || 0; c.n += 1
+      a.customers.set(cust, c)
       if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
       byMember.set(k, a)
     })
@@ -325,9 +340,13 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
       const members = Array.from(new Set(meta.sales.filter((x) => (x.team || '未分组') === team).map((x) => x.name)))
       byMember.forEach((_v, k) => { if ((teamOf.get(k) ?? '未分组') === team && !members.includes(k)) members.push(k) })
       const list = members.map((name) => {
-        const v = byMember.get(name) ?? { n: 0, usd: 0, cycles: [] }
+        const v = byMember.get(name) ?? { n: 0, usd: 0, cycles: [], customers: new Map<string, { usd: number; n: number }>() }
+        const customerList = Array.from((v.customers ?? new Map()).entries()).map(([cname, cv]) => ({ name: cname, usd: Math.round(cv.usd), n: cv.n })).sort((a, b) => b.usd - a.usd)
         return {
           name, n: v.n, usd: Math.round(v.usd),
+          customerCount: customerList.length, customers: customerList,
+          perOrder: v.n ? Math.round(v.usd / v.n) : null,
+          perCustomer: customerList.length ? Math.round(v.usd / customerList.length) : null,
           avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
         }
       }).sort((a, b) => b.usd - a.usd)
@@ -498,40 +517,62 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         </Panel>
         )}
 
-        {tab === 'all' && (<>
-        <Panel title="按小组" hint="小组维度：单数 · 金额 · 占比 · 平均周期 · 组内人数">
+        {tab === 'all' && (
+        <Panel title="小组业绩分析对比"
+          hint={`${teamRows.filter((t) => t.n > 0).length} 个有成单小组 · 合计 ${money(sumUsd)} USD${teamRows[0] ? ` · 第一 ${teamRows[0].name}` : ''}`}
+          style={{ gridColumn: '1 / -1' }}
+          extra={teamRows.length > 1 ? <span className="hint" style={{ fontSize: 11 }}>组均 {money(Math.round(sumUsd / Math.max(1, teamRows.filter((t) => t.n > 0).length)))} USD · 第一组占比 {teamRows[0]?.share ?? 0}%</span> : undefined}>
           <DataTable
-            cols={['小组', '订单数', '金额（折USD）', '金额占比', '平均周期', '组内人数']}
-            widths={['26%', '13%', '20%', '13%', '16%', '12%']}
-            topCol={2} topLabel="第一"
-            empty="暂无成单小组"
-            rows={teamRows.map((t) => [t.name, `${t.n} 单`, money(t.usd), `${t.share}%`, t.avgCycle == null ? '—' : `${t.avgCycle} 天`, `${t.people} 人`])}
+            cols={['排名', '小组', '人数', '订单数', '客户数', '金额（折USD）', '金额占比', '人均金额', '单均价', '客户单价', '平均周期', '占第一组', '与组均']}
+            widths={['5%', '12%', '6%', '7%', '7%', '12%', '8%', '10%', '10%', '10%', '8%', '7%', '8%']}
+            topCol={5} topLabel="第一"
+            empty="本期暂无成单，无法进行小组业绩对比（可调整时间范围或筛选）"
+            rows={teamRows.map((t, i) => [
+              `${i + 1}`,
+              i === 0 && t.n > 0 ? `${t.name}（第一）` : t.name,
+              `${t.people} 人`,
+              `${t.n} 单`,
+              `${t.customerCount} 家`,
+              money(t.usd),
+              `${t.share}%`,
+              t.perPerson == null || t.n === 0 ? '—' : money(t.perPerson),
+              t.perOrder == null ? '—' : money(t.perOrder),
+              t.perCustomer == null ? '—' : money(t.perCustomer),
+              t.avgCycle == null || t.n === 0 ? '—' : `${t.avgCycle} 天`,
+              t.n === 0 ? '—' : `${t.vsTop}%`,
+              t.n === 0 ? '—' : `${t.vsAvg >= 0 ? '+' : ''}${t.vsAvg}%`,
+            ])}
           />
-          {teamRows.length > 0 && (
-            <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
-              合计 {money(teamRows.reduce((a, b) => a + b.usd, 0))} USD · {teamRows.reduce((a, b) => a + b.n, 0)} 单（小组归属按「销售人员 → 组别」，未匹配的归入未分组）
-            </div>
-          )}
+          <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
+            口径：人数＝该组销售（按人员档案归属，未匹配归「未分组」）；<b>人均金额＝金额÷人数</b>、<b>单均价＝金额÷订单数</b>、<b>客户单价＝金额÷客户数</b>；
+            「占第一组」＝本组金额÷第一名金额，「与组均」＝(本组金额−组均)÷组均；金额取订单上填写的成交金额折 USD，随上方筛选联动。
+            月度趋势见「月度小组分析」，组内成员排名见「组内」标签页。
+          </div>
         </Panel>
-
-        </>)}
+        )}
 
         {tab === 'group' && (<>
-        <Panel title="小组内成员分析" hint={`${teamFilter ? `已筛「${teamFilter}」· ` : ''}每个小组下各成员的成单金额与占比（含本期无成单的成员）`} style={{ gridColumn: '1 / -1' }}>
+        <Panel title="小组内成员分析"
+          hint={`${teamFilter ? `已筛「${teamFilter}」· ` : ''}每组一行汇总 + 组内每位成员一行（含本期无成单成员）：订单数 / 客户数 / 金额 / 组内占比 / 单均价 / 客户单价 / 平均周期 / 与组内第一的占比`}
+          style={{ gridColumn: '1 / -1' }}>
           {shownTeams.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
             <div className="tablewrap h300">
               <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
-                <colgroup><col style={{ width: '28%' }} /><col style={{ width: '14%' }} /><col style={{ width: '18%' }} /><col style={{ width: '13%' }} /><col style={{ width: '16%' }} /><col style={{ width: '11%' }} /></colgroup>
-                <thead><tr>{['小组 / 成员', '订单数', '金额（折USD）', '组内占比', '平均转化周期', '组内排名'].map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
+                <colgroup><col style={{ width: '16%' }} /><col style={{ width: '9%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '9%' }} /><col style={{ width: '10%' }} /><col style={{ width: '10%' }} /><col style={{ width: '9%' }} /><col style={{ width: '8%' }} /></colgroup>
+                <thead><tr>{['小组 / 成员', '组内排名', '订单数', '客户数', '金额（折USD）', '组内占比', '单均价', '客户单价', '平均周期', '与第一'].map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }} title={h === '客户单价' ? '客户单价＝金额÷客户数' : h === '单均价' ? '单均价＝金额÷订单数' : h === '与第一' ? '本成员金额÷组内第一名金额' : undefined}>{h}</th>)}</tr></thead>
                 <tbody>
                   {shownTeams.map((t) => (
                     <Fragment key={t.team}>
                       <tr style={{ background: '#f4f7fc' }}>
-                        <td style={{ padding: '6px 8px', fontWeight: 800 }}>{t.team}<span className="hint" style={{ marginLeft: 6, fontWeight: 400 }}>小组合计 {t.list.length} 人</span></td>
-                        <td style={{ padding: '6px 8px', fontWeight: 700, textAlign: 'right' }}>{t.n} 单</td>
-                        <td className="mono" style={{ padding: '6px 8px', fontWeight: 700, textAlign: 'right' }}>{money(t.usd)}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>100%</td>
+                        <td style={{ padding: '6px 8px', fontWeight: 800 }}>{t.team}<span className="hint" style={{ marginLeft: 6, fontWeight: 400 }}>共 {t.list.length} 人</span></td>
                         <td style={{ padding: '6px 8px', textAlign: 'right' }}>—</td>
+                        <td style={{ padding: '6px 8px', fontWeight: 700, textAlign: 'right' }}>{t.n} 单</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>{t.list.reduce((a, m) => a + (m.customerCount || 0), 0)} 家</td>
+                        <td className="mono" style={{ padding: '6px 8px', fontWeight: 800, textAlign: 'right' }}>{money(t.usd)}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>100%</td>
+                        <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>{t.n ? money(Math.round(t.usd / t.n)) : '—'}</td>
+                        <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }} title="小组客户单价＝金额÷客户数">{(() => { const cc = t.list.reduce((a, m) => a + (m.customerCount || 0), 0); return cc ? money(Math.round(t.usd / cc)) : '—' })()}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }} title="组内人均金额">{t.list.length ? money(Math.round(t.usd / t.list.length)) : '—'}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right' }}>—</td>
                       </tr>
                       {t.rows.map((m, i) => (
@@ -541,11 +582,15 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                             {i === 0 && m.n > 0 && t.rows.length > 1 && <span className="top-badge">组内第一</span>}
                             {m.n === 0 && <span className="hint" style={{ marginLeft: 6 }}>本期无成单</span>}
                           </td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>{m.n === 0 ? '—' : `第 ${i + 1} 名`}</td>
                           <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.n} 单</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right' }} title={m.customers.length ? `名下客户：${m.customers.map((c) => `${c.name} ${money(c.usd)} USD · ${c.n} 单`).join(' ｜ ')}` : '本期无成单客户'}>{m.customerCount}</td>
                           <td className={'mono' + (i === 0 && m.n > 0 && t.rows.length > 1 ? ' cell-top' : '')} style={{ padding: '6px 8px', textAlign: 'right' }}>{money(m.usd)}</td>
                           <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.n === 0 ? '—' : `${m.share}%`}</td>
+                          <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>{m.perOrder == null ? '—' : money(m.perOrder)}</td>
+                          <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>{m.perCustomer == null ? '—' : money(m.perCustomer)}</td>
                           <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.avgCycle == null ? '—' : `${m.avgCycle} 天`}</td>
-                          <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.n === 0 ? '—' : `第 ${i + 1} 名`}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right', color: i === 0 ? 'var(--sub)' : '#a35c00', fontWeight: 600 }}>{i === 0 || m.n === 0 ? '—' : `${t.rows[0]?.usd ? Math.round((m.usd / t.rows[0].usd) * 100) : 0}%`}</td>
                         </tr>
                       ))}
                     </Fragment>
@@ -624,36 +669,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           </>)
         })()}
 
-        {tab === 'all' && (
-        <Panel title="小组对比" hint={`${teamRows.length} 个小组 · 合计 ${money(sumUsd)} USD${teamRows[0] ? ` · 最高 ${teamRows[0].name}` : ''}`}
-          style={{ gridColumn: '1 / -1' }}
-          extra={teamRows.length > 1 ? <span className="hint" style={{ fontSize: 11 }}>组均 {money(Math.round(sumUsd / teamRows.length))} USD · 最高组占比 {teamRows[0]?.share ?? 0}%</span> : undefined}>
-          <DataTable
-            cols={['排名', '小组', '订单数', '金额（折USD）', '金额占比', '平均周期', '组内人数', '与最高组差距']}
-            widths={['6%', '20%', '10%', '15%', '12%', '12%', '11%', '14%']}
-            topCol={3} topLabel="第一"
-            empty="本期暂无成单，无法进行小组对比（可调整时间范围或筛选）"
-            rows={teamRows.map((t, i) => [
-              `${i + 1}`,
-              i === 0 && teamRows.length > 1 ? `${t.name}（第一）` : t.name,
-              `${t.n} 单`,
-              money(t.usd),
-              `${t.share}%`,
-              t.avgCycle == null ? '—' : `${t.avgCycle} 天`,
-              `${t.people} 人`,
-              i === 0 ? '—' : (() => {
-                const top = teamRows[0]?.usd ?? 0
-                const pct = top ? Math.round((t.usd / top) * 100) : 0
-                return `${pct}%（少 ${money(Math.max(0, top - t.usd))}）`
-              })(),
-            ])}
-          />
-          <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
-            小组归属按「销售人员 → 组别」，未匹配到组别的销售归入「未分组」；金额为该组成单金额折算 USD，随上方筛选（时间/客户/产品等）联动。
-            更细的「月度 × 小组拆解」就在本页下方，「组内成员排名」见「组内」标签页。
-          </div>
-        </Panel>
-        )}
+
 
         {tab === 'all' && (<>
         {/* 月度小组分析：每月各组订单数与金额（跟随筛选） */}
