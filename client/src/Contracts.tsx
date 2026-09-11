@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { get, put } from './api'
 import ReasonPicker from './ReasonPicker'
 import { KeyTags } from './KeyTags'
+import { currencyOptions } from './currencies'
 import { RANGE_LABEL, rangeDates, type RangeKey } from './dateRange'
 
 interface Item { product_name: string; qty: number | null; amount: number; currency: string }
@@ -16,7 +17,7 @@ interface OrderRow {
   customer_name: string; hand_total: number | null; usdApprox: number; totals: { currency: string; total: number }[]
   productNames: string; itemCount: number; items: Item[]; cycleDays: number | null
 }
-interface MetaLite { sales: { name: string; team: string }[]; purchasers?: string[]; sources?: string[]; winReasons?: string[]; lostReasons?: string[] }
+interface MetaLite { currencies?: string[]; sales: { name: string; team: string }[]; purchasers?: string[]; sources?: string[]; winReasons?: string[]; lostReasons?: string[] }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Math.round(Number(n)).toLocaleString('zh-CN'))
 const cycleTone = (d: number | null) => (d == null ? 'var(--sub)' : d <= 30 ? '#059669' : d <= 90 ? '#a35c00' : 'var(--danger)')
@@ -114,7 +115,7 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
       </div>
 
       {viewId && <OrderView id={viewId} onClose={() => setViewId(null)} />}
-      {editId && <OrderEdit id={editId} winReasons={meta.winReasons} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); void load() }} />}
+      {editId && <OrderEdit id={editId} winReasons={meta.winReasons} currencies={meta.currencies} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); void load() }} />}
     </div>
     </div>
   )
@@ -272,7 +273,7 @@ function Info({ label, value, mono, block }: { label: string; value: string; mon
   )
 }
 
-function OrderEdit({ id, onClose, onSaved, winReasons = [] }: { id: string; onClose: () => void; onSaved: () => void; winReasons?: string[] }) {
+function OrderEdit({ id, onClose, onSaved, winReasons = [], currencies }: { id: string; onClose: () => void; onSaved: () => void; winReasons?: string[]; currencies?: string[] }) {
   const { d } = useOrder(id)
   const [form, setForm] = useState<{ orderNo: string; wonDate: string; amount: string; currency: string; note: string; winReason: string } | null>(null)
   const [err, setErr] = useState('')
@@ -299,7 +300,7 @@ function OrderEdit({ id, onClose, onSaved, winReasons = [] }: { id: string; onCl
             </div>
             <div className="row">
               <div className="col w2"><label>订单金额</label><input className="sa" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
-              <div className="col w1"><label>币种</label><select className="sa" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>{['USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}</select></div>
+              <div className="col w1"><label>币种</label><select className="sa" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>{currencyOptions(currencies, form.currency).map((c) => <option key={c}>{c}</option>)}</select></div>
             </div>
             <div className="row">
               <div className="col w2"><label>成交原因 <span className="hint">（用于成交原因分析，选填）</span></label>

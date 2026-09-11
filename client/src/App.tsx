@@ -12,13 +12,14 @@ import ContractsAnalysis from './ContractsAnalysis'
 import FollowUps from './FollowUps'
 import InquiryManager from './InquiryManager'
 import SettingsView from './SettingsView'
+import { currencyOptions } from './currencies'
 
 interface ItemD { productName: string; qty: string; amount: string; currency: string }
 const emptyRow = (): ItemD => ({ productName: '', qty: '', amount: '', currency: 'USD' })
-const CURRENCIES = ['USD', 'CNY', 'EUR']
+const CURRENCIES = ['USD', 'CNY', 'EUR']   // 兜底顺序；实际以后端配置的币种清单为准
 const money = (n: number) => n.toLocaleString('zh-CN', { maximumFractionDigits: 2 })
 
-interface Bootstrap { sales: { name: string; team: string }[]; purchasers: string[]; purchaserTeams?: { name: string; team: string }[]; sources: string[]; methods?: string[]; lostReasons?: string[]; winReasons?: string[]; countries: string[]; fx: Record<string, number>; month: string }
+interface Bootstrap { currencies?: string[]; sales: { name: string; team: string }[]; purchasers: string[]; purchaserTeams?: { name: string; team: string }[]; sources: string[]; methods?: string[]; lostReasons?: string[]; winReasons?: string[]; countries: string[]; fx: Record<string, number>; month: string }
 interface Saved { id: string; inquiryNo: string }
 const DEFAULTS: Bootstrap = {
   sales: [['Joey', '销售一组'], ['Vera', '销售一组'], ['Yolanda', '销售二组'], ['Jerric', '销售二组'], ['Loria', '销售三组']].map(([name, team]) => ({ name, team })),
@@ -208,7 +209,8 @@ export default function App() {
   const quoteByCur = useMemo(() => {
     const m = new Map<string, number>()
     items.forEach((it) => { const a = Number(it.amount) || 0; if (a > 0) m.set(it.currency, (m.get(it.currency) ?? 0) + a) })
-    return Array.from(m.entries()).sort((a, b) => CURRENCIES.indexOf(a[0]) - CURRENCIES.indexOf(b[0]))
+    const order = currencyOptions(meta?.currencies, undefined)
+    return Array.from(m.entries()).sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
   }, [items])
   const usdApprox = useMemo(() => {
     const fx = meta?.fx ?? { USD: 1, CNY: 7.12, EUR: 0.92 }
@@ -221,7 +223,8 @@ export default function App() {
   const grandByCur = useMemo(() => {
     const m = new Map<string, number>(quoteByCur)
     if (feeTotal) m.set(feeCur, (m.get(feeCur) ?? 0) + feeTotal)
-    return Array.from(m.entries()).filter(([, v]) => v > 0).sort((a, b) => CURRENCIES.indexOf(a[0]) - CURRENCIES.indexOf(b[0]))
+    const order = currencyOptions(meta?.currencies, undefined)
+    return Array.from(m.entries()).filter(([, v]) => v > 0).sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
   }, [quoteByCur, feeTotal, feeCur])
   const grandUsd = useMemo(() => {
     const fx = meta?.fx ?? { USD: 1, CNY: 7.12, EUR: 0.92 }
@@ -435,7 +438,7 @@ export default function App() {
             <div className="col w1"><label>数量</label><input className="sa" type="number" min="0" value={it.qty} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} /></div>
             <div className="col w1"><label>金额 *</label><input className="sa" type="number" min="0" value={it.amount} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} /></div>
             <div className="col w1"><label>币种</label>
-              <select className="sa" value={it.currency} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, currency: e.target.value } : x))}>{CURRENCIES.map((c) => <option key={c}>{c}</option>)}</select>
+              <select className="sa" value={it.currency} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, currency: e.target.value } : x))}>{currencyOptions(meta?.currencies, it.currency).map((c) => <option key={c}>{c}</option>)}</select>
             </div>
             <span className="row-act">
               {items.length > 1 && (
@@ -455,7 +458,7 @@ export default function App() {
             <div className="col w1"><label>佣金</label><input className="sa" type="number" min="0" value={fees.commission} onChange={(e) => setFees({ ...fees, commission: e.target.value })} placeholder="0" /></div>
             <div className="col w1"><label>其他费用</label><input className="sa" type="number" min="0" value={fees.otherFee} onChange={(e) => setFees({ ...fees, otherFee: e.target.value })} placeholder="0" /></div>
             <div className="col w1"><label>费用币种</label>
-              <select className="sa" value={feeCur} onChange={(e) => setFeeCur(e.target.value)}>{CURRENCIES.map((c) => <option key={c}>{c}</option>)}</select>
+              <select className="sa" value={feeCur} onChange={(e) => setFeeCur(e.target.value)}>{currencyOptions(meta?.currencies, feeCur).map((c) => <option key={c}>{c}</option>)}</select>
             </div>
           </div>
           <div className="hint" style={{ display: 'block' }}>费用选填，留空按 0 计算；费用会计入下面的「总报价（含费用）」。</div>

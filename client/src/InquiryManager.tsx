@@ -10,11 +10,12 @@ import FeeHistoryModal from './FeeHistoryModal'
 import InquiryDetailModal from './InquiryDetail'
 import { RANGE_LABEL, rangeDates, type RangeKey } from './dateRange'
 import { COUNTRIES } from './countries'
+import { currencyOptions } from './currencies'
 
 interface TotalItem { currency: string; total: number }
 interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; customer_stars?: number | null; won_date?: string | null; orderNo?: string | null; orderId?: string | null; last_followup_at?: string | null; next_followup_at?: string | null; is_lost?: number; lost_reason?: string | null; lost_date?: string | null; status?: Status; blockers?: string | null; action_plan?: string | null; support_needed?: string | null; last_followup_summary?: string | null; last_followup_detail?: string | null; last_followup_by?: string | null; followup_count?: number; last_followup_photos?: number; last_followup_files?: number; freight?: number | null; tax?: number | null; commission?: number | null; other_fee?: number | null; fee_currency?: string | null; feeTotal?: number; grandTotals?: TotalItem[]; quoteUsdApprox?: number }
 interface Detail extends Row { feeVersions?: { id: string; version: number; is_latest?: boolean; total: number; fee_currency: string; created_at: string }[]; items: { product_name: string; qty: number | null; amount: number; currency: string }[]; order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null }
-interface MetaLite { sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; lostReasons?: string[]; winReasons?: string[]; fx?: Record<string, number> }
+interface MetaLite { currencies?: string[]; sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; lostReasons?: string[]; winReasons?: string[]; fx?: Record<string, number> }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
 const CURS = ['USD', 'CNY', 'EUR']
@@ -217,14 +218,16 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
   const liveTotals = useMemo(() => {
     const m = new Map<string, number>()
     ;(form?.items ?? []).forEach((it) => { const a = Number(it.amount) || 0; if (a > 0) m.set(it.currency, (m.get(it.currency) ?? 0) + a) })
-    const list = Array.from(m.entries()).sort((a, b) => CURS.indexOf(a[0]) - CURS.indexOf(b[0])).map(([currency, total]) => ({ currency, total }))
+    const order = currencyOptions(meta.currencies, undefined)
+    const list = Array.from(m.entries()).sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])).map(([currency, total]) => ({ currency, total }))
     const fx = meta.fx ?? { USD: 1, CNY: 7.12, EUR: 0.92 }
     const usd = list.reduce((sum, x) => sum + x.total / (fx[x.currency] || 1), 0)
     const feeTotal = ['freight', 'tax', 'commission', 'otherFee'].reduce((sum, k) => sum + (Number((form as unknown as Record<string, string>)?.[k]) || 0), 0)
     const feeCur = form?.feeCurrency || 'USD'
     const gm = new Map<string, number>(list.map((x) => [x.currency, x.total]))
     if (feeTotal) gm.set(feeCur, (gm.get(feeCur) ?? 0) + feeTotal)
-    const grandList = Array.from(gm.entries()).filter(([, v]) => v > 0).sort((a, b) => CURS.indexOf(a[0]) - CURS.indexOf(b[0])).map(([currency, total]) => ({ currency, total }))
+    const gOrder = currencyOptions(meta.currencies, undefined)
+    const grandList = Array.from(gm.entries()).filter(([, v]) => v > 0).sort((a, b) => gOrder.indexOf(a[0]) - gOrder.indexOf(b[0])).map(([currency, total]) => ({ currency, total }))
     return { list, usd, feeTotal, feeCur, grandList, grandUsd: grandList.reduce((sum, x) => sum + x.total / (fx[x.currency] || 1), 0) }
   }, [form, meta.fx])
 
@@ -278,7 +281,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                 <div className="col w1"><label>佣金</label><input className="sa" type="number" min="0" value={form.commission} onChange={(e) => set({ commission: e.target.value })} placeholder="0" /></div>
                 <div className="col w1"><label>其他费用</label><input className="sa" type="number" min="0" value={form.otherFee} onChange={(e) => set({ otherFee: e.target.value })} placeholder="0" /></div>
                 <div className="col w1"><label>费用币种</label>
-                  <select className="sa" value={form.feeCurrency} onChange={(e) => set({ feeCurrency: e.target.value })}>{CURS.map((c) => <option key={c}>{c}</option>)}</select>
+                  <select className="sa" value={form.feeCurrency} onChange={(e) => set({ feeCurrency: e.target.value })}>{currencyOptions(meta.currencies, form.feeCurrency).map((c) => <option key={c}>{c}</option>)}</select>
                 </div>
               </div>
               <div className="totals" style={{ marginBottom: 6 }}>
@@ -389,7 +392,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                     }} />
                   <input className="sa" type="number" placeholder="数量" value={it.qty} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, qty: e.target.value } : x) })} />
                   <input className="sa" type="number" placeholder="金额" value={it.amount} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, amount: e.target.value } : x) })} />
-                  <select className="sa" value={it.currency} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, currency: e.target.value } : x) })}>{CURS.map((c) => <option key={c}>{c}</option>)}</select>
+                  <select className="sa" value={it.currency} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, currency: e.target.value } : x) })}>{currencyOptions(meta.currencies, it.currency).map((c) => <option key={c}>{c}</option>)}</select>
                   <span className="row-act">
                     {form.items.length > 1 && <button className="icon-del" title="删除该行" aria-label={`删除第 ${i + 1} 行`} onClick={() => set({ items: form.items.filter((_, j) => j !== i) })}>×</button>}
                   </span>
@@ -462,7 +465,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                 <div className="col w2"><label>成单日期 *</label><input className="sa" type="date" value={ord.wonDate} onChange={(e) => setOrd({ ...ord, wonDate: e.target.value })} /></div>
                 <div className="col w2"><label>订单号 <span className="hint">（留空自动）</span></label><input className="sa" value={ord.orderNo} onChange={(e) => setOrd({ ...ord, orderNo: e.target.value })} /></div>
                 <div className="col w2"><label>订单金额 <span className="hint">（默认带出报价合计）</span></label><input className="sa" type="number" value={ord.amount} onChange={(e) => setOrd({ ...ord, amount: e.target.value })} /></div>
-                <div className="col w1"><label>币种</label><select className="sa" value={ord.currency} onChange={(e) => setOrd({ ...ord, currency: e.target.value })}>{['USD', 'CNY', 'EUR'].map((c) => <option key={c}>{c}</option>)}</select></div>
+                <div className="col w1"><label>币种</label><select className="sa" value={ord.currency} onChange={(e) => setOrd({ ...ord, currency: e.target.value })}>{currencyOptions(meta.currencies, ord.currency).map((c) => <option key={c}>{c}</option>)}</select></div>
               </div>
               <div className="row">
                 <div className="col w2"><label>成交原因 <span className="hint">（选填，用于成交原因分析）</span></label>

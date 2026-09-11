@@ -1,7 +1,7 @@
 /** sales-analytics v3 起步：询报价录入页 API */
 import cors from 'cors'
 import express from 'express'
-import { schema, ensurePeople, backfillProducts, migrateWonToOrders, syncWonFlags, getDb, getSources, getCountries, saveSources, getFollowMethods, saveFollowMethods, getLostReasons, saveLostReasons, getWinReasons, saveWinReasons, getSetting, setSetting, newId, nowIso, todayStr, text, num } from './db.js'
+import { schema, ensurePeople, backfillProducts, migrateWonToOrders, syncWonFlags, getDb, getSources, getCountries, saveSources, getFollowMethods, saveFollowMethods, getLostReasons, saveLostReasons, getWinReasons, saveWinReasons, getSetting, setSetting, newId, nowIso, todayStr, text, num, getCurrencies, saveCurrencies, currencyCodes, fxRates, fxRateOf, renameCurrencyInData, currencyUsage } from './db.js'
 import { existsSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -125,8 +125,8 @@ function grandTotals(items: { currency: string; total: number }[], feeCurrency: 
   if (feeTotal) merged.push({ currency: feeCurrency, amount: feeTotal })
   return fmtTotals(merged)
 }
-const usdOfTotals = (totals: { currency: string; total: number }[]) => totals.reduce((s, x) => s + x.total / (FX2[x.currency] || 1), 0)
-const feeCurrencyOf = (v: unknown) => (['USD', 'CNY', 'EUR'].includes(str(v)) ? str(v) : 'USD')
+const usdOfTotals = (totals: { currency: string; total: number }[]) => totals.reduce((s, x) => s + x.total / fxRateOf(x.currency), 0)
+const feeCurrencyOf = (v: unknown) => normCurrency(v)
 /** 询价行上的费用合计 */
 function feeTotalOf(r: Record<string, unknown>): number {
   const n = (v: unknown) => num(v) ?? 0
@@ -162,7 +162,6 @@ function feeBreakdown(r: Record<string, unknown>): { key: string; label: string;
 }
 
 // —— 基础元数据：组织人员 / 来源 / 国别 / 汇率（开发态近似，后续接设置）——
-const FX: Record<string, number> = { USD: 1, CNY: 7.12, EUR: 0.92 }
 app.get('/api/meta/bootstrap', (_req, res) => {
   const d = getDb()
   const people = d.prepare('SELECT name, department, team_name, role FROM people ORDER BY team_name, name').all() as { name: string; department: string; team_name: string; role: string }[]
@@ -171,7 +170,7 @@ app.get('/api/meta/bootstrap', (_req, res) => {
   // 采购人员按小组（部门/组别）分组，供录入时逐级筛选
   const purchaserTeams = people.filter((p) => ['采购部', '销售支持组'].includes(p.department))
     .map((p) => ({ name: p.name, team: p.team_name || p.department }))
-  ok(res, { sales, purchasers, purchaserTeams, sources: getSources(), methods: getFollowMethods(), lostReasons: getLostReasons(), winReasons: getWinReasons(), countries: getCountries(), fx: FX, month: todayStr().slice(0, 7) })
+  ok(res, { sales, purchasers, purchaserTeams, sources: getSources(), methods: getFollowMethods(), lostReasons: getLostReasons(), winReasons: getWinReasons(), countries: getCountries(), currencies: currencyCodes(), fx: fxRates(), month: todayStr().slice(0, 7) })
 })
 
 // —— 产品档案：录入自动沉淀 + 查询/维护 ——
@@ -224,7 +223,7 @@ app.post('/api/products', (req, res) => {
   const t = nowIso()
   // 只在显式传入时才覆盖已有值：未传币种/金额/数量时保留原值，避免手动维护把档案清空
   const rawCur = str(req.body?.currency)
-  const cur = ['USD', 'CNY', 'EUR'].includes(rawCur) ? rawCur : null
+  const cur = isCurrency(rawCur) ? rawCur.trim().toUpperCase() : null
   const amt = num(req.body?.lastAmount)
   const qty = num(req.body?.lastQty)
   const d = getDb()
@@ -251,7 +250,7 @@ app.put('/api/products/:id', (req, res) => {
   if (!oldP) return fail(res, '产品不存在', 404)
   const name = str(req.body?.name)
   if (name.length > NAME_MAX) return fail(res, `产品名称过长（最多 ${NAME_MAX} 个字符）`)
-  const cur = ['USD', 'CNY', 'EUR'].includes(str(req.body?.currency)) ? str(req.body?.currency) : null
+  const cur = isCurrency(req.body?.currency) ? str(req.body?.currency).trim().toUpperCase() : null
   if (name && name !== oldP.name) {
     if (d.prepare('SELECT id FROM products WHERE name = ? COLLATE NOCASE AND id <> ?').get(name, req.params.id)) return fail(res, `产品名称「${name}」已存在`, 409)
     d.transaction(() => {
@@ -387,11 +386,9 @@ app.get('/api/options', (_req, res) => {
       { code: 'follow_method', name: '跟进方式', values: getFollowMethods() },
       { code: 'lost_reason', name: '丢单原因（未成单原因）', values: getLostReasons() },
       { code: 'win_reason', name: '成交原因', values: getWinReasons() },
-      { code: 'country_custom', name: '自定义国别补充（可选维护）', values: (() => { try { const a = JSON.parse(getSetting('countries', '')); return Array.isArray(a) ? a : [] } catch { return [] } })() },
     ],
-    fixed: [
-      { code: 'currency', name: '币种（系统固定）', values: ['USD', 'CNY', 'EUR'] },
-    ],
+    // 币种改由设置页专门卡片维护（含折算汇率），不再以固定组下发；自定义国别组已下线（国别支持直接手输）
+    fixed: [],
   })
 })
 // —— 询价来源字典管理（设置页/来源设置弹窗） ——
@@ -404,7 +401,50 @@ app.post('/api/sources', (req, res) => {
   if (b.action === 'rename' && str(b.value) && str(b.newValue)) { saveSources(list.map((x) => (x === str(b.value) ? str(b.newValue) : x))); return ok(res, getSources()) }
   fail(res, '未知操作')
 })
-// 自定义国别补充维护（设置页统一管理；主列表仍为内置完整清单）
+// —— 币种管理（可增删改 + 折算汇率；USD 为基准，rate 语义：1 USD = rate 个该币种） ——
+app.get('/api/currencies', (_req, res) => ok(res, getCurrencies()))
+app.post('/api/currencies', (req, res) => {
+  const b = (req.body ?? {}) as { action?: string; code?: string; rate?: unknown; newCode?: string }
+  const code = str(b.code).trim().toUpperCase()
+  const list = getCurrencies()
+  switch (str(b.action)) {
+    case 'add': {
+      if (!code) return fail(res, '请填写币种代码')
+      if (!/^[A-Z]{2,6}$/.test(code)) return fail(res, '币种代码建议 2-6 位字母（如 USD、JPY）')
+      if (list.some((x) => x.code === code)) return fail(res, `币种「${code}」已存在`, 409)
+      const rate = Number(b.rate)
+      if (!Number.isFinite(rate) || rate <= 0) return fail(res, '请填写大于 0 的折算汇率（1 USD = ? 该币种）')
+      list.push({ code, rate }); saveCurrencies(list); return ok(res, getCurrencies())
+    }
+    case 'rename': {
+      const next = str(b.newCode).trim().toUpperCase()
+      if (!list.some((x) => x.code === code)) return fail(res, '币种不存在', 404)
+      if (!next) return fail(res, '请填写新币种代码')
+      if (code === 'USD' && next !== 'USD') return fail(res, 'USD 为基准币种，不能改名')
+      if (next !== code && list.some((x) => x.code === next)) return fail(res, `币种「${next}」已存在`, 409)
+      saveCurrencies(list.map((x) => (x.code === code ? { ...x, code: next } : x)))
+      if (next !== code) renameCurrencyInData(code, next)
+      return ok(res, getCurrencies())
+    }
+    case 'setRate': {
+      if (!list.some((x) => x.code === code)) return fail(res, '币种不存在', 404)
+      if (code === 'USD') return fail(res, 'USD 为基准币种，汇率固定为 1')
+      const rate = Number(b.rate)
+      if (!Number.isFinite(rate) || rate <= 0) return fail(res, '请填写大于 0 的折算汇率')
+      saveCurrencies(list.map((x) => (x.code === code ? { ...x, rate } : x)))
+      return ok(res, getCurrencies())
+    }
+    case 'remove': {
+      if (!list.some((x) => x.code === code)) return fail(res, '币种不存在', 404)
+      if (code === 'USD') return fail(res, 'USD 为基准币种，不能删除')
+      saveCurrencies(list.filter((x) => x.code !== code))
+      return ok(res, getCurrencies())
+    }
+    case 'usage': return ok(res, { code, usage: currencyUsage(code) })
+    default: return fail(res, '未知操作')
+  }
+})
+// 自定义国别补充维护（保留接口；设置页已下线该分组，国别可直接手输）
 app.post('/api/countries-custom', (req, res) => {
   const b = (req.body ?? {}) as { action?: string; value?: string; newValue?: string }
   let arr: string[] = []; try { const a = JSON.parse(getSetting('countries', '')); arr = Array.isArray(a) ? a : [] } catch { arr = [] }
@@ -467,7 +507,7 @@ app.post('/api/inquiries', (req, res) => {
   if (!source) return fail(res, '请选择询价来源')
 
   const cleanItems = items
-    .map((it, i) => ({ productName: str(it.productName), qty: num(it.qty), amount: num(it.amount) ?? 0, currency: ['USD', 'CNY', 'EUR'].includes(str(it.currency)) ? str(it.currency) : 'USD', sort: i + 1 }))
+    .map((it, i) => ({ productName: str(it.productName), qty: num(it.qty), amount: num(it.amount) ?? 0, currency: normCurrency(it.currency), sort: i + 1 }))
     .filter((it) => it.productName && it.amount > 0)
   if (!cleanItems.length) return fail(res, '至少一行询价明细（产品名称与金额大于 0）')
   if (cleanItems.some((it) => it.qty != null && it.qty < 0)) return fail(res, '数量不能为负数')
@@ -707,7 +747,7 @@ app.post('/api/orders', (req, res) => {
   if (wonDate < str(inq.date)) return fail(res, '成单日期不能早于询价日期')
   const orderNo = str(req.body?.orderNo) || nextOrderNo()
   if (d.prepare('SELECT id FROM orders WHERE order_no = ?').get(orderNo)) return fail(res, `订单号 ${orderNo} 已存在`, 409)
-  const cur = ['USD', 'CNY', 'EUR'].includes(str(req.body?.currency)) ? str(req.body.currency) : 'USD'
+  const cur = normCurrency(req.body?.currency)
   const amount = num(req.body?.amount)
   if (amount != null && (amount < 0 || amount > 1e12)) return fail(res, '订单金额需为 0 ~ 1e12 之间的数值')
   const t = nowIso()
@@ -732,7 +772,7 @@ app.put('/api/orders/:id', (req, res) => {
   if (dup) return fail(res, `订单号 ${orderNo} 已存在`, 409)
   const amount = req.body?.amount !== undefined ? num(req.body.amount) : num(o.amount)
   if (amount != null && (amount < 0 || amount > 1e12)) return fail(res, '订单金额需为 0 ~ 1e12 之间的数值')
-  const cur = req.body?.currency !== undefined && ['USD', 'CNY', 'EUR'].includes(str(req.body.currency)) ? str(req.body.currency) : str(o.currency)
+  const cur = req.body?.currency !== undefined && isCurrency(req.body.currency) ? str(req.body.currency).trim().toUpperCase() : str(o.currency)
   const note = req.body?.note !== undefined ? (text(req.body.note) || null) : str(o.note) || null
   const winReason = req.body?.winReason !== undefined ? (text(req.body.winReason) || null) : (str(o.win_reason) || null)
   const tooLongOrd2 = overLimit([[orderNo, 60, '订单号'], [winReason, 2000, '成单原因'], [note, 5000, '订单备注']])
@@ -785,7 +825,7 @@ app.get('/api/dashboard', (_req, res) => {
     const items = d.prepare('SELECT product_name, amount, currency FROM inquiry_items WHERE inquiry_id = ?').all(text(o.inquiry_id)) as { product_name: string; amount: number; currency: string }[]
     items.forEach((it) => {
       const a = byProduct.get(it.product_name) ?? { n: 0, usd: 0 }
-      a.n += 1; a.usd += (Number(it.amount) || 0) / (FX2[it.currency] || 1)
+      a.n += 1; a.usd += (Number(it.amount) || 0) / fxRateOf(it.currency)
       byProduct.set(it.product_name, a)
     })
   })
@@ -961,7 +1001,7 @@ app.get('/api/contracts-legacy', (req, res) => {
   const list = rows.map((i) => {
     const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(i.id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
     const totals = fmtTotals(items)
-    const usd = totals.reduce((s, x) => s + x.total / (FX2[x.currency] || 1), 0)
+    const usd = totals.reduce((s, x) => s + x.total / fxRateOf(x.currency), 0)
     const cycle = (i.won_date && i.date) ? Math.round((Date.parse(String(i.won_date)) - Date.parse(String(i.date))) / 86400000) : null
     return { ...i, items, itemCount: items.length, totals, usdApprox: Math.round(usd), cycleDays: cycle, productNames: items.map((x) => x.product_name).join(' / ') }
   })
@@ -990,7 +1030,9 @@ app.get('/api/contracts-legacy', (req, res) => {
 })
 
 // —— 询报价管理：列表（筛选/统计/详情/编辑/删除） ——
-const FX2: Record<string, number> = { USD: 1, CNY: 7.12, EUR: 0.92 }
+/** 币种是否合法（以设置里维护的币种清单为准） */
+const isCurrency = (v: unknown) => currencyCodes().includes(str(v).trim().toUpperCase())
+const normCurrency = (v: unknown, dft = 'USD') => (isCurrency(v) ? str(v).trim().toUpperCase() : dft)
 
 /** 询价状态自动判定：有销售订单 → 已成单；标记未成单 → 未成单（必填原因）；其余 → 跟进中 */
 export type InquiryStatus = 'won' | 'lost' | 'following'
@@ -998,7 +1040,7 @@ const inquiryStatus = (hasOrder: boolean, isLost: unknown): InquiryStatus => (ha
 function fmtTotals(items: { currency: string; amount: number }[]): { currency: string; total: number }[] {
   const m = new Map<string, number>()
   items.forEach((it) => m.set(it.currency, (m.get(it.currency) ?? 0) + (num(it.amount) ?? 0)))
-  return Array.from(m.entries()).map(([currency, total]) => ({ currency, total })).sort((a, b) => ['USD', 'CNY', 'EUR'].indexOf(a.currency) - ['USD', 'CNY', 'EUR'].indexOf(b.currency))
+  return Array.from(m.entries()).map(([currency, total]) => ({ currency, total })).sort((a, b) => currencyCodes().indexOf(a.currency) - currencyCodes().indexOf(b.currency))
 }
 app.get('/api/inquiries', (req, res) => {
   const d = getDb()
@@ -1121,7 +1163,7 @@ app.put('/api/inquiries/:id', (req, res) => {
   const itemsProvided = Array.isArray(req.body?.items)
   const items = itemsProvided ? (req.body.items as unknown[]) : []
   const clean = items
-    .map((it, i) => ({ productName: str((it as { productName?: unknown }).productName), qty: num((it as { qty?: unknown }).qty), amount: num((it as { amount?: unknown }).amount) ?? 0, currency: ['USD', 'CNY', 'EUR'].includes(str((it as { currency?: unknown }).currency)) ? str((it as { currency?: unknown }).currency) : 'USD', sort: i + 1 }))
+    .map((it, i) => ({ productName: str((it as { productName?: unknown }).productName), qty: num((it as { qty?: unknown }).qty), amount: num((it as { amount?: unknown }).amount) ?? 0, currency: normCurrency((it as { currency?: unknown }).currency), sort: i + 1 }))
     .filter((x) => x.productName && x.amount > 0)
   if (itemsProvided && !clean.length) return fail(res, '至少一行产品（产品名称与金额>0）')
   if (clean.some((it) => it.qty != null && it.qty < 0)) return fail(res, '数量不能为负数')

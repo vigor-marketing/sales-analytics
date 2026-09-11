@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { del, get, post, put } from './api'
 import PriceHistoryModal from './PriceHistory'
+import { currencyOptions, FALLBACK_CURRENCIES } from './currencies'
 
 interface Prod {
   id: string; name: string; currency: string; last_amount: number | null; last_qty: number | null
@@ -8,7 +9,8 @@ interface Prod {
   prev_amount?: number | null; prev_qty?: number | null; prev_currency?: string | null
   amount_delta?: number | null; change_count?: number; version?: number
 }
-const CURS = ['USD', 'CNY', 'EUR']
+const CURS = FALLBACK_CURRENCIES  // 兜底；实际以后端配置的币种为准
+interface Cur { code: string; rate: number }
 const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
 
 export default function ProductArchive() {
@@ -17,6 +19,7 @@ export default function ProductArchive() {
   const [msg, setMsg] = useState(''); const [msgErr, setMsgErr] = useState(false)
   const say = (text: string, isErr = false) => { setMsg(text); setMsgErr(isErr) }
   const [busy, setBusy] = useState(false)
+  const [currencies, setCurrencies] = useState<string[]>(CURS)
   const [edit, setEdit] = useState<Prod | null>(null)
   const [histOf, setHistOf] = useState<Prod | null>(null)
   const [add, setAdd] = useState({ name: '', currency: 'USD', lastAmount: '' })
@@ -24,6 +27,8 @@ export default function ProductArchive() {
     try { setRows(await get<Prod[]>(`/products${q ? `?q=${encodeURIComponent(q)}` : ''}`)) } catch (e) { setMsg((e as Error).message) }
   }, [q])
   useEffect(() => { void load() }, [load])
+  // 币种清单（字段与选项设置里维护）
+  useEffect(() => { get<Cur[]>('/currencies').then((l) => setCurrencies(currencyOptions((l || []).map((x) => x.code), undefined))).catch(() => setCurrencies(CURS)) }, [])
   const doDelete = async (p: Prod) => {
     if (!window.confirm(`删除产品档案「${p.name}」？（历史询价中的名称不受影响）`)) return
     setBusy(true)
@@ -46,7 +51,7 @@ export default function ProductArchive() {
       {msg && <div className={`msg ${msgErr ? 'err' : 'ok'}`}>{msg}</div>}
       <div className="row" style={{ marginTop: 10, alignItems: 'flex-end' }}>
         <div className="col grow1"><label>新增产品（手动）</label><input className="sa" style={{ width: '100%' }} value={add.name} onChange={(e) => setAdd({ ...add, name: e.target.value })} placeholder="产品名称" /></div>
-        <div className="col w1"><label>币种</label><select className="sa" value={add.currency} onChange={(e) => setAdd({ ...add, currency: e.target.value })}>{CURS.map((c) => <option key={c}>{c}</option>)}</select></div>
+        <div className="col w1"><label>币种</label><select className="sa" value={add.currency} onChange={(e) => setAdd({ ...add, currency: e.target.value })}>{currencyOptions(currencies, add.currency).map((c) => <option key={c}>{c}</option>)}</select></div>
         <div className="col w1"><label>参考金额（选填）</label><input className="sa" type="number" value={add.lastAmount} onChange={(e) => setAdd({ ...add, lastAmount: e.target.value })} /></div>
         <button className="btn pri" onClick={() => void doAdd()}>添加</button>
       </div>
@@ -90,7 +95,7 @@ export default function ProductArchive() {
           </tbody>
         </table>
       </div>
-      {edit && <EditModal p={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); void load() }} />}
+      {edit && <EditModal p={edit} currencies={currencies} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); void load() }} />}
       {histOf && <PriceHistoryModal name={histOf.name} info={{ last_amount: histOf.last_amount, currency: histOf.currency, last_qty: histOf.last_qty, use_count: histOf.use_count }} onClose={() => setHistOf(null)} />}
     </div>
     </div>
@@ -98,7 +103,7 @@ export default function ProductArchive() {
 }
 
 /** 价格变动记录：每次录入金额/数量发生变化都会留痕（含来源询价、客户、销售） */
-function EditModal({ p, onClose, onSaved }: { p: Prod; onClose: () => void; onSaved: () => void }) {
+function EditModal({ p, currencies, onClose, onSaved }: { p: Prod; currencies: string[]; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState(p.name)
   const [currency, setCurrency] = useState(p.currency)
   const [lastAmount, setLastAmount] = useState(p.last_amount == null ? '' : String(p.last_amount))
@@ -117,7 +122,7 @@ function EditModal({ p, onClose, onSaved }: { p: Prod; onClose: () => void; onSa
         {err && <div className="msg err">{err}</div>}
         <div className="row" style={{ marginTop: 8 }}>
           <div className="col grow1"><label>产品名称</label><input className="sa" style={{ width: '100%' }} value={name} onChange={(e) => setName(e.target.value)} /></div>
-          <div className="col w1"><label>币种</label><select className="sa" value={currency} onChange={(e) => setCurrency(e.target.value)}>{CURS.map((c) => <option key={c}>{c}</option>)}</select></div>
+          <div className="col w1"><label>币种</label><select className="sa" value={currency} onChange={(e) => setCurrency(e.target.value)}>{currencyOptions(currencies, currency).map((c) => <option key={c}>{c}</option>)}</select></div>
           <div className="col w1"><label>参考金额</label><input className="sa" type="number" value={lastAmount} onChange={(e) => setLastAmount(e.target.value)} /></div>
         </div>
         <div className="actions" style={{ marginTop: 10 }}><button className="btn pri" onClick={() => void save()}>保存</button></div>

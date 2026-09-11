@@ -278,3 +278,80 @@ export function ensurePeople(): void {
   ]
   seed.forEach((x) => ins.run(x[0], x[1], x[2], x[3], x[4]))
 }
+
+
+/* ===== 币种（可增删改）与其折算汇率 =====
+ * rate 语义：1 USD = rate 个该币种（与前台 fx 一致，USD 固定为基准 1） */
+export const DEFAULT_CURRENCIES: { code: string; rate: number }[] = [
+  { code: 'USD', rate: 1 },
+  { code: 'CNY', rate: 7.12 },
+  { code: 'EUR', rate: 0.92 },
+]
+
+export function getCurrencies(): { code: string; rate: number }[] {
+  try {
+    const arr = JSON.parse(getSetting('currencies', ''))
+    if (Array.isArray(arr) && arr.length) {
+      const list = arr
+        .map((x) => ({ code: text((x as { code?: unknown }).code).trim().toUpperCase(), rate: Number((x as { rate?: unknown }).rate) }))
+        .filter((x) => x.code && Number.isFinite(x.rate) && x.rate > 0)
+      if (list.length) {
+        // USD 永远是基准（rate = 1），保证折算口径稳定
+        const usd = list.find((x) => x.code === 'USD')
+        if (usd) usd.rate = 1
+        else list.unshift({ code: 'USD', rate: 1 })
+        return list
+      }
+    }
+  } catch { /* 用默认值 */ }
+  return DEFAULT_CURRENCIES.map((x) => ({ ...x }))
+}
+
+export function saveCurrencies(list: { code: string; rate: number }[]): void {
+  const clean = list
+    .map((x) => ({ code: text(x.code).trim().toUpperCase().slice(0, 10), rate: Number(x.rate) }))
+    .filter((x) => x.code && Number.isFinite(x.rate) && x.rate > 0 && x.rate <= 1e6)
+    .slice(0, 30)
+  const usd = clean.find((x) => x.code === 'USD')
+  if (usd) usd.rate = 1
+  else clean.unshift({ code: 'USD', rate: 1 })
+  setSetting('currencies', JSON.stringify(clean))
+}
+
+/** 币种代码列表（顺序即前台下拉顺序） */
+export function currencyCodes(): string[] {
+  return getCurrencies().map((x) => x.code)
+}
+/** 1 USD = ? 该币种；未知币种按 1:1 处理，避免折算成 0 */
+export function fxRates(): Record<string, number> {
+  const m: Record<string, number> = {}
+  getCurrencies().forEach((x) => { m[x.code] = x.rate })
+  return m
+}
+export function fxRateOf(code: string): number {
+  const r = fxRates()[text(code).trim().toUpperCase()]
+  return r && r > 0 ? r : 1
+}
+/** 币种改名：历史数据里的旧代码一起迁移，避免记录里留下字典外的币种 */
+export function renameCurrencyInData(oldCode: string, newCode: string): void {
+  const d = getDb()
+  const o = text(oldCode).trim().toUpperCase(); const n = text(newCode).trim().toUpperCase()
+  if (!o || !n || o === n) return
+  d.prepare('UPDATE inquiry_items SET currency = ? WHERE currency = ?').run(n, o)
+  d.prepare('UPDATE inquiries SET fee_currency = ? WHERE fee_currency = ?').run(n, o)
+  d.prepare('UPDATE products SET currency = ? WHERE currency = ?').run(n, o)
+  d.prepare('UPDATE orders SET currency = ? WHERE currency = ?').run(n, o)
+  d.prepare('UPDATE product_prices SET currency = ? WHERE currency = ?').run(n, o)
+  d.prepare('UPDATE product_prices SET prev_currency = ? WHERE prev_currency = ?').run(n, o)
+}
+/** 某币种被多少条数据使用（删除前提示用） */
+export function currencyUsage(code: string): number {
+  const d = getDb()
+  const c = text(code).trim().toUpperCase()
+  const q = (sql: string) => (d.prepare(sql).get(c) as { n: number }).n
+  return q('SELECT COUNT(*) AS n FROM inquiry_items WHERE currency = ?')
+    + q('SELECT COUNT(*) AS n FROM inquiries WHERE fee_currency = ?')
+    + q('SELECT COUNT(*) AS n FROM products WHERE currency = ?')
+    + q('SELECT COUNT(*) AS n FROM orders WHERE currency = ?')
+    + q('SELECT COUNT(*) AS n FROM product_prices WHERE currency = ?')
+}
