@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { get, post } from './api'
+import { useState } from 'react'
+import { post } from './api'
 
 export interface SaActor {
   username: string; name: string; cnName: string; role: string; roleLabel: string
@@ -9,11 +9,8 @@ export interface SaActor {
 }
 export const SCOPE_LABEL: Record<SaActor['scope'], string> = { all: '全部数据', team: '本组数据', self: '只看自己' }
 
-/** 登录页：用工作台账号密码登录（服务端再向工作台校验，本系统不存密码） */
+/** 登录页：本系统自带的简单登录入口（账号在服务端 server/.env 配置；后续再与工作台合并单点登录） */
 export default function Login({ onDone }: { onDone: (a: SaActor) => void }) {
-  // 登录入口：暂时借用工作台（工作台未登录时首页即登录页），后续工作台开放单点登录再合并为免密跳转
-  const [cfg, setCfg] = useState<{ workbenchBase: string; workbenchLoginUrl: string; note: string } | null>(null)
-  useEffect(() => { get<{ workbenchBase: string; workbenchLoginUrl: string; note: string }>('/auth/config').then(setCfg).catch(() => { /* 拿不到就只显示表单 */ }) }, [])
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -33,18 +30,12 @@ export default function Login({ onDone }: { onDone: (a: SaActor) => void }) {
           <span className="sa-logo" style={{ width: 34, height: 34 }}>销</span>
           <div>
             <b style={{ fontSize: 16 }}>销售数据分析</b>
-            <div className="hint">请用工作台账号登录（岗位决定数据范围）</div>
+            <div className="hint">本系统登录入口 · 账号由管理员配置（权限按岗位范围）</div>
           </div>
         </div>
-        {cfg && (
-          <div style={{ marginTop: 12, padding: '8px 10px', background: '#f6f8fd', border: '1px solid var(--line)', borderRadius: 8 }}>
-            <div className="hint" style={{ marginBottom: 6 }}>登录入口暂时借用工作台（{cfg.workbenchLoginUrl}）；没有账号或忘记密码请在工作台处理，后续工作台开放单点登录后会合并为免密跳转。</div>
-            <button className="btn sm" onClick={() => window.open(cfg.workbenchLoginUrl, '_blank', 'noopener')}>打开工作台登录页 ↗</button>
-          </div>
-        )}
         <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div className="col"><label>账号</label>
-            <input className="sa" style={{ width: '100%' }} value={username} autoFocus placeholder="工作台账号（如 vera）"
+            <input className="sa" style={{ width: '100%' }} value={username} autoFocus placeholder="账号（如 admin）"
               onChange={(e) => setUsername(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void submit() }} />
           </div>
           <div className="col"><label>密码</label>
@@ -54,6 +45,9 @@ export default function Login({ onDone }: { onDone: (a: SaActor) => void }) {
           {err && <div className="msg err">{err}</div>}
           <button className="btn pri" disabled={busy} onClick={() => void submit()}>{busy ? '登录中…' : '登录'}</button>
           <div className="hint">数据范围：总经理 / 分管销售副总 → 全部数据；销售经理 / 部门负责人 → 本组数据；销售员 → 只看自己的（组长只看不改别人的）。</div>
+          <div className="hint" style={{ borderTop: '1px dashed var(--line)', paddingTop: 8 }}>
+            没有账号或忘记密码请联系管理员；后续与工作台合并单点登录后，此处会改为免密登录。
+          </div>
         </div>
       </div>
     </div>

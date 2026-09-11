@@ -32,8 +32,6 @@ loadEnvFile(path.join(__dirname, '..', '..', '.env'))
 /** 工作台（vigor-workbench-platform）组织架构对接配置 */
 const WORKBENCH_BASE = (process.env.WORKBENCH_BASE ?? 'http://1.15.91.150').replace(/\/+$/, '')
 const WORKBENCH_TOKEN = process.env.ORG_PICKER_TOKEN ?? process.env.WORKBENCH_PICKER_TOKEN ?? ''
-/** 工作台前端入口（登录页所在地址，实际使用 http://1.15.91.150/todos） */
-const WORKBENCH_HOME = (process.env.WORKBENCH_HOME ?? `${WORKBENCH_BASE}/todos`).replace(/\/+$/, '')
 
 const app = express()
 app.use(cors())
@@ -101,6 +99,19 @@ function upsertProducts(
     }
   })
 }
+/** 首次启动没有配置任何登录账号时，生成一个管理员账号并写回 server/.env（可随时改成自己的密码） */
+function bootstrapLocalAdmin(): void {
+  if (localLoginUsers().length) return
+  try {
+    const pw = `sa-${randomBytes(6).toString('base64url')}`
+    const line = `\n# （自动生成）本系统登录账号：用户名:密码:显示名:范围\nLOCAL_LOGIN_USERS=admin:${pw}:管理员:all\n`
+    const file = path.join(__dirname, '..', '.env')
+    writeFileSync(file, (existsSync(file) ? readFileSyncSafe(file) : '') + line)
+    process.env.LOCAL_LOGIN_USERS = `admin:${pw}:管理员:all`
+    console.log(`[auth] 已生成初始登录账号：admin / ${pw}（已写入 server/.env，请尽快修改密码）`)
+  } catch (e) { console.log(`[auth] 生成初始账号失败：${(e as Error).message}`) }
+}
+
 /** 启动清理：删掉指向已不存在询价的明细行；清掉 24 小时内未被任何记录引用的上传文件 */
 function cleanupOrphans(): void {
   try {
@@ -146,7 +157,7 @@ const isDate = (v: string) => {
 const fail = (res: express.Response, msg: string, st = 400) => res.status(st).json({ ok: false, error: msg })
 
 /** /api/* 统一鉴权（注册在所有路由之前）：除登录接口外都必须带工作台会话 */
-const AUTH_OPEN = ['/auth/login', '/auth/config']
+const AUTH_OPEN = ['/auth/login']
 app.use('/api', (req, res, next) => {
   if (AUTH_OPEN.includes(req.path)) return next()
   const actor = actorOf(req)
@@ -448,7 +459,7 @@ app.get('/api/org/local', (_req, res) => ok(res, { base: WORKBENCH_BASE, tokenCo
 
 // ============================ 登录与权限（工作台 SSO + 数据范围） ============================
 /**
- * 登录：用工作台账号密码调 POST {工作台}/api/auth/login，拿到岗位/部门/小组后在本系统建会话。
+ * 登录：本系统自带的简单登录入口（账号写在 server/.env 的 LOCAL_LOGIN_USERS，登录接口不再调用工作台）。
  * 数据范围（读）：总经理/副总/管理员＝全部；部门负责人或经理＝本组；其他人＝自己。
  * 写入范围：只有「全部」权限可以改别人的；组长能看到本组，但只能改自己的（需求：组长只看不改别人的）。
  */
@@ -523,6 +534,22 @@ async function workbenchPeopleIndex(): Promise<Map<string, { name: string; cnNam
   })
   return m
 }
+/**
+ * 应急/临时本地账号（可选）：server/.env 里配 LOCAL_LOGIN_USERS
+ * 格式：用户名:密码:显示名:范围(all|team|self)[:小组]，多条用英文逗号分隔
+ * 例：LOCAL_LOGIN_USERS=vera:Passw0rd!:Vera:self,admin:Passw0rd!:管理员:all
+ * 说明：这是「单独可用」的临时登录入口，工作台恢复单点登录后可整行删除。
+ */
+function localLoginUsers(): { username: string; password: string; name: string; scope: SaScope; team: string }[] {
+  const raw = String(process.env.LOCAL_LOGIN_USERS ?? '').trim()
+  if (!raw) return []
+  return raw.split(',').map((x) => x.trim()).filter(Boolean).map((item) => {
+    const [username = '', password = '', name = '', scopeRaw = 'self', team = ''] = item.split(':')
+    const scope: SaScope = scopeRaw === 'all' || scopeRaw === 'team' || scopeRaw === 'self' ? scopeRaw : 'self'
+    return { username: username.trim(), password, name: (name || username).trim(), scope, team: team.trim() }
+  }).filter((u) => u.username && u.password)
+}
+
 /** 岗位 → 数据范围 */
 function scopeFor(u: { role?: string; department?: string; departmentHead?: boolean; isAdmin?: boolean }): { scope: SaScope; reason: string } {
   const role = String(u.role || '')
@@ -531,44 +558,23 @@ function scopeFor(u: { role?: string; department?: string; departmentHead?: bool
   if (u.departmentHead || /manager|head|lead|经理|主管|负责人/i.test(role)) return { scope: 'team', reason: '组长 / 部门负责人' }
   return { scope: 'self', reason: '个人' }
 }
-// —— 登录入口信息（公开）：本系统暂时借用工作台登录入口，后续工作台开放单点登录后再合并 ——
-app.get('/api/auth/config', (_req, res) => ok(res, {
-  workbenchBase: WORKBENCH_BASE,
-  // 工作台是单页应用：未登录时首页即为登录页
-  workbenchLoginUrl: WORKBENCH_HOME,
-  mode: 'borrow',
-  note: '当前借用工作台账号登录（账号密码由工作台校验，本系统不存密码）；工作台开放单点登录后会合并为免密跳转。',
-}))
-
-// —— 登录（工作台账号）——
-app.post('/api/auth/login', async (req, res) => {
+// —— 登录（本系统自带的简单登录入口；账号在 server/.env 的 LOCAL_LOGIN_USERS 里配置）——
+app.post('/api/auth/login', (req, res) => {
   const username = str(req.body?.username).trim(); const password = str(req.body?.password)
   if (!username || !password) return fail(res, '请输入账号和密码')
-  try {
-    const r = await fetch(`${WORKBENCH_BASE}/api/auth/login`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }),
-    })
-    const body = await r.json().catch(() => ({})) as { user?: Record<string, unknown>; message?: string; error?: string }
-    if (!r.ok || !body?.user) return fail(res, body?.message || body?.error || '工作台账号或密码不正确', 401)
-    const u = body.user as { username?: string; displayName?: string; role?: string; department?: string; teamName?: string; departmentHead?: boolean; isAdmin?: boolean }
-    // 账号 → 本系统销售名（英文名）：优先按 id/英文名匹配工作台人员清单
-    let name = String(u.displayName || u.username || ''); let cnName = ''; let team = String(u.teamName || ''); let department = String(u.department || ''); let roleLabel = ''
-    try {
-      const idx = await workbenchPeopleIndex()
-      const hit = idx.get(String(u.username || '').toLowerCase()) || idx.get(name.toLowerCase())
-      if (hit) { name = hit.name || name; cnName = hit.cnName; team = hit.team || team; department = hit.department || department; roleLabel = hit.roleLabel }
-    } catch { /* 工作台组织接口不可用时，退回账号自带信息 */ }
-    const { scope, reason } = scopeFor({ role: u.role, department, departmentHead: u.departmentHead, isAdmin: u.isAdmin })
-    const actor: SaActor = {
-      username: String(u.username || ''), name, cnName, role: String(u.role || ''), roleLabel,
-      department, team, head: !!u.departmentHead, isAdmin: !!u.isAdmin, scope, reason,
-      readNames: null, writeNames: null,
-    }
-    const full = { ...actor, ...scopeOf(actor) }
-    const token = signSession({ actor: full })
-    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_HOURS * 3600}`)
-    ok(res, { actor: full, sessionHours: SESSION_HOURS })
-  } catch (e) { fail(res, `无法连接工作台登录：${(e as Error).message}`, 502) }
+  const users = localLoginUsers()
+  if (!users.length) return fail(res, '本系统还没有配置登录账号，请在服务端 server/.env 的 LOCAL_LOGIN_USERS 里添加', 503)
+  const hit = users.find((u) => u.username.toLowerCase() === username.toLowerCase() && u.password === password)
+  if (!hit) return fail(res, '账号或密码不正确', 401)
+  const actor: SaActor = {
+    username: hit.username, name: hit.name, cnName: '', role: 'local', roleLabel: '系统账号',
+    department: '', team: hit.team, head: hit.scope !== 'self', isAdmin: hit.scope === 'all',
+    scope: hit.scope, reason: '本系统账号', readNames: null, writeNames: null,
+  }
+  const full = { ...actor, ...scopeOf(actor) }
+  const token = signSession({ actor: full })
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_HOURS * 3600}`)
+  ok(res, { actor: full, sessionHours: SESSION_HOURS, mode: 'local' })
 })
 app.get('/api/auth/session', (req, res) => {
   const a = actorOf(req)
@@ -1709,7 +1715,7 @@ app.put('/api/inquiries/:id', (req, res) => {
 // 询报价不允许删除（如需作废请在编辑中处理；成交以订单为准）
 app.delete('/api/inquiries/:id', (_req, res) => fail(res, '询报价不允许删除', 403))
 
-schema(); ensurePeople(); backfillProducts(); syncWonFlags()
+schema(); ensurePeople(); backfillProducts(); syncWonFlags(); bootstrapLocalAdmin()
 // 注：历史成交迁移 migrateWonToOrders() 已不再随启动自动执行（避免废弃列 is_won 反向物化订单）；
 // 如需迁移旧库，可手动调用一次。
 cleanupOrphans()
