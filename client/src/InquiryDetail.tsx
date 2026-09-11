@@ -3,7 +3,7 @@ import { get } from './api'
 import { StatusChip } from './StatusChip'
 import PriceHistoryModal from './PriceHistory'
 import FeeHistoryModal, { type FeeVersion } from './FeeHistoryModal'
-import GuidanceNote from './Guidance'
+import InquiryFollowupsModal from './InquiryFollowupsModal'
 
 interface TotalItem { currency: string; total: number }
 interface Detail {
@@ -52,6 +52,8 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
   const [fuLoaded, setFuLoaded] = useState(false)
   const [histName, setHistName] = useState<string | null>(null)
   const [feeHist, setFeeHist] = useState(false)
+  // 「跟进简述」列的「查看详情」：打开与询报价管理/询报价跟进共用的跟进详情弹窗（详情+图片+附件+指导）
+  const [fuDetail, setFuDetail] = useState(false)
   useEffect(() => { get<Detail>(`/inquiries/${id}`).then(setD).catch((e) => setErr((e as Error).message)) }, [id])
   useEffect(() => {
     setFuLoaded(false)
@@ -212,6 +214,7 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
             </div>
 
             {feeHist && <FeeHistoryModal inquiryId={id} inquiryNo={d?.inquiry_no} onClose={() => setFeeHist(false)} />}
+            {fuDetail && <InquiryFollowupsModal inquiryId={id} inquiryNo={d?.inquiry_no || ''} customerName={d?.customer_name} onClose={() => setFuDetail(false)} />}
 
             {histName && <PriceHistoryModal name={histName} info={(() => { const pr = products.find((x) => x.name === histName); return pr ? { last_amount: pr.last_amount, currency: pr.currency, last_qty: pr.last_qty, use_count: pr.use_count } : undefined })()} onClose={() => setHistName(null)} />}
 
@@ -220,16 +223,16 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <span style={{ fontWeight: 700 }}>跟进记录</span>
                 <span className="badge">{fuLoaded ? `${fus.length} 条` : '加载中…'}</span>
-                <span className="hint">来自「询报价跟进」页：按销售 + 询价号录入的记录会实时显示在这里</span>
+                <span className="hint">来自「询报价跟进」页：按销售 + 询价号录入的记录会实时显示在这里；点「查看详情」看具体内容、图片、附件与跟进指导</span>
               </div>
               {fus.length > 0 ? (
                 <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 8 }}>
                   <table className="grid fit-table" style={{ borderCollapse: 'collapse', fontSize: 12.5 }}>
                     <colgroup>
-                      <col style={{ width: '7%' }} /><col style={{ width: '11%' }} /><col style={{ width: '6%' }} /><col style={{ width: '11%' }} /><col style={{ width: '16%' }} /><col style={{ width: '6%' }} />
-                      <col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '8%' }} /><col style={{ width: '6%' }} /><col style={{ width: '8%' }} />
+                      <col style={{ width: '10%' }} /><col style={{ width: '14%' }} /><col style={{ width: '8%' }} /><col style={{ width: '30%' }} />
+                      <col style={{ width: '12%' }} /><col style={{ width: '8%' }} /><col style={{ width: '18%' }} />
                     </colgroup>
-                    <thead><tr>{['跟进日期', '第几次跟进', '方式', '简述', '具体内容', '图片', '附件', '跟进指导', '下次跟进', '跟进人', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+                    <thead><tr>{['跟进日期', '第几次跟进', '方式', '跟进简述', '下次跟进', '跟进人', '录入时间'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
                     <tbody>
                       {fus.map((f) => (
                         <tr key={f.id} style={{ borderBottom: '1px solid var(--line2)' }}>
@@ -244,26 +247,15 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                               : '—'}
                           </td>
                           <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.method || '—'}</td>
-                          <td style={{ padding: '6px 8px' }}>{f.summary || '—'}</td>
-                          <td style={{ padding: '6px 8px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{f.detail || '—'}</td>
+                          {/* 简述 + 查看详情：具体内容、图片、附件、跟进指导都在详情弹窗里看，表格内不再展开 */}
                           <td style={{ padding: '6px 8px' }}>
-                            {(f.photos || []).length === 0 ? '—' : (
-                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                {f.photos.map((u) => (
-                                  <a key={u} href={u} target="_blank" rel="noreferrer" title="点击查看原图">
-                                    <img src={u} alt="跟进图片" style={{ width: 46, height: 34, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line)' }} />
-                                  </a>
-                                ))}
-                              </div>
-                            )}
+                            <div style={{ fontWeight: 600 }}>{f.summary || '—'}</div>
+                            <button className="btn xs" style={{ marginTop: 4 }}
+                              title="查看该条跟进的完整信息：具体跟进内容、图片、附件、跟进指导"
+                              onClick={() => setFuDetail(true)}>
+                              查看详情{(f.comments ?? []).length ? `（指导 ${(f.comments ?? []).length}）` : ''}{((f.photos ?? []).length + (f.attachments ?? []).length) ? `（附 ${(f.photos ?? []).length + (f.attachments ?? []).length}）` : ''}
+                            </button>
                           </td>
-                          <td style={{ padding: '6px 8px' }}>
-                            {(f.attachments || []).length === 0 ? '—' : f.attachments.map((a) => (
-                              <div key={a.url}><a className="mono" href={a.url} target="_blank" rel="noreferrer">{a.name || '附件'}</a></div>
-                            ))}
-                          </td>
-                          {/* 跟进指导：此处只读查看，醒目标注；新增/追加在「询报价跟进」页 */}
-                          <td style={{ padding: '6px 8px' }}><GuidanceNote all comments={f.comments} /></td>
                           <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.next_followup_at || '—'}</td>
                           <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.by_name || '—'}</td>
                           <td className="mono hint" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{String(f.created_at || '').slice(0, 16).replace('T', ' ')}</td>
@@ -271,6 +263,9 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                       ))}
                     </tbody>
                   </table>
+                  <div className="hint" style={{ marginTop: 6 }}>
+                    点「查看详情」可查看该询价的完整跟进记录：具体跟进内容、图片、附件与全部跟进指导（表格内不再展开）。
+                  </div>
                 </div>
               ) : (
                 <div className="hint" style={{ marginTop: 6 }}>{fuLoaded ? '该询价暂无跟进记录（可到「询报价跟进」页按销售 + 询价号录入）' : '加载中…'}</div>
