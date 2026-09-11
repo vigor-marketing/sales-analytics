@@ -28,11 +28,9 @@ const money = (n: number | null | undefined) => (n == null ? '—' : Math.round(
 const DEFAULT_METHODS = ['电话', '邮件', '微信', '拜访', '展会', '其他']
 const today = () => new Date().toISOString().slice(0, 10)
 
-export default function FollowUps({ meta, target, resetSignal, onDetailChange }: {
+export default function FollowUps({ meta, target }: {
   meta: MetaLite
   target?: { sales: string; no: string } | null
-  resetSignal?: number
-  onDetailChange?: (open: boolean) => void
 }) {
   const methods = meta.methods?.length ? meta.methods : DEFAULT_METHODS
   const [sales, setSales] = useState('')
@@ -58,15 +56,6 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
   const [formOpen, setFormOpen] = useState(false)
   const formRef = useRef<HTMLDivElement | null>(null)
   const sumRef = useRef<HTMLInputElement | null>(null)
-
-  // 详情打开状态上报（用于页面右上角显示「返回询报价跟进」）
-  useEffect(() => { onDetailChange?.(Boolean(hit)) }, [hit, onDetailChange])
-  // 页面右上角点了「返回询报价跟进」：退出详情回到列表
-  useEffect(() => {
-    if (!resetSignal) return
-    setNo(''); setHit(null); setLookErr('')
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }, [resetSignal])
 
   // 进入跟进（仪表盘跳转 / 点击跟进记录行）时保留已选询价，仅手动切换销售才清空
   const keepNoRef = useRef(false)
@@ -176,13 +165,9 @@ export default function FollowUps({ meta, target, resetSignal, onDetailChange }:
 
       {hit && (
         <div style={{ marginTop: 10, border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px', background: '#fbfcff' }}>
-          {/* 进入某个询价的跟进详情后，可一键返回跟进列表 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
             <span style={{ fontWeight: 700, fontSize: 13 }}>跟进详情</span>
             <span className="hint">询价 {hit.inquiry_no}</span>
-            <span style={{ flex: 1 }} />
-            <button className="btn sm" title="返回询报价跟进列表"
-              onClick={() => { setNo(''); setHit(null); setLookErr(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>← 返回跟进列表</button>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', fontSize: 13 }}>
             <span>询价号 <b className="mono">{hit.inquiry_no}</b></span>

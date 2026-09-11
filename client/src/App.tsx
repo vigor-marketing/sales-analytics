@@ -124,11 +124,6 @@ export default function App() {
   const [page, setPage] = useState<PageKey>(() => initialPage())
   // 仪表盘「去跟进」：跳到跟进页并带出该询价
   const [followTarget, setFollowTarget] = useState<{ sales: string; no: string } | null>(null)
-  // 跟进详情是否打开 + 关闭信号（用于页面右上角「返回询报价跟进」）
-  const [followDetailOpen, setFollowDetailOpen] = useState(false)
-  const [followReset, setFollowReset] = useState(0)
-  // 页面访问历史：让子页面能「返回上一页」
-  const [pageHist, setPageHist] = useState<PageKey[]>([])
   // Esc 键关闭最上层弹窗（所有弹窗都用 .modal-mask，点遮罩空白处即可关闭）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -144,21 +139,7 @@ export default function App() {
   // 当前页引用：navTo 里需要读到最新页码（在 setState 更新函数里写另一个 state 会被 React 丢弃，故用 ref）
   const pageRef = useRef<PageKey>(page)
   useEffect(() => { pageRef.current = page }, [page])
-  const navTo = useCallback((k: PageKey) => {
-    setFollowDetailOpen(false)
-    const cur = pageRef.current
-    if (k !== cur) setPageHist((h) => [...h.slice(-9), cur])
-    setPage(k)
-  }, [])
-  const goBack = useCallback(() => {
-    setPageHist((h) => {
-      if (!h.length) return h
-      const last = h[h.length - 1]
-      setPage(last)
-      setFollowTarget(null)
-      return h.slice(0, -1)
-    })
-  }, [])
+  const navTo = useCallback((k: PageKey) => { setPage(k) }, [])
   const noT = useRef<HTMLInputElement>(null)
   // 浏览器页签标题跟随当前页面
   useEffect(() => { document.title = `${TITLES[page]} · 销售数据分析` }, [page])
@@ -281,30 +262,12 @@ export default function App() {
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) } finally { setBusy(false) }
   }
 
-  // 页头右侧：所有页面都提供「返回上一级」（从哪个页面来的就返回哪个页面）
-  const headRight = (() => {
-    const prev = pageHist[pageHist.length - 1]
-    const inDetail = page === 'followups' && followDetailOpen
-    if (!prev && !inDetail) return undefined
-    return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-        {prev && <button className="btn sm" onClick={goBack} title={`返回上一级：${TITLES[prev]}`}>← 返回 {TITLES[prev]}</button>}
-        {/* 在某个询价的跟进详情里：额外提供「退出详情」，回到跟进列表 */}
-        {inDetail && (
-          <button className="btn sm" onClick={() => setFollowReset((n) => n + 1)} title="退出当前询价详情，回到跟进列表">
-            {prev ? '退出详情' : '← 返回询报价跟进'}
-          </button>
-        )}
-      </span>
-    )
-  })()
-
   if (page !== 'entry') return (
-    <Shell page={page} onNav={navTo} headRight={headRight}>
+    <Shell page={page} onNav={navTo}>
       {page === 'manage' && <InquiryManager meta={meta} onGoFollow={(t) => { setFollowTarget(t); navTo('followups') }} />}
       {page === 'dashboard' && <Dashboard people={meta.sales.map((x) => x.name)} onGoFollow={(t) => { setFollowTarget(t); navTo('followups') }} />}
       {page === 'followups' && (
-        <FollowUps meta={meta} target={followTarget} resetSignal={followReset} onDetailChange={setFollowDetailOpen} />
+        <FollowUps meta={meta} target={followTarget} />
       )}
       {page === 'contracts' && <Contracts meta={meta} />}
       {page === 'contractsAnalysis' && <ContractsAnalysis meta={meta} />}
@@ -314,7 +277,7 @@ export default function App() {
     </Shell>
   )
   return (
-    <Shell page={page} onNav={navTo} headRight={headRight}>
+    <Shell page={page} onNav={navTo}>
       {msg && <div className={`msg ${msg.t}`} role="status">{msg.t === 'ok' ? '✔' : '✖'} {msg.text}</div>}
 
       {/* 基本信息（含归属与来源） */}
