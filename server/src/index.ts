@@ -480,6 +480,8 @@ app.post('/api/inquiries', (req, res) => {
   const purchaser = str(req.body?.purchaser)
   const source = str(req.body?.source)
   const handTotal = num(req.body?.totalAmount)
+  // 手填总金额的金额单位（未传按 USD；手填金额为空时不落币种）
+  const newHandTotalCur = str(req.body?.totalAmountCurrency) || 'USD'
   const fees = readFees(req.body as Record<string, unknown>)
   if (fees.err) return fail(res, fees.err)
   const feeCurrency = feeCurrencyOf(req.body?.feeCurrency)
@@ -547,10 +549,10 @@ app.post('/api/inquiries', (req, res) => {
   d.transaction(() => {
     d.prepare('UPDATE customers SET country = COALESCE(?, country), use_location = COALESCE(?, use_location), source = COALESCE(?, source), stars = COALESCE(?, stars), updated_at = ? WHERE id = ?')
       .run(country || null, useLocation || null, source || null, customerStars, t, customerId)
-    d.prepare(`INSERT INTO inquiries (id, inquiry_no, date, customer_id, country, use_location, sales, purchaser, source, hand_total, note,
+    d.prepare(`INSERT INTO inquiries (id, inquiry_no, date, customer_id, country, use_location, sales, purchaser, source, hand_total, hand_total_currency, note,
         is_key_customer, is_key_project, is_won, blockers, action_plan, support_needed, customer_stars, freight, tax, commission, other_fee, fee_currency, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(iid, no, date, customerId, country || customerCountry || null, useLocation || country, sales, purchaser, source, handTotal, note, keyCust, keyProj, isWon, blockers, actionPlan, supportNeeded, customerStars,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(iid, no, date, customerId, country || customerCountry || null, useLocation || country, sales, purchaser, source, handTotal, handTotal == null ? null : normCurrency(newHandTotalCur), note, keyCust, keyProj, isWon, blockers, actionPlan, supportNeeded, customerStars,
         fees.values.freight, fees.values.tax, fees.values.commission, fees.values.otherFee, feeCurrency, t, t)
     const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
     cleanItems.forEach((it) => ins.run(newId(), iid, it.productName, it.qty, it.amount, it.currency, it.sort))
@@ -711,7 +713,7 @@ app.get('/api/orders', (req, res) => {
   if (productQ) { parts.push('EXISTS (SELECT 1 FROM inquiry_items it WHERE it.inquiry_id = i.id AND it.product_name LIKE ? ESCAPE \'!\')'); args.push(likeArg(productQ)) }
   const rows = d.prepare(`SELECT o.id AS order_id, o.order_no, o.won_date, o.amount AS order_amount, o.currency AS order_currency, o.note AS order_note, o.win_reason AS win_reason,
       o.created_at AS order_created_at, o.updated_at AS order_updated_at,
-      i.id AS inquiry_id, i.inquiry_no, i.date, i.sales, i.purchaser, i.source, i.country, i.use_location, i.hand_total, i.is_key_customer, i.is_key_project,
+      i.id AS inquiry_id, i.inquiry_no, i.date, i.sales, i.purchaser, i.source, i.country, i.use_location, i.hand_total, i.hand_total_currency, i.is_key_customer, i.is_key_project,
       i.customer_stars, i.note, i.blockers, i.action_plan, i.support_needed, i.is_lost, i.lost_reason, i.lost_date, i.last_followup_at, i.next_followup_at,
       i.freight, i.tax, i.commission, i.other_fee, i.fee_currency,
       c.name AS customer_name, c.country AS customer_country
@@ -1060,7 +1062,7 @@ app.get('/api/inquiries', (req, res) => {
   if (statusQ === 'following') parts.push('o.id IS NULL AND COALESCE(i.is_lost, 0) = 0')
   const where = parts.length ? `WHERE ${parts.join(' AND ')}` : ''
   const join = 'FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id'
-  const rows = d.prepare(`SELECT i.id, i.inquiry_no, i.date, i.country, i.use_location, i.sales, i.purchaser, i.source, i.hand_total, i.note, i.blockers, i.action_plan, i.support_needed, i.customer_stars, i.is_key_customer, i.is_key_project, i.is_lost, i.lost_reason, i.lost_date, i.last_followup_at, i.next_followup_at, i.created_at,
+  const rows = d.prepare(`SELECT i.id, i.inquiry_no, i.date, i.country, i.use_location, i.sales, i.purchaser, i.source, i.hand_total, i.hand_total_currency, i.note, i.blockers, i.action_plan, i.support_needed, i.customer_stars, i.is_key_customer, i.is_key_project, i.is_lost, i.lost_reason, i.lost_date, i.last_followup_at, i.next_followup_at, i.created_at,
       i.freight, i.tax, i.commission, i.other_fee, i.fee_currency, c.name AS customer_name,
       (SELECT f.summary FROM followups f WHERE f.inquiry_id = i.id ORDER BY f.date DESC, f.created_at DESC, f.rowid DESC LIMIT 1) AS last_followup_summary,
       (SELECT f.detail FROM followups f WHERE f.inquiry_id = i.id ORDER BY f.date DESC, f.created_at DESC, f.rowid DESC LIMIT 1) AS last_followup_detail,
@@ -1128,6 +1130,9 @@ app.put('/api/inquiries/:id', (req, res) => {
   const purchaser = str(req.body?.purchaser) || str(old.purchaser)
   const source = str(req.body?.source) || str(old.source)
   const handTotal = req.body?.totalAmount !== undefined ? num(req.body?.totalAmount) : num(old.hand_total)
+  const handTotalCur = req.body?.totalAmountCurrency !== undefined
+    ? (handTotal == null ? null : normCurrency(req.body?.totalAmountCurrency))
+    : (str(old.hand_total_currency) || null)
   // 费用：只有显式传入才覆盖（与其它字段一致）
   const feePatch = readFees(req.body as Record<string, unknown>)
   if (feePatch.err) return fail(res, feePatch.err)
@@ -1174,10 +1179,10 @@ app.put('/api/inquiries/:id', (req, res) => {
   if (clean.some((it) => it.productName.length > NAME_MAX)) return fail(res, `产品名称过长（最多 ${NAME_MAX} 个字符）`)
   const t = nowIso()
   d.transaction(() => {
-    d.prepare(`UPDATE inquiries SET date = ?, country = ?, use_location = ?, sales = ?, purchaser = ?, source = ?, hand_total = ?, note = ?,
+    d.prepare(`UPDATE inquiries SET date = ?, country = ?, use_location = ?, sales = ?, purchaser = ?, source = ?, hand_total = ?, hand_total_currency = ?, note = ?,
         is_key_customer = ?, is_key_project = ?, is_won = ?, blockers = ?, action_plan = ?, support_needed = ?, customer_stars = ?,
         is_lost = ?, lost_reason = ?, lost_date = ?, freight = ?, tax = ?, commission = ?, other_fee = ?, fee_currency = ?, updated_at = ? WHERE id = ?`)
-      .run(date, country, useLocation, sales, purchaser, source, handTotal, note, keyCust, keyProj, isWon, blockers, actionPlan, supportNeeded, customerStars,
+      .run(date, country, useLocation, sales, purchaser, source, handTotal, handTotalCur, note, keyCust, keyProj, isWon, blockers, actionPlan, supportNeeded, customerStars,
         isLost, lostReason, lostDate, feeVals.freight, feeVals.tax, feeVals.commission, feeVals.otherFee, feeCurrency, t, req.params.id)
     if (itemsProvided) {
       d.prepare('DELETE FROM inquiry_items WHERE inquiry_id = ?').run(req.params.id)

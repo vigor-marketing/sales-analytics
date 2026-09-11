@@ -8,7 +8,7 @@ import GuidanceNote from './Guidance'
 interface TotalItem { currency: string; total: number }
 interface Detail {
   id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string
-  sales: string; purchaser: string; source: string; hand_total: number | null; note: string | null
+  sales: string; purchaser: string; source: string; hand_total: number | null; hand_total_currency?: string | null; note: string | null
   is_key_customer: number; is_key_project: number; is_won: number; status?: 'won' | 'lost' | 'following'
   customer_stars?: number | null; won_date?: string | null; orderNo?: string | null
   last_followup_at?: string | null; next_followup_at?: string | null
@@ -196,7 +196,7 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
               {(d.totals || []).length === 0 && <span className="hint">—</span>}
             </div>
             <div className="row">
-              <div className="col w2"><label>总金额（手填）</label><div className="ro mono">{money2(d.hand_total)}</div></div>
+              <div className="col w2"><label>总金额（手填）</label><div className="ro mono">{d.hand_total == null ? '—' : `${money2(d.hand_total)} ${d.hand_total_currency || 'USD'}`}</div></div>
             </div>
 
             {/* 卡点/行动计划/需要的支持/备注（与录入页一致） */}

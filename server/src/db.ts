@@ -158,6 +158,8 @@ export function schema(): void {
   } catch { /* 已存在 */ }
   // 成交原因（成单时填写，用于成交原因分析）
   try { db.exec('ALTER TABLE orders ADD COLUMN win_reason TEXT') } catch { /* 已存在 */ }
+  // 手填总金额的币种（2026-09 增补：手填总金额此前没有金额单位）
+  try { db.exec('ALTER TABLE inquiries ADD COLUMN hand_total_currency TEXT') } catch { /* 已存在 */ }
   // 丢单原因下拉自带「其他（手动输入）」，历史字典里的裸「其他」属重复项，清理掉
   try {
     for (const key of ['lostReasons', 'winReasons']) {

@@ -14,7 +14,7 @@ interface OrderRow {
   customer_country?: string | null; last_followup_at?: string | null; next_followup_at?: string | null
   use_location?: string | null; country?: string | null
   inquiry_id: string; inquiry_no: string; date: string; sales: string; purchaser: string; source: string
-  customer_name: string; hand_total: number | null; usdApprox: number; totals: { currency: string; total: number }[]
+  customer_name: string; hand_total: number | null; hand_total_currency?: string | null; usdApprox: number; totals: { currency: string; total: number }[]
   productNames: string; itemCount: number; items: Item[]; cycleDays: number | null
 }
 interface MetaLite { currencies?: string[]; sales: { name: string; team: string }[]; purchasers?: string[]; sources?: string[]; winReasons?: string[]; lostReasons?: string[] }
@@ -177,7 +177,7 @@ function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
               <Info label="询价来源" value={d.source} />
               <Info label="标签" value={`${Number(d.is_key_customer) === 1 ? '重点客户 ' : ''}${Number(d.is_key_project) === 1 ? '重点项目' : ''}`.trim() || '—'} />
               <Info label="成交时总报价（自动）" value={`${money(totalQuote + feeTotal)} ${feeTotal > 0 ? feeCur : d.order_currency}${feeTotal > 0 ? `（产品 ${money(totalQuote)} + 费用 ${money(feeTotal)}）` : ''}`} mono />
-              <Info label="询价手填总金额" value={d.hand_total == null ? '—' : money(d.hand_total)} mono />
+              <Info label="询价手填总金额" value={d.hand_total == null ? '—' : `${money(d.hand_total)} ${d.hand_total_currency || 'USD'}`} mono />
             </div>
 
             {/* 产品明细 */}
