@@ -43,7 +43,7 @@ export default function ProductArchive() {
     <div className="card">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0 }}>产品档案</h3>
-        <span className="hint">录入询价时填写的产品会自动沉淀到这里；再次录入若金额/数量发生变化，会记入该产品的「价格记录」</span>
+        <span className="hint">录入询价时填写的产品会自动沉淀到这里；再次录入若单价/数量发生变化，会记入该产品的「价格记录」</span>
         <span style={{ flex: 1 }} />
         <input className="sa" style={{ width: 200 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索产品名称" />
         <button className="btn" onClick={() => void load()}>查询</button>
@@ -52,7 +52,7 @@ export default function ProductArchive() {
       <div className="row" style={{ marginTop: 10, alignItems: 'flex-end' }}>
         <div className="col grow1"><label>新增产品（手动）</label><input className="sa" style={{ width: '100%' }} value={add.name} onChange={(e) => setAdd({ ...add, name: e.target.value })} placeholder="产品名称" /></div>
         <div className="col w1"><label>币种</label><select className="sa" value={add.currency} onChange={(e) => setAdd({ ...add, currency: e.target.value })}>{currencyOptions(currencies, add.currency).map((c) => <option key={c}>{c}</option>)}</select></div>
-        <div className="col w1"><label>参考金额（选填）</label><input className="sa" type="number" value={add.lastAmount} onChange={(e) => setAdd({ ...add, lastAmount: e.target.value })} /></div>
+        <div className="col w1"><label>参考单价（选填）</label><input className="sa" type="number" value={add.lastAmount} onChange={(e) => setAdd({ ...add, lastAmount: e.target.value })} /></div>
         <button className="btn pri" onClick={() => void doAdd()}>添加</button>
       </div>
       <div className="hint" style={{ margin: '8px 0' }}>共 {rows.length} 个产品</div>
@@ -62,13 +62,13 @@ export default function ProductArchive() {
             <col style={{ width: '21%' }} /><col style={{ width: '7%' }} /><col style={{ width: '13%' }} /><col style={{ width: '10%' }} />
             <col style={{ width: '9%' }} /><col style={{ width: '9%' }} /><col style={{ width: '11%' }} /><col style={{ width: '20%' }} />
           </colgroup>
-          <thead><tr>{['产品名称', '币种', '最近报价', '较上次', '最近数量', '使用次数', '最近使用', '操作'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
+          <thead><tr>{['产品名称', '币种', '最近单价', '较上次', '最近数量', '使用次数', '最近使用', '操作'].map((h) => <th key={h} style={{ textAlign: 'left' }}>{h}</th>)}</tr></thead>
           <tbody>
             {rows.map((p) => (
               <tr key={p.id}>
                 <td style={{ fontWeight: 600 }} title={`${p.name}${(p.version ?? 0) > 0 ? `（已记录 ${p.version} 个价格版本）` : ''}`}>{p.name}</td>
                 <td title={p.currency}>{p.currency}</td>
-                <td className="mono" title={`最近报价 ${money(p.last_amount)} ${p.currency}${p.version ? ` · 当前版本 V${p.version}` : ''}`}>
+                <td className="mono" title={`最近单价 ${money(p.last_amount)} ${p.currency}${p.version ? ` · 当前版本 V${p.version}` : ''}`}>
                   {money(p.last_amount)}
                   {(p.version ?? 0) > 0 && <span className="badge new" style={{ marginLeft: 6 }}>V{p.version}</span>}
                 </td>
@@ -102,7 +102,7 @@ export default function ProductArchive() {
   )
 }
 
-/** 价格变动记录：每次录入金额/数量发生变化都会留痕（含来源询价、客户、销售） */
+/** 价格变动记录：每次录入单价/数量发生变化都会留痕（含来源询价、客户、销售） */
 function EditModal({ p, currencies, onClose, onSaved }: { p: Prod; currencies: string[]; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState(p.name)
   const [currency, setCurrency] = useState(p.currency)
@@ -123,7 +123,7 @@ function EditModal({ p, currencies, onClose, onSaved }: { p: Prod; currencies: s
         <div className="row" style={{ marginTop: 8 }}>
           <div className="col grow1"><label>产品名称</label><input className="sa" style={{ width: '100%' }} value={name} onChange={(e) => setName(e.target.value)} /></div>
           <div className="col w1"><label>币种</label><select className="sa" value={currency} onChange={(e) => setCurrency(e.target.value)}>{currencyOptions(currencies, currency).map((c) => <option key={c}>{c}</option>)}</select></div>
-          <div className="col w1"><label>参考金额</label><input className="sa" type="number" value={lastAmount} onChange={(e) => setLastAmount(e.target.value)} /></div>
+          <div className="col w1"><label>参考单价</label><input className="sa" type="number" value={lastAmount} onChange={(e) => setLastAmount(e.target.value)} /></div>
         </div>
         <div className="actions" style={{ marginTop: 10 }}><button className="btn pri" onClick={() => void save()}>保存</button></div>
       </div>

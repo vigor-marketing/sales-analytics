@@ -195,7 +195,8 @@ export default function App() {
 
   const quoteByCur = useMemo(() => {
     const m = new Map<string, number>()
-    items.forEach((it) => { const a = Number(it.amount) || 0; if (a > 0) m.set(it.currency, (m.get(it.currency) ?? 0) + a) })
+    // 行小计 = 金额（单价）× 数量；数量未填/为 0 时按 1 计
+    items.forEach((it) => { const a = (Number(it.amount) || 0) * (Number(it.qty) > 0 ? Number(it.qty) : 1); if (a > 0) m.set(it.currency, (m.get(it.currency) ?? 0) + a) })
     const order = currencyOptions(meta?.currencies, undefined)
     return Array.from(m.entries()).sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
   }, [items])
@@ -267,7 +268,7 @@ export default function App() {
         inquiryNo: no.trim(), date, customerName: customer.trim(), country: country.trim() || undefined, clientId: custId && custId !== '__new__' ? custId : undefined,
         // 新客户：服务端按 newClient 建档（与 customerName 内容一致，兼容两种契约）
         newClient: isNew ? { name: customer.trim(), country: country.trim() || undefined, useLocation: useLoc.trim() || country.trim() || undefined } : undefined,
-        items: items.filter((it) => it.productName.trim() && Number(it.amount) > 0).map((it) => ({ productName: it.productName.trim(), qty: it.qty ? Number(it.qty) : undefined, amount: Number(it.amount), currency: it.currency })),
+        items: items.filter((it) => it.productName.trim() && Number(it.amount) > 0).map((it) => ({ productName: it.productName.trim(), qty: Number(it.qty) > 0 ? Number(it.qty) : 1, amount: Number(it.amount), currency: it.currency })),
         sales, purchaser, source, totalAmount: handTotal ? Number(handTotal) : undefined, totalAmountCurrency: handTotal ? handTotalCur : undefined, note: note.trim() || undefined,
         freight: fees.freight ? Number(fees.freight) : undefined, tax: fees.tax ? Number(fees.tax) : undefined,
         commission: fees.commission ? Number(fees.commission) : undefined, otherFee: fees.otherFee ? Number(fees.otherFee) : undefined, feeCurrency: feeCur,
@@ -394,7 +395,7 @@ export default function App() {
 
       {/* 询价明细 */}
       <div className="card">
-        <h3 className="sec-title">询价明细 <small>可添加多个产品；总报价金额自动合计</small></h3>
+        <h3 className="sec-title">询价明细 <small>可添加多个产品；小计＝单价×数量，总报价自动合计</small></h3>
         <div className="row" style={{ alignItems: 'center', gap: 18, marginBottom: 10 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>重点项目 *</span>
           <label className="chk"><input type="radio" name="kp" checked={keyProj === '1'} onChange={() => setKeyProj('1')} /> <span className="tag kp">是</span></label>
@@ -420,9 +421,14 @@ export default function App() {
               />
             </div>
             <div className="col w1"><label>数量</label><input className="sa" type="number" min="0" value={it.qty} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} /></div>
-            <div className="col w1"><label>金额 *</label><input className="sa" type="number" min="0" value={it.amount} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} /></div>
+            <div className="col w1"><label>单价 *</label><input className="sa" type="number" min="0" value={it.amount} placeholder="单价" onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} /></div>
             <div className="col w1"><label>币种</label>
               <select className="sa" value={it.currency} onChange={(e) => setItems((a) => a.map((x, j) => j === i ? { ...x, currency: e.target.value } : x))}>{currencyOptions(meta?.currencies, it.currency).map((c) => <option key={c}>{c}</option>)}</select>
+            </div>
+            <div className="col w1"><label>小计 <span className="hint">单价×数量</span></label>
+              <div className="ro mono" title={`${money(Number(it.amount) || 0)} × ${Number(it.qty) > 0 ? Number(it.qty) : 1} = ${money((Number(it.amount) || 0) * (Number(it.qty) > 0 ? Number(it.qty) : 1))} ${it.currency}`}>
+                {(() => { const q = Number(it.qty) > 0 ? Number(it.qty) : 1; const v = (Number(it.amount) || 0) * q; return v > 0 ? `${money(v)} ${it.currency}` : '—' })()}
+              </div>
             </div>
             <span className="row-act">
               {items.length > 1 && (
@@ -489,7 +495,7 @@ export default function App() {
             </div>
           )}
           <div className="hint" style={{ display: 'block', marginTop: 6 }}>
-            费用选填，留空按 0 计算；每项费用可各自选择币种，<b>非美元时按上面填写的实际汇率折算</b>（默认取「字段与选项设置 → 币种」里的汇率），结果以实际计算为准，并计入下面的「总报价（含费用）」。
+            每行「小计＝单价 × 数量」（数量留空按 1 计）；费用选填，留空按 0 计算，每项费用可各自选择币种，<b>非美元时按上面填写的实际汇率折算</b>（默认取「字段与选项设置 → 币种」里的汇率），结果以实际计算为准，并计入下面的「总报价（含费用）」。
             每次修改费用（金额/币种/汇率）都会留一条<b>费用版本记录</b>，可在「询报价管理 → 查看 → 费用版本」里追溯。
           </div>
           <div className="totals" style={{ marginTop: 8 }}>
@@ -517,7 +523,7 @@ export default function App() {
               </div>
             </div>
           </div>
-          <div className="hint" style={{ display: 'block', marginTop: 4 }}>总报价（含费用）= 各行金额自动合计 + 运费 + 税费 + 佣金 + 其他费用；总金额可另行手填最终/成交金额（右侧可选金额单位，默认 USD），与报价一致可留空。</div>
+          <div className="hint" style={{ display: 'block', marginTop: 4 }}>总报价（含费用）= 各行小计（单价×数量）合计 + 运费 + 税费 + 佣金 + 其他费用；总金额可另行手填最终/成交金额（右侧可选金额单位，默认 USD），与报价一致可留空。</div>
         </div>
 
         <div style={{ marginTop: 12, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>

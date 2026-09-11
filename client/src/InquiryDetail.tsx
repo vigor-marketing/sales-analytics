@@ -121,8 +121,11 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                 <div className="col w-idx"><label>序号</label><div className="idx-cell">{i + 1}</div></div>
                 <div className="col grow1"><label>产品名称</label><div className="ro">{it.product_name || '—'}</div></div>
                 <div className="col w1"><label>数量</label><div className="ro">{it.qty == null ? '—' : it.qty}</div></div>
-                <div className="col w1"><label>金额</label><div className="ro mono">{money2(it.amount)}</div></div>
+                <div className="col w1"><label>单价</label><div className="ro mono">{money2(it.amount)}</div></div>
                 <div className="col w1"><label>币种</label><div className="ro">{it.currency}</div></div>
+                <div className="col w1"><label>小计 <span className="hint">单价×数量</span></label>
+                  <div className="ro mono">{money2((Number(it.amount) || 0) * (Number(it.qty) > 0 ? Number(it.qty) : 1))}</div>
+                </div>
               </div>
             ))}
             {(d.items || []).length === 0 && <div className="hint">暂无明细</div>}
@@ -145,7 +148,7 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                           {(pr.version ?? 0) > 0
                             ? <span className="badge new">当前 V{pr.version}</span>
                             : <span className="badge">暂无价格记录</span>}
-                          <span className="hint">最近报价 {money2(pr.last_amount)} {pr.currency}{pr.last_qty != null ? ` · 数量 ${pr.last_qty}` : ''}</span>
+                          <span className="hint">最近单价 {money2(pr.last_amount)} {pr.currency}{pr.last_qty != null ? ` · 数量 ${pr.last_qty}` : ''}</span>
                           {pr.prev_amount != null && <span className="hint">（上一版 {money2(pr.prev_amount)}）</span>}
                         </>
                         : <span className="badge">未建档</span>}

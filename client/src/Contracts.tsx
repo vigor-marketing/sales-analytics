@@ -221,8 +221,8 @@ function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
               <h4 className="ov-sec-title">报价明细<span className="hint">（产品明细 ＋ 各项费用，币种各自计算）</span></h4>
               <div className="tablewrap">
                 <table className="grid data-table fit-table" style={{ fontSize: 12.5 }}>
-                  <colgroup><col style={{ width: '6%' }} /><col style={{ width: '40%' }} /><col style={{ width: '10%' }} /><col style={{ width: '16%' }} /><col style={{ width: '10%' }} /><col style={{ width: '18%' }} /></colgroup>
-                  <thead><tr>{['序号', '产品 / 费用项目', '数量', '金额', '币种', '折 USD'].map((h) => <th key={h}>{h}</th>)}</tr></thead>
+                  <colgroup><col style={{ width: '5%' }} /><col style={{ width: '31%' }} /><col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '14%' }} /><col style={{ width: '9%' }} /><col style={{ width: '20%' }} /></colgroup>
+                  <thead><tr>{['序号', '产品 / 费用项目', '数量', '单价', '小计', '币种', '折 USD'].map((h) => <th key={h}>{h}</th>)}</tr></thead>
                   <tbody>
                     {(d.items || []).map((it, i) => (
                       <tr key={i}>
@@ -230,8 +230,9 @@ function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
                         <td title={it.product_name}>{it.product_name}</td>
                         <td className="mono">{it.qty ?? '—'}</td>
                         <td className="mono">{money(it.amount)}</td>
+                        <td className="mono" style={{ fontWeight: 700 }}>{money((Number(it.amount) || 0) * (Number(it.qty) > 0 ? Number(it.qty) : 1))}</td>
                         <td title={it.currency}>{it.currency}</td>
-                        <td className="mono hint">{money(Math.round((Number(it.amount) || 0) / ((d.fxUsed ?? {})[it.currency] || 1)))}</td>
+                        <td className="mono hint">{money(Math.round(((Number(it.amount) || 0) * (Number(it.qty) > 0 ? Number(it.qty) : 1)) / ((d.fxUsed ?? {})[it.currency] || 1)))}</td>
                       </tr>
                     ))}
                     {feeList.map((f) => (
@@ -239,18 +240,19 @@ function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
                         <td className="mono">—</td>
                         <td title={`${f.label}（费用）`}><span className="badge">{f.label}</span></td>
                         <td className="hint">—</td>
+                        <td className="hint">—</td>
                         <td className="mono">{money(f.value)}</td>
                         <td title={f.rate && f.rate !== 1 ? `本单汇率 1 USD = ${f.rate} ${f.currency}` : f.currency}>{f.currency}{f.rate && f.rate !== 1 ? <span className="hint" style={{ marginLeft: 3 }}>@{f.rate}</span> : null}</td>
                         <td className="mono hint">{money(f.usd)}</td>
                       </tr>
                     ))}
                     <tr className="ov-total-row">
-                      <td colSpan={3} style={{ fontWeight: 700 }}>{feeList.length ? '总报价（含费用）' : '报价合计'}</td>
+                      <td colSpan={4} style={{ fontWeight: 700 }}>{feeList.length ? '总报价（含费用）' : '报价合计'}</td>
                       <td colSpan={2} className="mono" style={{ fontWeight: 800 }}>{quoteRows.map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</td>
                       <td className="mono" style={{ fontWeight: 800 }}>≈USD {money(d.usdApprox)}</td>
                     </tr>
                     {feeBuckets.length > 1 && (
-                      <tr><td colSpan={6} className="hint" style={{ textAlign: 'left' }}>费用按各自币种与汇率分别折算（{feeList.map((f) => `${f.label} ${money(f.value)} ${f.currency}`).join(' · ')}）</td></tr>
+                      <tr><td colSpan={7} className="hint" style={{ textAlign: 'left' }}>费用按各自币种与汇率分别折算（{feeList.map((f) => `${f.label} ${money(f.value)} ${f.currency}`).join(' · ')}）</td></tr>
                     )}
                   </tbody>
                 </table>

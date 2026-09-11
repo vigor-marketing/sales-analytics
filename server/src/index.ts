@@ -197,9 +197,9 @@ function feeTotalOf(r: Record<string, unknown>): number {
 }
 /** 单个询价的折USD总额（含费用）：明细按币种合计 + 费用（费用币种档） */
 function inquiryUsdTotal(d: ReturnType<typeof getDb>, inquiryId: string, row?: Record<string, unknown>): number {
-  const items = d.prepare('SELECT amount, currency FROM inquiry_items WHERE inquiry_id = ?').all(inquiryId) as { amount: number; currency: string }[]
+  const items = d.prepare('SELECT amount, qty, currency FROM inquiry_items WHERE inquiry_id = ?').all(inquiryId) as { amount: number; qty: number | null; currency: string }[]
   const r = row ?? (d.prepare('SELECT * FROM inquiries WHERE id = ?').get(inquiryId) as Record<string, unknown> | undefined)
-  const totals = fmtTotals(items.map((x) => ({ currency: x.currency, amount: Number(x.amount) || 0 })))
+  const totals = fmtTotals(items.map((x) => ({ currency: x.currency, amount: Number(x.amount) || 0, qty: x.qty })))
   // 费用按各自币种折算后并入（每项费用可有独立汇率）
   const rates = ratesOf(r)
   const feeUsd = r ? feeUsdOf(r, rates) : 0
@@ -416,7 +416,7 @@ app.get('/api/customers', (req, res) => {
   const where = parts.length ? `WHERE ${parts.join(' AND ')}` : ''
   const rows = d.prepare(`SELECT id, name, country, use_location, source, stars, created_at, updated_at FROM customers ${where} ORDER BY updated_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
   const out = rows.map((c) => {
-    const inqs = d.prepare('SELECT i.id, i.date, i.is_key_customer, i.is_key_project, i.is_lost, (SELECT COUNT(*) FROM orders o WHERE o.inquiry_id = i.id) AS has_order, (SELECT COALESCE(SUM(amount),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw FROM inquiries i WHERE i.customer_id = ? ORDER BY i.date DESC').all(c.id) as { id: string; date: string; is_key_customer: number; is_key_project: number; has_order: number; raw: number }[]
+    const inqs = d.prepare('SELECT i.id, i.date, i.is_key_customer, i.is_key_project, i.is_lost, (SELECT COUNT(*) FROM orders o WHERE o.inquiry_id = i.id) AS has_order, (SELECT COALESCE(SUM(amount * COALESCE(NULLIF(qty,0),1)),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw FROM inquiries i WHERE i.customer_id = ? ORDER BY i.date DESC').all(c.id) as { id: string; date: string; is_key_customer: number; is_key_project: number; has_order: number; raw: number }[]
     let usd = 0
     inqs.forEach((i) => { usd += inquiryUsdTotal(d, text(i.id)) })
     const won = inqs.filter((i) => Number((i as Record<string, unknown>).has_order) > 0)
@@ -431,10 +431,10 @@ app.get('/api/customers/:id', (req, res) => {
   const c = d.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
   if (!c) return fail(res, '客户不存在', 404)
   const inqs = d.prepare(`SELECT i.*, o.order_no AS order_no, o.won_date AS order_won_date, CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END AS won_flag,
-      (SELECT COALESCE(SUM(amount),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw_amount
+      (SELECT COALESCE(SUM(amount * COALESCE(NULLIF(qty,0),1)),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw_amount
     FROM inquiries i LEFT JOIN orders o ON o.inquiry_id = i.id WHERE i.customer_id = ? ORDER BY i.date DESC`).all(req.params.id) as Record<string, unknown>[]
   const list = inqs.map((i) => {
-    const items = d.prepare('SELECT currency, amount FROM inquiry_items WHERE inquiry_id = ?').all(i.id) as { currency: string; amount: number }[]
+    const items = d.prepare('SELECT currency, amount, qty FROM inquiry_items WHERE inquiry_id = ?').all(i.id) as { currency: string; amount: number; qty: number | null }[]
     const feeBuckets = feeTotalsOf(i)
     const feeTotal = feeUsdOf(i)
     const grand = grandTotals(fmtTotals(items), feeBuckets)
@@ -658,7 +658,7 @@ app.get('/api/inquiries/lookup', (req, res) => {
     WHERE ${parts.join(' AND ')}`).get(...args) as Record<string, unknown> | undefined
   if (!r) return fail(res, salesQ ? '该销售名下未找到此询价号' : '未找到此询价号', 404)
   const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(r.id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
-  const totals = fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount })))
+  const totals = fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount, qty: x.qty })))
   const feeBuckets = feeTotalsOf(r)
   const feeTotal = feeUsdOf(r)
   const grand = grandTotals(totals, feeBuckets)
@@ -926,11 +926,11 @@ app.get('/api/dashboard', (_req, res) => {
   const monthBySales = Array.from(bySales.entries()).map(([name, v]) => ({ name, n: v.n, usd: Math.round(v.usd) })).sort((a, b) => b.usd - a.usd)
   const byProduct = new Map<string, { n: number; usd: number }>()
   wonMonth.forEach((o) => {
-    const items = d.prepare('SELECT product_name, amount, currency FROM inquiry_items WHERE inquiry_id = ?').all(text(o.inquiry_id)) as { product_name: string; amount: number; currency: string }[]
+    const items = d.prepare('SELECT product_name, amount, qty, currency FROM inquiry_items WHERE inquiry_id = ?').all(text(o.inquiry_id)) as { product_name: string; amount: number; qty: number | null; currency: string }[]
     const rowRates = ratesOf(d.prepare('SELECT * FROM inquiries WHERE id = ?').get(text(o.inquiry_id)) as Record<string, unknown> | undefined)
     items.forEach((it) => {
       const a = byProduct.get(it.product_name) ?? { n: 0, usd: 0 }
-      a.n += 1; a.usd += (Number(it.amount) || 0) / rateIn(rowRates, it.currency)
+      a.n += 1; a.usd += lineAmount(it) / rateIn(rowRates, it.currency)
       byProduct.set(it.product_name, a)
     })
   })
@@ -1142,9 +1142,15 @@ const normCurrency = (v: unknown, dft = 'USD') => (isCurrency(v) ? str(v).trim()
 /** 询价状态自动判定：有销售订单 → 已成单；标记未成单 → 未成单（必填原因）；其余 → 跟进中 */
 export type InquiryStatus = 'won' | 'lost' | 'following'
 const inquiryStatus = (hasOrder: boolean, isLost: unknown): InquiryStatus => (hasOrder ? 'won' : Number(isLost) === 1 ? 'lost' : 'following')
-function fmtTotals(items: { currency: string; amount: number }[]): { currency: string; total: number }[] {
+/** 明细行小计 = 金额（单价）× 数量；数量未填/为 0 时按 1 计 */
+function lineAmount(it: { amount: number | null | undefined; qty?: number | null }): number {
+  const a = num(it.amount) ?? 0
+  const q = num(it.qty)
+  return a * (q != null && q > 0 ? q : 1)
+}
+function fmtTotals(items: { currency: string; amount: number; qty?: number | null }[]): { currency: string; total: number }[] {
   const m = new Map<string, number>()
-  items.forEach((it) => m.set(it.currency, (m.get(it.currency) ?? 0) + (num(it.amount) ?? 0)))
+  items.forEach((it) => m.set(it.currency, (m.get(it.currency) ?? 0) + lineAmount(it)))
   return Array.from(m.entries()).map(([currency, total]) => ({ currency, total })).sort((a, b) => currencyCodes().indexOf(a.currency) - currencyCodes().indexOf(b.currency))
 }
 app.get('/api/inquiries', (req, res) => {
@@ -1176,10 +1182,10 @@ app.get('/api/inquiries', (req, res) => {
       CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END AS _won, o.won_date AS _won_date, o.order_no AS _order_no, o.id AS _order_id
     ${join} LEFT JOIN orders o ON o.inquiry_id = i.id ${where} ORDER BY i.date DESC, i.created_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
   const ids = rows.map((r) => str(r.id))
-  const totalsOf = new Map<string, { currency: string; amount: number }[]>()
+  const totalsOf = new Map<string, { currency: string; amount: number; qty: number | null }[]>()
   if (ids.length) {
     const marks = ids.map(() => '?').join(',')
-    const items = d.prepare(`SELECT inquiry_id, currency, amount FROM inquiry_items WHERE inquiry_id IN (${marks})`).all(...ids) as { inquiry_id: string; currency: string; amount: number }[]
+    const items = d.prepare(`SELECT inquiry_id, currency, amount, qty FROM inquiry_items WHERE inquiry_id IN (${marks})`).all(...ids) as { inquiry_id: string; currency: string; amount: number; qty: number | null }[]
     items.forEach((it) => { const a = totalsOf.get(it.inquiry_id) ?? []; a.push(it); totalsOf.set(it.inquiry_id, a) })
   }
   const out = rows.map((r) => {
@@ -1217,7 +1223,7 @@ app.get('/api/inquiries/:id', (req, res) => {
   const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(req.params.id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
   const order = d.prepare('SELECT id, order_no, won_date, amount, currency, note, win_reason FROM orders WHERE inquiry_id = ?').get(req.params.id) as Record<string, unknown> | undefined
   const { is_won: _legacyWon, won_date: _legacyWonDate, ...base } = r
-  const totals = fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount })))
+  const totals = fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount, qty: x.qty })))
   const feeBuckets = feeTotalsOf(r)
   const rates = ratesOf(r)
   const feeTotal = feeUsdOf(r, rates)

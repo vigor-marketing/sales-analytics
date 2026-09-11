@@ -31,7 +31,7 @@ export default function PriceHistoryModal({ name, info, onClose }: {
           <button className="btn sm" onClick={onClose}>关闭</button>
         </div>
         <div className="hint" style={{ marginTop: 6 }}>
-          当前参考报价 <b className="mono">{money(info?.last_amount)} {info?.currency ?? ''}</b> · 最近数量 <b>{info?.last_qty ?? '—'}</b> · 累计使用 {info?.use_count ?? 0} 次 · 当前版本 <b className="mono">V{rows?.length ?? 0}</b>（首次录入 V1，之后每次金额/数量/币种变化生成新版本）
+          当前参考单价 <b className="mono">{money(info?.last_amount)} {info?.currency ?? ''}</b> · 最近数量 <b>{info?.last_qty ?? '—'}</b> · 累计使用 {info?.use_count ?? 0} 次 · 当前版本 <b className="mono">V{rows?.length ?? 0}</b>（首次录入 V1，之后每次单价/数量/币种变化生成新版本）
         </div>
         {err && <div className="msg err">{err}</div>}
         <div className="tablewrap" style={{ marginTop: 10, maxHeight: '56vh' }}>

@@ -253,7 +253,8 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
   // 实时合计：跟随产品明细的金额与币种变化（与「询报价录入」同一口径）
   const liveTotals = useMemo(() => {
     const m = new Map<string, number>()
-    ;(form?.items ?? []).forEach((it) => { const a = Number(it.amount) || 0; if (a > 0) m.set(it.currency, (m.get(it.currency) ?? 0) + a) })
+    // 行小计 = 金额（单价）× 数量；数量未填/为 0 时按 1 计
+    ;(form?.items ?? []).forEach((it) => { const a = (Number(it.amount) || 0) * (Number(it.qty) > 0 ? Number(it.qty) : 1); if (a > 0) m.set(it.currency, (m.get(it.currency) ?? 0) + a) })
     const order = currencyOptions(meta.currencies, undefined)
     const list = Array.from(m.entries()).sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])).map(([currency, total]) => ({ currency, total }))
     const fx = meta.fx ?? { USD: 1, CNY: 7.12, EUR: 0.92 }
@@ -282,7 +283,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
         blockers: form.blockers, actionPlan: form.actionPlan, supportNeeded: form.supportNeeded, customerStars: form.stars ? Number(form.stars) : undefined,
         isKeyCustomer: form.keyCust, isKeyProject: form.keyProj,
         isLost: order ? undefined : form.isLost, lostReason: order ? undefined : (form.lostReason.trim() || undefined), lostDate: order ? undefined : (form.lostDate || undefined),
-        items: form.items.filter((it) => it.productName.trim() && Number(it.amount) > 0).map((it) => ({ productName: it.productName.trim(), qty: it.qty ? Number(it.qty) : undefined, amount: Number(it.amount), currency: it.currency })),
+        items: form.items.filter((it) => it.productName.trim() && Number(it.amount) > 0).map((it) => ({ productName: it.productName.trim(), qty: Number(it.qty) > 0 ? Number(it.qty) : 1, amount: Number(it.amount), currency: it.currency })),
       })
       onSaved()
     } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
@@ -371,7 +372,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
             <div style={{ marginTop: 10, background: '#f8fafd', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12.5, fontWeight: 700 }}>金额版本记录</span>
-                <span className="hint">保存后自动同步到产品档案：为每个产品生成一个新版本（金额/数量/币种有变化时）</span>
+                <span className="hint">保存后自动同步到产品档案：为每个产品生成一个新版本（单价/数量/币种有变化时）</span>
               </div>
               {form.items.filter((it) => it.productName.trim()).map((it, i) => {
                 const pr = products.find((x) => x.name.toLowerCase() === it.productName.trim().toLowerCase())
@@ -387,9 +388,9 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                     {pr
                       ? <>
                         <span className="badge new">当前 V{pr.version ?? 0}</span>
-                        <span className="hint">最近报价 {money(pr.last_amount)} {pr.currency}{pr.last_qty != null ? ` · 数量 ${pr.last_qty}` : ''}</span>
+                        <span className="hint">最近单价 {money(pr.last_amount)} {pr.currency}{pr.last_qty != null ? ` · 数量 ${pr.last_qty}` : ''}</span>
                         {pr.prev_amount != null && <span className="hint">（上一版 {money(pr.prev_amount)}）</span>}
-                        <span className="hint">→ 本次录入 <b className="mono">{money(amt)} {it.currency}</b>{qty != null ? ` · 数量 ${qty}` : ''}</span>
+                        <span className="hint">→ 本次录入 单价 <b className="mono">{money(amt)} {it.currency}</b> × {qty != null && qty > 0 ? qty : 1} ＝ <b className="mono">{money(amt * (qty != null && qty > 0 ? qty : 1))}</b> {it.currency}</span>
                         {changed
                           ? <span style={{ color: '#a35c00', fontWeight: 700 }}>保存后生成 V{(pr.version ?? 0) + 1}</span>
                           : <span className="hint" style={{ color: '#059669' }}>与最近一致，保存后版本不变</span>}
@@ -451,8 +452,11 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                       })
                     }} />
                   <input className="sa" type="number" placeholder="数量" value={it.qty} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, qty: e.target.value } : x) })} />
-                  <input className="sa" type="number" placeholder="金额" value={it.amount} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, amount: e.target.value } : x) })} />
+                  <input className="sa" type="number" placeholder="单价" value={it.amount} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, amount: e.target.value } : x) })} />
                   <select className="sa" value={it.currency} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, currency: e.target.value } : x) })}>{currencyOptions(meta.currencies, it.currency).map((c) => <option key={c}>{c}</option>)}</select>
+                  <span className="hint mono" title={`行小计＝单价 × 数量（数量留空按 1 计）`} style={{ whiteSpace: 'nowrap' }}>
+                    小计 {(() => { const q = Number(it.qty) > 0 ? Number(it.qty) : 1; const v = (Number(it.amount) || 0) * q; return v > 0 ? `${money(v)} ${it.currency}` : '—' })()}
+                  </span>
                   <span className="row-act">
                     {form.items.length > 1 && <button className="icon-del" title="删除该行" aria-label={`删除第 ${i + 1} 行`} onClick={() => set({ items: form.items.filter((_, j) => j !== i) })}>×</button>}
                   </span>

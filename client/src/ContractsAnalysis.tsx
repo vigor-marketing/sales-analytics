@@ -73,10 +73,17 @@ function computeAggregate(rows: OrderRow[], ctx: { fx: Record<string, number>; t
   // 产品维度
   const pm = new Map<string, { count: number; usd: number; cycles: number[] }>()
   rows.forEach((r) => {
-    (r.items || []).forEach((it) => {
+    const items = r.items || []
+    if (!items.length) return
+    // 行小计 = 单价 × 数量（数量空/0 按 1 计）折 USD
+    const each = items.map((it) => ((Number(it.amount) || 0) * (Number(it.qty) > 0 ? Number(it.qty) : 1)) / (fx[it.currency] || 1))
+    const itemSum = each.reduce((a, b) => a + b, 0)
+    // 把该订单的真实成交金额（手填金额优先）按各行小计占比分摊到产品，保证「按产品」合计＝订单金额合计、占比合计 100%
+    const alloc = itemSum > 0 ? (r.usdApprox || itemSum) / itemSum : 0
+    items.forEach((it, idx) => {
       const a = pm.get(it.product_name) ?? { count: 0, usd: 0, cycles: [] as number[] }
       a.count += 1
-      a.usd += (Number(it.amount) || 0) / (fx[it.currency] || 1)
+      a.usd += each[idx] * alloc
       if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
       pm.set(it.product_name, a)
     })
