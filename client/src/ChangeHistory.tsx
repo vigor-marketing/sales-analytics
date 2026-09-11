@@ -72,11 +72,21 @@ export default function ChangeHistoryModal({ inquiryId, inquiryNo, productNames,
       priceLists.flat().filter(Boolean).forEach((r) => {
         const source = String(r.source || '询价录入')
         const swappedFrom = (/产品变更（原 (.+)）\s*$/.exec(source) || [])[1] ?? null
+        const addedLine = /新增产品行/.test(source)
         const prevCur = r.prev_currency ?? r.currency
         const delta = (r.prev_amount == null || r.amount == null) ? null : Math.round((r.amount - r.prev_amount) * 100) / 100
         const qtyChanged = Number(r.prev_qty ?? -1) !== Number(r.qty ?? -1)
         const curChanged = !!r.prev_amount && prevCur !== r.currency
         const changes: Row['changes'] = []
+        if (addedLine) {
+          // 本询价新增的产品行：直接给出产品名称 + 数量 + 金额
+          const q = r.qty ?? null; const amt = r.amount ?? null
+          changes.push({
+            label: '新增产品', from: null,
+            to: `${r.product_name}${q != null || amt != null ? `（${q != null ? `${q} 件 × ` : ''}${amt != null ? `${money(amt)} ${r.currency}` : '—'}${q != null && amt != null ? ` ＝ ${money(Math.round(q * amt * 100) / 100)} ${r.currency}` : ''}）` : ''}`,
+            note: '本询价此前没有这个产品',
+          })
+        }
         if (swappedFrom) {
           // 产品变更：把原行的「产品名称 / 数量 / 金额 / 币种」一起列出，看清具体变的是哪一行
           const fromQty = r.from_qty ?? null; const fromAmt = r.from_amount ?? null; const fromCur = r.from_currency ?? prevCur
@@ -190,7 +200,7 @@ export default function ChangeHistoryModal({ inquiryId, inquiryNo, productNames,
                       <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap', lineHeight: 1.5 }}>
                         <span className="hint" style={{ minWidth: 54, fontSize: 11.5 }}>{c.label}</span>
                         {c.from != null && <><span className="mono">{c.from}</span><span className="hint">→</span></>}
-                        {c.from == null && <span className="hint">（首次）</span>}
+                        {c.from == null && /首次/.test(c.note ?? '') && <span className="hint">（首次）</span>}
                         <b className="mono">{c.to}</b>
                         {c.note && <span className="hint" style={{ fontSize: 11 }}>{c.note}</span>}
                       </div>

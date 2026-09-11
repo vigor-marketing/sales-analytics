@@ -73,22 +73,26 @@ function upsertProducts(
   items.forEach((it, i) => {
     const before = find.get(it.productName) as { last_amount: number | null; last_qty: number | null; currency: string } | undefined
     // 该行原来是另一个产品 → 属于「产品变更」，即使单价/数量/币种恰好相同，也要留下一条版本与价格记录
+    const isEdit = Array.isArray(src.prevLines)          // 只有「编辑保存」才做行级判定，新建询价不额外记流水
     const prevLine = src.prevLines?.[i] ?? null
     const prevName = prevLine ? String(prevLine.product_name ?? '').trim() : null
     const allPrev = (src.prevLines ?? []).map((x) => String(x?.product_name ?? '').trim().toLowerCase())
-    // 只有「这一行换了名字，且新名字原本不在本询价里」才算产品变更；单纯删行/换序不会误判
-    const swapped = !!prevName && prevName.toLowerCase() !== it.productName.trim().toLowerCase() && !allPrev.includes(it.productName.trim().toLowerCase())
+    const isNewToInquiry = isEdit && !allPrev.includes(it.productName.trim().toLowerCase())
+    // 产品变更：这一行换了名字（新名字原本不在本询价里）；新增产品行：本询价原来没有这个产品（追加或换行）
+    const swapped = isNewToInquiry && !!prevName && prevName.toLowerCase() !== it.productName.trim().toLowerCase()
+    const addedLine = isNewToInquiry && !swapped
     const changed = !before
       || Number(before.last_amount ?? -1) !== Number(it.amount)
       || Number(before.last_qty ?? -1) !== Number(it.qty ?? -1)
       || String(before.currency) !== String(it.currency)
-      || swapped
+      || swapped || addedLine
     up.run(newId(), it.productName, it.currency, it.amount, it.qty, date, t, t)
     // 首次录入、金额/数量/币种变化、或产品被替换 → 在产品档案留下一条变动记录（版本 + 价格）
     if (changed) {
       insHist.run(newId(), it.productName, it.currency, it.amount, it.qty ?? null,
         before ? (before.last_amount ?? null) : null, before ? (before.last_qty ?? null) : null, before ? before.currency : null,
-        swapped ? `${src.source ?? '询报价录入'}·产品变更（原 ${prevName}）` : (src.source ?? '询报价录入'),
+        swapped ? `${src.source ?? '询报价录入'}·产品变更（原 ${prevName}）`
+          : addedLine ? `${src.source ?? '询报价管理·编辑'}·新增产品行` : (src.source ?? '询报价录入'),
         src.inquiryId ?? null, src.inquiryNo ?? null, src.customerName ?? null, src.sales ?? null, date, t,
         swapped ? prevName : null, swapped ? (prevLine?.qty ?? null) : null, swapped ? (prevLine?.amount ?? null) : null, swapped ? (prevLine?.currency ?? null) : null)
     }
