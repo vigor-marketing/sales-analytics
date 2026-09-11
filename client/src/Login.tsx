@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { get, post } from './api'
 
 export interface SaActor {
@@ -11,6 +11,9 @@ export const SCOPE_LABEL: Record<SaActor['scope'], string> = { all: '全部数�
 
 /** 登录页：用工作台账号密码登录（服务端再向工作台校验，本系统不存密码） */
 export default function Login({ onDone }: { onDone: (a: SaActor) => void }) {
+  // 登录入口：暂时借用工作台（工作台未登录时首页即登录页），后续工作台开放单点登录再合并为免密跳转
+  const [cfg, setCfg] = useState<{ workbenchBase: string; workbenchLoginUrl: string; note: string } | null>(null)
+  useEffect(() => { get<{ workbenchBase: string; workbenchLoginUrl: string; note: string }>('/auth/config').then(setCfg).catch(() => { /* 拿不到就只显示表单 */ }) }, [])
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -33,6 +36,12 @@ export default function Login({ onDone }: { onDone: (a: SaActor) => void }) {
             <div className="hint">请用工作台账号登录（岗位决定数据范围）</div>
           </div>
         </div>
+        {cfg && (
+          <div style={{ marginTop: 12, padding: '8px 10px', background: '#f6f8fd', border: '1px solid var(--line)', borderRadius: 8 }}>
+            <div className="hint" style={{ marginBottom: 6 }}>登录入口暂时借用工作台（{cfg.workbenchLoginUrl}）；没有账号或忘记密码请在工作台处理，后续工作台开放单点登录后会合并为免密跳转。</div>
+            <button className="btn sm" onClick={() => window.open(cfg.workbenchLoginUrl, '_blank', 'noopener')}>打开工作台登录页 ↗</button>
+          </div>
+        )}
         <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div className="col"><label>账号</label>
             <input className="sa" style={{ width: '100%' }} value={username} autoFocus placeholder="工作台账号（如 vera）"

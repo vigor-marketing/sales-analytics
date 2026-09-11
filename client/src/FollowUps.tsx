@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { currentActor } from './session'
 import { get, post } from './api'
 import { StatusChip } from './StatusChip'
 import { KeyTags } from './KeyTags'
@@ -34,12 +35,18 @@ export default function FollowUps({ meta, target }: {
   target?: { sales: string; no: string; openForm?: boolean } | null
 }) {
   const methods = meta.methods?.length ? meta.methods : DEFAULT_METHODS
-  const [sales, setSales] = useState('')
+  // 登录后自动带入「销售人员＝当前登录人」（用于先定位到本人名下的询价）
+  const [sales, setSales] = useState(() => {
+    const a = currentActor()
+    if (!a) return ''
+    return (meta.sales ?? []).some((x) => x.name.toLowerCase() === a.name.toLowerCase()) ? a.name : ''
+  })
   const [no, setNo] = useState('')
   const [hit, setHit] = useState<Lookup | null>(null)
   const [lookErr, setLookErr] = useState('')
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; text: string } | null>(null)
-  const [f, setF] = useState({ date: today(), method: methods[0] ?? '电话', summary: '', detail: '', nextFollowupAt: '', byName: '' })
+  // 登录后自动带入「跟进人＝当前登录人」（仍可改成别人）
+  const [f, setF] = useState({ date: today(), method: methods[0] ?? '电话', summary: '', detail: '', nextFollowupAt: '', byName: currentActor()?.name ?? '' })
   const [photos, setPhotos] = useState<string[]>([])
   const [files, setFiles] = useState<Att[]>([])
   const [uploading, setUploading] = useState(false)
@@ -177,7 +184,7 @@ export default function FollowUps({ meta, target }: {
         photos, attachments: files, nextFollowupAt: f.nextFollowupAt || undefined, byName: f.byName || sales,
       })
       setMsg({ t: 'ok', text: `已建立跟进（${hit.inquiry_no}）` })
-      setF({ date: today(), method: methods[0] ?? '电话', summary: '', detail: '', nextFollowupAt: '', byName: '' })
+      setF({ date: today(), method: methods[0] ?? '电话', summary: '', detail: '', nextFollowupAt: '', byName: currentActor()?.name ?? '' })
       setPhotos([]); setFiles([])
       await lookup(); await loadList()
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) } finally { setBusy(false) }

@@ -13,6 +13,7 @@ import FollowUps from './FollowUps'
 import InquiryManager from './InquiryManager'
 import Settings from './Settings'
 import Login, { SCOPE_LABEL, type SaActor } from './Login'
+import { setCurrentActor, isSalesActor, isPurchaserActor } from './session'
 import { currencyOptions } from './currencies'
 
 interface ItemD { productName: string; qty: string; amount: string; currency: string }
@@ -187,25 +188,26 @@ export default function App() {
   /** 登录态：进页面先问一次会话；401 时 api.ts 会广播 sa:need-login */
   const logout = useCallback(async () => {
     try { await post('/auth/logout', {}) } catch { /* 忽略 */ }
-    setActor(null)
+    setActor(null); setCurrentActor(null)
   }, [])
   useEffect(() => {
     let alive = true
     get<{ actor: SaActor }>('/auth/session')
-      .then((r) => { if (alive) { setActor(r.actor); setAuthReady(true) } })
-      .catch(() => { if (alive) { setActor(null); setAuthReady(true) } })
-    const onNeed = () => { setActor(null); setAuthReady(true) }
+      .then((r) => { if (alive) { setActor(r.actor); setCurrentActor(r.actor); setAuthReady(true) } })
+      .catch(() => { if (alive) { setActor(null); setCurrentActor(null); setAuthReady(true) } })
+    const onNeed = () => { setActor(null); setCurrentActor(null); setAuthReady(true) }
     window.addEventListener('sa:need-login', onNeed)
     return () => { alive = false; window.removeEventListener('sa:need-login', onNeed) }
   }, [])
 
-  /** 非「全部」权限：录入页把销售固定为本人（小组跟随本人所在组） */
+  /** 登录后自动带入账号信息：销售带出「销售小组 + 销售人员」，采购/支持带出「采购小组 + 采购人员」（仍可改） */
   useEffect(() => {
-    if (!actor || actor.scope === 'all') return
-    setSales(actor.name)
-    const hit = (meta.sales ?? []).find((x) => x.name.toLowerCase() === actor.name.toLowerCase())
-    if (hit) setSalesTeam(hit.team)
-  }, [actor, meta.sales])
+    if (!actor) return
+    const mine = (meta.sales ?? []).find((x) => x.name.toLowerCase() === actor.name.toLowerCase())
+    if (mine) { if (!sales) setSales(actor.name); if (salesTeam !== mine.team) setSalesTeam(mine.team) }
+    const mineP = (meta.purchaserTeams ?? []).find((x) => x.name.toLowerCase() === actor.name.toLowerCase())
+    if (mineP) { if (!purchaser) setPurchaser(actor.name); if (purTeam !== mineP.team) setPurTeam(mineP.team) }
+  }, [actor, meta.sales, meta.purchaserTeams, sales, salesTeam, purchaser, purTeam])
 
   useEffect(() => { loadMeta() }, [loadMeta, actor])          // 登录/退出后重新拉取基础数据（人员/小组/选项）
   useEffect(() => { loadMeta() }, [page, loadMeta, actor])
@@ -328,7 +330,7 @@ export default function App() {
 
   // 登录态：未登录先显示登录页
   if (!authReady) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5a6b85' }}>正在校验登录状态…</div>
-  if (!actor) return <Login onDone={(a) => { setActor(a); setAuthReady(true) }} />
+  if (!actor) return <Login onDone={(a) => { setActor(a); setCurrentActor(a); setAuthReady(true) }} />
 
   if (page !== 'entry') return (
     <Shell page={page} onNav={navTo} actor={actor} onLogout={logout}>

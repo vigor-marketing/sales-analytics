@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { currentActor } from './session'
 import { post, put } from './api'
 import GuidanceNote, { type GuidanceItem } from './Guidance'
 
@@ -30,7 +31,8 @@ export default function FollowupRecordModal({ record, editable, create, onClose,
   const [f, setF] = useState<Form>({
     date: create ? today() : (record.date || today()), method: record.method || '电话',
     summary: create ? '' : (record.summary || ''), detail: create ? '' : (record.detail || record.content || ''),
-    nextAt: create ? '' : (record.next_followup_at ? String(record.next_followup_at).slice(0, 10) : ''), byName: record.by_name || record.sales || '',
+    nextAt: create ? '' : (record.next_followup_at ? String(record.next_followup_at).slice(0, 10) : ''),
+    byName: record.by_name || record.sales || currentActor()?.name || '',   // 新建时自动带入当前登录人
   })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')

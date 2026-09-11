@@ -32,6 +32,8 @@ loadEnvFile(path.join(__dirname, '..', '..', '.env'))
 /** 工作台（vigor-workbench-platform）组织架构对接配置 */
 const WORKBENCH_BASE = (process.env.WORKBENCH_BASE ?? 'http://1.15.91.150').replace(/\/+$/, '')
 const WORKBENCH_TOKEN = process.env.ORG_PICKER_TOKEN ?? process.env.WORKBENCH_PICKER_TOKEN ?? ''
+/** 工作台前端入口（登录页所在地址，实际使用 http://1.15.91.150/todos） */
+const WORKBENCH_HOME = (process.env.WORKBENCH_HOME ?? `${WORKBENCH_BASE}/todos`).replace(/\/+$/, '')
 
 const app = express()
 app.use(cors())
@@ -144,7 +146,7 @@ const isDate = (v: string) => {
 const fail = (res: express.Response, msg: string, st = 400) => res.status(st).json({ ok: false, error: msg })
 
 /** /api/* 统一鉴权（注册在所有路由之前）：除登录接口外都必须带工作台会话 */
-const AUTH_OPEN = ['/auth/login']
+const AUTH_OPEN = ['/auth/login', '/auth/config']
 app.use('/api', (req, res, next) => {
   if (AUTH_OPEN.includes(req.path)) return next()
   const actor = actorOf(req)
@@ -529,6 +531,15 @@ function scopeFor(u: { role?: string; department?: string; departmentHead?: bool
   if (u.departmentHead || /manager|head|lead|经理|主管|负责人/i.test(role)) return { scope: 'team', reason: '组长 / 部门负责人' }
   return { scope: 'self', reason: '个人' }
 }
+// —— 登录入口信息（公开）：本系统暂时借用工作台登录入口，后续工作台开放单点登录后再合并 ——
+app.get('/api/auth/config', (_req, res) => ok(res, {
+  workbenchBase: WORKBENCH_BASE,
+  // 工作台是单页应用：未登录时首页即为登录页
+  workbenchLoginUrl: WORKBENCH_HOME,
+  mode: 'borrow',
+  note: '当前借用工作台账号登录（账号密码由工作台校验，本系统不存密码）；工作台开放单点登录后会合并为免密跳转。',
+}))
+
 // —— 登录（工作台账号）——
 app.post('/api/auth/login', async (req, res) => {
   const username = str(req.body?.username).trim(); const password = str(req.body?.password)
