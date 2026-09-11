@@ -405,8 +405,11 @@ tr.row-lost:hover>td{background:#ffecec}
 .box-fixed .ro.area{width:100%}
 
 /* 产品档案选择面板（点击按钮才展开） */
-.prod-panel{position:absolute;z-index:25;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow-lg);max-height:240px;overflow:auto;padding:8px}
-.prod-item{padding:6px 8px;border-radius:6px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.prod-panel{position:absolute;z-index:25;top:calc(100% + 4px);left:0;right:auto;width:min(560px,calc(100vw - 48px));background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow-lg);max-height:264px;overflow:auto;padding:8px}
+/* 产品列表：一个产品一行（名称左、参考信息右），窄列也不再折成两行 */
+.prod-item{padding:6px 8px;border-radius:6px;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:nowrap}
+.prod-item > b{flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prod-item > .hint{flex:0 0 auto;white-space:nowrap}
 .prod-item:hover{background:var(--brand-light)}
 
 /* ===================== UI 整体优化（统一视觉规范） ===================== */
