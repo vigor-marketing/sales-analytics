@@ -185,7 +185,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   useEffect(() => { try { localStorage.setItem('sa:anaTab', tab) } catch { /* */ } }, [tab])
   // 组内子页面：再按小组筛选
   const [teamFilter, setTeamFilter] = useState('')
-  // 个人分析子页面：选中销售（默认第一名的销售）
+  // 个人分析子页面：先按小组筛，再按个人筛（默认第一名的销售）
+  const [personTeam, setPersonTeam] = useState('')
   const [personSel, setPersonSel] = useState('')
   const [year, setYear] = useState('')
 
@@ -394,6 +395,12 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
     return all.sort((a, b) => b.usd - a.usd)
   }, [rows, meta.sales, teamOf])
 
+  /** 个人分析：按小组/个人筛选后的销售列表（默认全部） */
+  const personRows = useMemo(() => {
+    const list = personTeam ? salesRows.filter((p) => p.team === personTeam) : salesRows
+    return personSel ? list.filter((p) => p.name === personSel) : list
+  }, [salesRows, personTeam, personSel])
+
   const sumUsd = rows.reduce((s, r) => s + (r.usdApprox || 0), 0)
   const winSum = reasons?.win
   const lostSum = reasons?.lost
@@ -524,7 +531,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           extra={teamRows.length > 1 ? <span className="hint" style={{ fontSize: 11 }}>组均 {money(Math.round(sumUsd / Math.max(1, teamRows.filter((t) => t.n > 0).length)))} USD · 第一组占比 {teamRows[0]?.share ?? 0}%</span> : undefined}>
           <DataTable
             cols={['排名', '小组', '人数', '订单数', '客户数', '金额（折USD）', '金额占比', '人均金额', '单均价', '客户单价', '平均周期', '占第一组', '与组均']}
-            widths={['5%', '12%', '6%', '7%', '7%', '12%', '8%', '10%', '10%', '10%', '8%', '7%', '8%']}
+            widths={['6%', '12%', '5%', '6%', '5%', '12%', '8%', '8%', '8%', '8%', '8%', '7%', '7%']}
             topCol={5} topLabel="第一"
             empty="本期暂无成单，无法进行小组业绩对比（可调整时间范围或筛选）"
             rows={teamRows.map((t, i) => [
@@ -606,15 +613,27 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         {/* 个人分析（独立标签页）：销售汇总 + 该销售名下每个客户的平均订单金额 */}
         {tab === 'person' && (
         <Panel title="个人分析"
-          hint={`${salesRows.length} 名销售 · 合计 ${money(sumUsd)} USD · 含该销售名下所有客户的订单`}
+          hint={`${personRows.length} 名销售 · 合计 ${money(personRows.reduce((a, b) => a + b.usd, 0))} USD · 含该销售名下所有客户的订单`}
           style={{ gridColumn: '1 / -1' }}
-          extra={<span className="hint" style={{ fontSize: 11 }}>客户单价＝金额÷客户数 · 单均价＝金额÷订单数</span>}>
+          extra={<span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+            <select className="sa" style={{ width: 140 }} value={personTeam} title="先按小组筛选"
+              onChange={(e) => { setPersonTeam(e.target.value); setPersonSel('') }}>
+              <option value="">全部小组</option>
+              {teamNamesAll.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select className="sa" style={{ width: 170 }} value={personSel} title="再按个人筛选"
+              onChange={(e) => setPersonSel(e.target.value)}>
+              <option value="">全部销售（{personRows.length} 名）</option>
+              {personRows.map((p) => <option key={p.name} value={p.name}>{p.name}（{p.team}）</option>)}
+            </select>
+            <span className="hint" style={{ fontSize: 11 }}>客户单价＝金额÷客户数 · 单均价＝金额÷订单数</span>
+          </span>}>
           <DataTable
             cols={['销售', '小组', '客户数', '订单数', '金额（折USD）', '金额占比', '客户单价', '单均价', '平均周期']}
             widths={['14%', '10%', '9%', '8%', '14%', '10%', '12%', '12%', '11%']}
             topCol={4} topLabel="第一"
             empty="暂无成单销售（可调整时间范围或筛选）"
-            rows={salesRows.map((p) => [
+            rows={personRows.map((p) => [
               p.name,
               p.team,
               <span title={p.customers.length ? `该销售名下客户（${p.customers.length} 个）：` + p.customers.map((c) => `${c.name} ${money(c.usd)} USD · ${c.n} 单`).join(' ｜ ') : '本期暂无成单客户'}>{p.customerCount} 个</span>,
@@ -633,16 +652,17 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         )}
 
         {tab === 'person' && (() => {
-          const cur = salesRows.find((x) => x.name === personSel) ?? salesRows[0]
-          if (!cur) return null
+          if (!personRows.length) return (
+            <Panel title="客户分析" hint="当前筛选下暂无数据" style={{ gridColumn: '1 / -1' }}>
+              <div className="hint" style={{ fontSize: 12 }}>当前筛选（小组/个人）下暂无成单客户，可调整上方筛选或时间范围。</div>
+            </Panel>
+          )
+          const cur = personRows.find((x) => x.name === personSel) ?? personRows[0]
           const totalUsd = cur.usd
           return (<>
-            <Panel title={`客户明细 · ${cur.name}（${cur.team}）`}
+            <Panel title={`客户分析 · ${cur.name}（${cur.team}）`}
               hint={`名下 ${cur.customerCount} 个客户 · ${cur.n} 单 · ${money(totalUsd)} USD`}
-              style={{ gridColumn: '1 / -1' }}
-              extra={<select className="sa" style={{ width: 160 }} value={cur.name} onChange={(e) => setPersonSel(e.target.value)} title="选择销售查看其名下客户明细">
-                {salesRows.map((p) => <option key={p.name} value={p.name}>{p.name}（{p.customerCount} 客户 · {p.n} 单）</option>)}
-              </select>}>
+              style={{ gridColumn: '1 / -1' }}>
               <div className="ana-sum" style={{ marginBottom: 6 }}>
                 <span className="ana-sum-i">客户数 <b>{cur.customerCount}</b> 家</span>
                 <span className="ana-sum-i">订单数 <b>{cur.n}</b> 单</span>
@@ -652,8 +672,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                 <span className="ana-sum-i">平均周期 <b>{cur.avgCycle == null ? '—' : `${cur.avgCycle} 天`}</b></span>
               </div>
               <DataTable
-                cols={['客户', '订单数', '金额（折USD）', '金额占比', '该客户平均订单金额', '占其总额']}
-                widths={['30%', '12%', '18%', '12%', '18%', '10%']}
+                cols={['客户', '订单数', '金额（折USD）', '占其总额', '该客户平均订单金额', '占全公司']}
+                widths={['32%', '13%', '20%', '14%', '13%', '8%']}
                 topCol={2} topLabel="最高"
                 empty="该销售本期暂无成单客户"
                 rows={cur.customerRows.map((c) => [
@@ -662,8 +682,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                 ])}
               />
               <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
-                该销售名下每个客户一行：订单数 / 金额 / **该客户平均订单金额**（＝该客户金额÷订单数）/ 该客户占其个人总额的比例；
-                上方「客户单价」＝该销售总额 ÷ 名下客户数，「单均价」＝该销售总额 ÷ 全部订单数。
+                该销售名下每个客户一行：订单数 / 金额（折USD）/ <b>占其总额</b>（该客户金额÷该销售总额）/ <b>该客户平均订单金额</b>（＝该客户金额÷该客户订单数）/ <b>占全公司</b>（该客户金额÷当前筛选下全部订单金额）。
+                上方「客户单价」＝该销售总额÷名下客户数，「单均价」＝该销售总额÷全部订单数；金额均取订单上填写的成交金额折 USD。
               </div>
             </Panel>
           </>)
