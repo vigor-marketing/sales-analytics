@@ -5,6 +5,7 @@ import { KeyTags } from './KeyTags'
 import GuidanceNote from './Guidance'
 import GuidanceModal from './GuidanceModal'
 import InquiryFollowupsModal from './InquiryFollowupsModal'
+import FollowupRecordModal, { type FuRecord } from './FollowupRecordModal'
 
 interface MetaLite { sales: { name: string; team: string }[]; methods?: string[] }
 interface Lookup {
@@ -47,21 +48,25 @@ export default function FollowUps({ meta, target }: {
   const photoInput = useRef<HTMLInputElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const [list, setList] = useState<Fu[]>([])
-  // 同一询价可能有多条跟进：列表只显示一行（取最新一条），其余明细在「查看详情」弹窗里查
+  // 列表态：同一询价多条跟进合并为一行（取最新）；进入某个询价后：逐条列出该询价的全部跟进记录（每行可单独查看）
   const rows = useMemo(() => {
+    const byDateDesc = (a: Fu, b: Fu) => (String(b.date) < String(a.date) ? -1 : String(b.date) > String(a.date) ? 1 : Number(b.seq ?? 0) - Number(a.seq ?? 0))
+    if (hit) return [...list].sort(byDateDesc)
     const m = new Map<string, Fu>()
     list.forEach((r) => {
       const cur = m.get(r.inquiry_id)
       const newer = !cur || Number(r.seq ?? 0) > Number(cur.seq ?? 0) || (Number(r.seq ?? 0) === Number(cur.seq ?? 0) && String(r.date) > String(cur.date))
       if (newer) m.set(r.inquiry_id, r)
     })
-    return Array.from(m.values()).sort((a, b) => (String(b.date) < String(a.date) ? -1 : String(b.date) > String(a.date) ? 1 : 0))
-  }, [list])
+    return Array.from(m.values()).sort(byDateDesc)
+  }, [list, hit])
   const [options, setOptions] = useState<{ id: string; inquiry_no: string; customer_name: string; date: string }[]>([])
   const [optLoading, setOptLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   // 查看跟进详情：与「询报价管理」页的「查看详情」使用同一个弹窗（按条列出该询价全部跟进）
   const [detailOf, setDetailOf] = useState<{ id: string; no: string; customer?: string } | null>(null)
+  // 详情态下「查看详情」：按条查看某一条跟进记录（可编辑最新一条）
+  const [recordOf, setRecordOf] = useState<Fu | null>(null)
   // 详情里默认只「查看多条跟进」；点击任意一条（或点「＋ 新建跟进」）才展开建立跟进表单
   const [formOpen, setFormOpen] = useState(false)
   const formRef = useRef<HTMLDivElement | null>(null)
@@ -255,6 +260,11 @@ export default function FollowUps({ meta, target }: {
           onClose={() => setDetailOf(null)} />
       )}
 
+      {recordOf && (
+        <FollowupRecordModal record={recordOf as unknown as FuRecord} editable={Number(recordOf.seq) === Number(recordOf.seq_total)}
+          onClose={() => setRecordOf(null)} onSaved={() => { setRecordOf(null); void loadList() }} />
+      )}
+
       {commentOf && (
         // 未进入详情时可新增；已进入跟进详情则只读
         <GuidanceModal record={commentOf} people={meta.sales.map((x) => x.name)} readOnly={Boolean(hit)}
@@ -306,9 +316,16 @@ export default function FollowUps({ meta, target }: {
                         {r.summary && <div style={{ fontWeight: 600 }}>{r.summary}</div>}
                         {detail && <div style={{ marginTop: r.summary ? 3 : 0, whiteSpace: 'pre-wrap' }}>{detail}</div>}
                         {!r.summary && !detail && <span className="hint">—</span>}
-                        {/* 「查看详情」放在简述/详情下面 */}
-                        <button className="btn xs" style={{ marginTop: 6 }} title="查看该询价的全部跟进详情（含简述、详情、图片、附件、跟进指导）"
-                          onClick={(e) => { e.stopPropagation(); setDetailOf({ id: r.inquiry_id, no: r.inquiry_no, customer: r.customer_name }) }}>查看详情</button>
+                        {/* 「查看详情」放在简述/详情下面；进入某个询价后按条查看该条的完整信息 */}
+                        <button className="btn xs" style={{ marginTop: 6 }}
+                          title={hit
+                            ? `查看第 ${r.seq ?? '—'} 次跟进的完整信息（具体内容、图片、附件、跟进指导）`
+                            : '查看该询价的全部跟进详情（含简述、详情、图片、附件、跟进指导）'}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (hit) setRecordOf(r)
+                            else setDetailOf({ id: r.inquiry_id, no: r.inquiry_no, customer: r.customer_name })
+                          }}>查看详情</button>
                       </div>
                     </td>
                     <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>
