@@ -6,6 +6,7 @@ interface Item { product_name: string; amount: number; currency: string; qty: nu
 interface OrderRow {
   order_id: string; order_no: string; won_date: string; order_amount: number | null; order_currency: string
   inquiry_no: string; date: string; sales: string; customer_name: string; country?: string | null
+  source?: string | null; purchaser?: string | null; customer_country?: string | null; use_location?: string | null
   usdApprox: number; totals: { currency: string; total: number }[]; items: Item[]; cycleDays: number | null; productNames: string
 }
 interface Stats { contractCount: number; cycleCount: number; avgCycle: number | null; medianCycle: number | null; minCycle: number | null; maxCycle: number | null; usdTotal: number; byProduct: { name: string; count: number; avgCycle: number }[]; bySales: { name: string; count: number; avgCycle: number }[] }
@@ -13,6 +14,20 @@ interface MetaLite { sales: { name: string; team: string }[]; winReasons?: strin
 interface ReasonItem { reason: string; count: number; usd: number; share: number; usdShare: number; avgCycle: number | null }
 interface ReasonStat { total: number; usdTotal: number; items: ReasonItem[]; missing: number }
 interface ReasonData { win: ReasonStat; lost: ReasonStat; reasons: { win: string[]; lost: string[] } }
+
+/** 「按其他维度」可选的分析维度：取值口径与分组成交的销售订单一一对应（每单必落到唯一一个值上） */
+interface DimRow { name: string; count: number; usd: number; avgCycle: number | null }
+const DIMS: { key: string; label: string; of: (r: OrderRow) => string }[] = [
+  { key: 'source', label: '询价来源', of: (r) => String(r.source || '').trim() },
+  { key: 'purchaser', label: '采购方', of: (r) => String(r.purchaser || '').trim() },
+  { key: 'country', label: '客户国别', of: (r) => String(r.customer_country || r.country || '').trim() },
+  { key: 'currency', label: '订单币种', of: (r) => String(r.order_currency || '').trim() },
+  { key: 'use_location', label: '使用地点', of: (r) => String(r.use_location || '').trim() },
+  { key: 'customer', label: '客户', of: (r) => String(r.customer_name || '').trim() },
+  { key: 'sales', label: '销售', of: (r) => String(r.sales || '').trim() },
+]
+/** 未填写的取值统一显示成「未填写」，避免表格里出现空白行 */
+const UNKNOWN = '未填写'
 
 /** 只读表格筛选：时间范围（成单日期）+ 产品名包含 */
 function filterPanelRows(all: { won_date?: string | null; productNames?: string }[], f: { range: RangeKey; product: string }) {
@@ -70,6 +85,23 @@ function computeAggregate(rows: OrderRow[], ctx: { fx: Record<string, number>; t
     name, count: v.count, usd: Math.round(v.usd),
     avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
   })).sort((a, b) => b.count - a.count || b.usd - a.usd)
+
+  // 其它维度（来源 / 采购方 / 国别 / 币种 / 使用地点 / 客户 / 销售）：与按产品同一口径，供「按其他维度」表切换
+  const dimRows: Record<string, DimRow[]> = {}
+  DIMS.forEach((dim) => {
+    const m = new Map<string, { usd: number; n: number; cycles: number[] }>()
+    rows.forEach((r) => {
+      const k = dim.of(r) || UNKNOWN
+      const a = m.get(k) ?? { usd: 0, n: 0, cycles: [] as number[] }
+      a.usd += r.usdApprox || 0; a.n += 1
+      if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
+      m.set(k, a)
+    })
+    dimRows[dim.key] = Array.from(m.entries()).map(([name, v]) => ({
+      name, count: v.n, usd: Math.round(v.usd),
+      avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
+    })).sort((a, b) => b.usd - a.usd || a.name.localeCompare(b.name))
+  })
 
   // 月度 × 小组
   const mm = new Map<string, { month: string; total: { usd: number; n: number }; teams: Map<string, { usd: number; n: number }> }>()
@@ -182,7 +214,7 @@ function computeAggregate(rows: OrderRow[], ctx: { fx: Record<string, number>; t
   }).sort((a, b) => b.usd - a.usd)
 
   const cycleRange: [number, number] | null = cycles.length ? [Math.min(...cycles), Math.max(...cycles)] : null
-  return { rows, sumUsd, avgCycle, cycleRange, productRows, monthTeams, activeTeams, topCustomers, teamRows, teamMembers, salesRows }
+  return { rows, sumUsd, avgCycle, cycleRange, productRows, dimRows, monthTeams, activeTeams, topCustomers, teamRows, teamMembers, salesRows }
 }
 
 /** 组内对比卡片的主色（每组一条，便于区分） */
@@ -351,6 +383,9 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   const [fCust, setFCust] = useState<PanelF>({ range: '', product: '' })
   const [custPerson, setCustPerson] = useState('')
   const [fGroup, setFGroup] = useState<PanelF>({ range: '', product: '' })
+  /** 按其他维度：本表自己的时间范围/产品筛选 + 维度选择（'' 表示自动取当前范围内有数据的第一个维度） */
+  const [fDim, setFDim] = useState<PanelF>({ range: '', product: '' })
+  const [dimKey, setDimKey] = useState('')
 
   const [allRows, setAllRows] = useState<OrderRow[]>([])
   const [msg, setMsg] = useState('')
@@ -420,6 +455,12 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   const fCustAll = useMemo<PanelF>(() => ({ range: fCust.range, product: '' }), [fCust.range])
   const CPall = usePanel(fCustAll)
   const GR = usePanel(fGroup)
+  const DM = usePanel(fDim)
+  /** 当前生效维度：手选优先；若手选维度在本表筛选下没有数据，则自动落到第一个有数据的维度，保证表格不空 */
+  const activeDim = DIMS.find((d) => d.key === dimKey && (DM.dimRows[d.key]?.length ?? 0) > 0)
+    ?? DIMS.find((d) => (DM.dimRows[d.key]?.length ?? 0) > 0) ?? DIMS[0]
+  const dimList = DM.dimRows[activeDim.key] ?? []
+  const dimSum = dimList.reduce((a, b) => a + b.usd, 0)
 
   const years = useMemo(() => {
     const set = new Set<string>()
@@ -566,6 +607,36 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
             ])}
           />
           {PD.productRows.length > 15 && <div className="hint" style={{ fontSize: 11 }}>仅显示前 15 个产品</div>}
+        </Panel>
+        )}
+
+        {/* 按其他维度：与「按产品」并列，维度可切换（来源/采购方/国别/币种/使用地点/客户/销售） */}
+        {tab === 'all' && (
+        <Panel title={`按${activeDim.label}`}
+          hint={`${dimList.length} 个取值 · 合计 ${money(dimSum)} USD`}
+          extra={<span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <select className="sa" style={{ width: 116 }} value={activeDim.key} title="选择分析维度（仅影响这张表）"
+              onChange={(e) => setDimKey(e.target.value)}>
+              {DIMS.map((d) => {
+                const n = DM.dimRows[d.key]?.length ?? 0
+                return <option key={d.key} value={d.key} disabled={n === 0}>{n === 0 ? `按${d.label}（无数据）` : `按${d.label}`}</option>
+              })}
+            </select>
+            {rangeSelect(fDim, setFDim)}
+          </span>}>
+          <DataTable
+            cols={[activeDim.label, '成单次数', '金额（折USD）', '金额占比', '平均周期']}
+            widths={['34%', '15%', '20%', '15%', '16%']}
+            topCol={2} topLabel="最高"
+            empty={`本表筛选下「${activeDim.label}」暂无成单数据，可换一个维度或调整时间范围`}
+            rows={dimList.slice(0, 15).map((d) => [
+              d.name, `${d.count} 次`, money(d.usd), `${dimSum ? Math.round((d.usd / dimSum) * 1000) / 10 : 0}%`,
+              d.avgCycle == null ? '—' : `${d.avgCycle} 天`,
+            ])}
+          />
+          <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
+            与「按产品」同一口径：只统计成单日期落在本表筛选范围内的销售订单（金额＝订单上填写的成交金额折 USD），下拉可切换维度（{DIMS.map((d) => d.label).join(' / ')}）；未填写的取值计入「{UNKNOWN}」。{dimList.length > 15 ? ' 仅显示前 15 个取值。' : ''}
+          </div>
         </Panel>
         )}
 
