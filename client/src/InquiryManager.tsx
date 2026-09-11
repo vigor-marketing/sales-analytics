@@ -107,8 +107,8 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
         {/* 自适应列宽：表格永远不超过屏幕宽度（长内容在单元格内换行/省略，悬停看全文） */}
         <table className="grid fit-table" style={{ borderCollapse: 'collapse', fontSize: 12.5 }}>
           <colgroup>
-            <col style={{ width: '9%' }} /><col style={{ width: '6%' }} /><col style={{ width: '9%' }} /><col style={{ width: '11%' }} /><col style={{ width: '7%' }} />
-            <col style={{ width: '10%' }} /><col style={{ width: '7%' }} /><col style={{ width: '17%' }} /><col style={{ width: '5%' }} /><col style={{ width: '5%' }} />
+            <col style={{ width: '9%' }} /><col style={{ width: '6%' }} /><col style={{ width: '9%' }} /><col style={{ width: '11%' }} /><col style={{ width: '10%' }} />
+            <col style={{ width: '9%' }} /><col style={{ width: '7%' }} /><col style={{ width: '15%' }} /><col style={{ width: '5%' }} /><col style={{ width: '5%' }} />
             <col style={{ width: '5%' }} /><col style={{ width: '9%' }} />
           </colgroup>
           <thead><tr>{['询价号', '日期', '客户', '状态', '标签', '报价合计（含费用）', '最近跟进', '跟进简述与详情', '销售', '采购', '来源', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '6px 8px', textAlign: h === '来源' ? 'center' : 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '报价合计（含费用）' ? '默认＝产品明细合计 ＋ 运费/税费/佣金/其他费用（自动统计）；该询价若手填了「总金额」，则以手填金额为准（显示「手填」标记）' : (h === '跟进简述与详情' ? '该询价最近一条跟进的简述与详情；点行内「查看详情」看全部跟进与附件' : undefined)}>{h}</th>)}</tr></thead>
@@ -122,7 +122,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                   <StatusTag status={r.status} />
                   {r.status === 'lost' && <div className="lost-line">丢单原因：{r.lost_reason || '—'}{r.lost_date ? `（${r.lost_date}）` : ''}</div>}
                 </td>
-                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><TagBlocks r={r} /></td>
+                <td className="cell-tags" style={{ padding: '6px 8px' }}><TagBlocks r={r} /></td>
                 <td style={{ padding: '6px 8px' }}
                   title={r.handTotalUsd != null
                     ? `已手填总金额：${money(r.hand_total)} ${r.hand_total_currency || 'USD'}（≈USD ${money(r.handTotalUsd)}），以手填为准。\n自动合计：产品明细 ${fmtT(r) || '—'}${feeText(r)} ≈USD ${money(r.usdApprox)}`
@@ -194,7 +194,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
   )
 }
 
-const TagBlocks = ({ r }: { r: { is_key_customer?: number; is_key_project?: number } }) => <KeyTags kc={r.is_key_customer} kp={r.is_key_project} />
+const TagBlocks = ({ r }: { r: { is_key_customer?: number; is_key_project?: number } }) => <KeyTags kc={r.is_key_customer} kp={r.is_key_project} compact />
 
 function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, products = [], onClose, onSaved }: { id: string; meta?: MetaLite; products?: ProductLite[]; onClose: () => void; onSaved: () => void }) {
   const [order, setOrder] = useState<{ id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null>(null)

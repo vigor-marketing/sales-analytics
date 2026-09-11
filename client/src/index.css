@@ -560,3 +560,7 @@ td .act-group .act-btn:focus-visible { outline: 2px solid rgba(0, 82, 217, .35);
 .proj-table th, .proj-table td { padding: 5px 8px; border-bottom: 1px dashed #eef1f6; text-align: left; vertical-align: middle }
 .proj-table th { width: 12%; font-weight: 600; color: var(--sub); background: #f7f9fd; white-space: nowrap }
 .proj-table td { width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+
+/* 表格内标签列（重点客户/重点项目）：居中显示，窄屏时换行不溢出 */
+table.grid > tbody > tr > td.cell-tags { text-align: center !important; white-space: normal !important; overflow-wrap: anywhere }
+table.grid > tbody > tr > td.cell-tags .tag { margin: 0 2px; display: inline-block; white-space: nowrap }
