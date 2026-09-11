@@ -78,38 +78,48 @@ export default function SettingsView() {
       </div>
       {msg && <div className={`msg ${msg.t}`}>{msg.t === 'ok' ? '✔' : '✖'} {msg.text}</div>}
 
-      {groups.map((g) => (
-        <section key={g.code} style={{ marginBottom: 18 }}>
-          <h3 style={{ margin: '0 0 6px', fontSize: 15 }}>
-            {g.name} <span className="hint">（可增删改）</span>
-            {dirtyGroups.some((x) => x.code === g.code) && <span className="badge" style={{ marginLeft: 6, background: '#fef3c7', color: '#92400e' }}>待保存</span>}
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 640 }}>
-            {g.values.length === 0 && <div className="hint">暂无选项</div>}
-            {g.values.map((v, i) => (
-              <div key={v + i} className="row" style={{ marginBottom: 0 }}>
-                <span className="badge new" style={{ minWidth: 130 }}>{i + 1}. {v}</span>
-                <span style={{ flex: 1 }} />
-                <button className="btn sm" onClick={() => setRenaming({ code: g.code, value: v, next: v })}>改名</button>
-                <button className="btn sm danger" onClick={() => removeValue(g.code, v)}>删除</button>
-              </div>
-            ))}
-            {renaming && renaming.code === g.code && (
-              <div className="row" style={{ marginBottom: 0 }}>
-                <input className="sa grow1" value={renaming.next} onChange={(e) => setRenaming({ ...renaming, next: e.target.value })} placeholder="新名称" />
-                <button className="btn pri sm" disabled={!renaming.next.trim() || renaming.next === renaming.value}
-                  onClick={() => { renameValue(g.code, renaming.value, renaming.next); setRenaming(null) }}>确定改名</button>
-                <button className="btn sm" onClick={() => setRenaming(null)}>取消</button>
-              </div>
-            )}
-            <div className="row" style={{ marginBottom: 0 }}>
-              <input className="sa grow1" value={adds[g.code] ?? ''} onChange={(e) => setAdds((m) => ({ ...m, [g.code]: e.target.value }))}
-                onKeyDown={(e) => { if (e.key === 'Enter') addValue(g.code, adds[g.code] ?? '') }} placeholder="新增选项名称（回车或点添加，需保存后生效）" />
-              <button className="btn pri sm" onClick={() => addValue(g.code, adds[g.code] ?? '')}>添加</button>
+      {/* 选项组：两列卡片 + 标签式选项（点标签改名、× 删除），大幅压缩页面高度 */}
+      <div className="opt-grid">
+        {groups.map((g) => (
+          <section key={g.code} className="opt-card">
+            <div className="opt-head">
+              <h4 className="opt-title">{g.name}</h4>
+              <span className="hint">{g.values.length} 项</span>
+              {dirtyGroups.some((x) => x.code === g.code) && <span className="badge" style={{ background: '#fef3c7', color: '#92400e' }}>待保存</span>}
             </div>
-          </div>
-        </section>
-      ))}
+            <div className="opt-chips">
+              {g.values.length === 0 && <span className="hint">暂无选项，右侧输入即可新增</span>}
+              {g.values.map((v, i) => (
+                renaming && renaming.code === g.code && renaming.value === v ? (
+                  <span key={v + i} className="opt-chip editing">
+                    <input className="sa opt-edit" autoFocus value={renaming.next} placeholder="新名称"
+                      onChange={(e) => setRenaming({ ...renaming, next: e.target.value })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && renaming.next.trim() && renaming.next !== renaming.value) { renameValue(g.code, renaming.value, renaming.next); setRenaming(null) }
+                        if (e.key === 'Escape') setRenaming(null)
+                      }} />
+                    <button className="opt-x ok" title="确定改名" disabled={!renaming.next.trim() || renaming.next === renaming.value}
+                      onClick={() => { renameValue(g.code, renaming.value, renaming.next); setRenaming(null) }}>✓</button>
+                    <button className="opt-x" title="取消" onClick={() => setRenaming(null)}>×</button>
+                  </span>
+                ) : (
+                  <span key={v + i} className="opt-chip" title={`第 ${i + 1} 项 · 点名称可改名；× 删除`}>
+                    <button className="opt-name" onClick={() => setRenaming({ code: g.code, value: v, next: v })}>{v}</button>
+                    <button className="opt-x" title={`删除「${v}」`} onClick={() => removeValue(g.code, v)}>×</button>
+                  </span>
+                )
+              ))}
+            </div>
+            <div className="opt-add">
+              <input className="sa" value={adds[g.code] ?? ''} placeholder="新增选项…"
+                onChange={(e) => setAdds((m) => ({ ...m, [g.code]: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === 'Enter') addValue(g.code, adds[g.code] ?? '') }} />
+              <button className="btn sm pri" disabled={!(adds[g.code] ?? '').trim()} onClick={() => addValue(g.code, adds[g.code] ?? '')}>添加</button>
+            </div>
+          </section>
+        ))}
+      </div>
+      <div className="hint" style={{ marginTop: 6 }}>点选项名称即可改名（回车确认 / Esc 取消），× 删除；改完后点右上角「保存」生效，历史记录保留原值展示。</div>
 
       {fixed.map((g) => (
         <section key={g.code} style={{ marginBottom: 10 }}>
@@ -118,11 +128,6 @@ export default function SettingsView() {
         </section>
       ))}
 
-      <div style={{ marginTop: 6, display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
-        {dirty && <span className="hint" style={{ alignSelf: 'center' }}>有 {dirtyGroups.length} 组选项未保存</span>}
-        <button className="btn" onClick={discard} disabled={!dirty || saving}>放弃修改</button>
-        <button className="btn pri" onClick={() => void save()} disabled={!dirty || saving}>{saving ? '保存中…' : '保存'}</button>
-      </div>
     </div>
   )
 }
