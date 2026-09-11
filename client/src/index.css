@@ -457,17 +457,18 @@ input.sa:disabled, select.sa:disabled { background: #f6f8fb; color: var(--sub) }
 .grid > tbody > tr > td.cell-guidance .gd-txt,
 .grid > tbody > tr > td.cell-guidance .gd-txt-full { text-align: center !important }
 .grid > tbody > tr > td.cell-guidance .gd-compact { justify-content: center }
-.fu-list-modal .fu-card { text-align: center }
-.fu-list-modal .fu-card-head { justify-content: center; row-gap: 6px }
-.fu-list-modal .fu-card-sec > label { text-align: center }
-.fu-list-modal .fu-card-val { text-align: center }
-.fu-list-modal .fu-files { justify-content: center }
+/* 跟进详情弹窗：内容左对齐（简述/详情/图片附件/指导 都从左侧开始排列，便于逐行阅读） */
+.fu-list-modal .fu-card { text-align: left }
+.fu-list-modal .fu-card-head { justify-content: flex-start; row-gap: 6px }
+.fu-list-modal .fu-card-sec > label { text-align: left }
+.fu-list-modal .fu-card-val { text-align: left }
+.fu-list-modal .fu-files { justify-content: flex-start }
 .fu-list-modal .gd-note,
 .fu-list-modal .gd-note .gd-head,
 .fu-list-modal .gd-note .gd-body,
 .fu-list-modal .gd-all .gd-item,
-.fu-list-modal .gd-all .gd-txt-full { text-align: center }
-.fu-list-modal .gd-note.gd-all { align-items: center }
+.fu-list-modal .gd-all .gd-txt-full { text-align: left }
+.fu-list-modal .gd-note.gd-all { align-items: flex-start }
 .fu-list-modal .gd-item + .gd-item { margin-top: 6px }
 .gd-modal .gd-list .gd-item-box { text-align: center }
 
@@ -475,7 +476,7 @@ input.sa:disabled, select.sa:disabled { background: #f6f8fb; color: var(--sub) }
 .grid > tbody > tr > td.cell-guidance .gd-block .gd-head { justify-content: center; text-align: center }
 .fu-list-modal .gd-block .gd-head { justify-content: center; text-align: center }
 /* 仪表盘「查看指导」弹窗：详情与指导意见居中 */
-.gd-modal .gd-list .gd-item-box, .gd-modal .ro { text-align: center }
+.gd-modal .gd-list .gd-item-box, .gd-modal .ro { text-align: left }
 
 /* 「第几次跟进」列：强制单行（不换行），并紧凑排版，窗口变窄时只轻微裁切、绝不换行撑高 */
 table.fit-table > tbody > tr > td.cell-seq { white-space: nowrap !important; text-overflow: clip !important }

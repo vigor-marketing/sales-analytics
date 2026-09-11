@@ -88,7 +88,17 @@ export default function FollowUps({ meta, target }: {
   useEffect(() => { const t = setTimeout(() => { void lookup() }, 400); return () => clearTimeout(t) }, [lookup])
   // 切换合同（询价）时收起表单，先看该合同的全部跟进
   useEffect(() => { setFormOpen(false) }, [hit?.id])
+  // 「添加跟进」在列表态触发时：询价信息带出后自动展开建立跟进表单
+  useEffect(() => {
+    if (!hit || !pendingOpenRef.current) return
+    const r = pendingOpenRef.current
+    pendingOpenRef.current = null
+    openFormFrom(r)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hit])
   // 点击某条跟进 → 展开建立跟进表单（沿用该条的跟进方式/跟进人），不跳回页面顶部
+  // 列表态点「添加跟进」：先把该询价带出来，等询价信息就绪后再展开表单
+  const pendingOpenRef = useRef<Fu | null>(null)
   const openFormFrom = (r: Fu) => {
     setF((prev) => ({ ...prev, date: today(), method: r.method || prev.method, byName: r.by_name || r.sales || prev.byName, summary: '', detail: '', nextFollowupAt: '' }))
     setFormOpen(true)
@@ -271,21 +281,12 @@ export default function FollowUps({ meta, target }: {
                           onClick={(e) => { e.stopPropagation(); setDetailOf({ id: r.inquiry_id, no: r.inquiry_no, customer: r.customer_name }) }}>查看详情</button>
                       </div>
                     </td>
-                    <td style={{ padding: '7px 8px' }}>
-                      {(() => {
-                        const cs = r.comments ?? []
-                        return (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center', textAlign: 'center' }}>
-                            {/* 表格内保持紧凑（悬停可看全部），完整展开在跟进详情弹窗里 */}
-                            <GuidanceNote compact comments={cs} />
-                            {/* 跟进列表里可查看并新增指导；进入某个询价的跟进详情后只查看 */}
-                            <button className="btn xs" onClick={() => setCommentOf(r)}
-                              title={hit ? '查看全部跟进指导（详情内只读）' : cs.length ? '查看全部指导 / 继续追加' : '添加跟进指导'}>
-                              {hit ? '查看指导' : cs.length ? '查看/追加指导' : '＋ 添加指导'}
-                            </button>
-                          </div>
-                        )
-                      })()}
+                    <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>
+                      {/* 跟进指导：列内只放「添加指导」按钮；指导详情在按钮弹窗里看（只显示最新一条） */}
+                      <button className="btn xs" onClick={() => setCommentOf(r)}
+                        title={hit ? '查看最新一条跟进指导（详情内只读）' : ((r.comments ?? []).length ? `添加指导（已有的最新指导：${(r.comments ?? [])[(r.comments ?? []).length - 1].content.slice(0, 40)}…）` : '给这条跟进添加指导建议')}>
+                        {hit ? '查看指导' : '添加指导'}
+                      </button>
                     </td>
                     <td style={{ padding: '7px 8px' }}>
                       {photos.length === 0 && atts.length === 0 ? <span className="hint">—</span> : (
@@ -309,10 +310,17 @@ export default function FollowUps({ meta, target }: {
                     </td>
                     <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.next_followup_at ? r.next_followup_at.replace('T', ' ') : '—'}</td>
                     <td className="mono hint" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{String(r.created_at || '').slice(0, 16).replace('T', ' ')}</td>
-                    {/* 查看该条跟进详情：最新一条可编辑，较早的只读 */}
+                    {/* 操作：为该询价再添加一条跟进（详情/图片/附件看上方「简述与内容」列的「查看详情」） */}
                     <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>
-                      <button className="btn xs" title="查看该询价的全部跟进详情（含简述、详情、图片、附件、跟进指导）"
-                        onClick={() => setDetailOf({ id: r.inquiry_id, no: r.inquiry_no, customer: r.customer_name })}>查看详情</button>
+                      <button className="btn xs pri" title="为该询价新增一条跟进记录（填写简述与具体内容，可上传图片/附件）"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (hit) { openFormFrom(r); return }
+                          // 列表态：先按该行的销售 + 询价号带出询价，再自动展开表单
+                          pendingOpenRef.current = r
+                          keepNoRef.current = true
+                          setSales(r.sales); setNo(r.inquiry_no)
+                        }}>添加跟进</button>
                     </td>
                   </tr>
                 )

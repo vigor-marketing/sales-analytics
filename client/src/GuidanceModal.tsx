@@ -47,16 +47,21 @@ export default function GuidanceModal({ record, people, readOnly, onClose, onSav
           <div className="ro" style={{ marginTop: 6, maxHeight: 120, overflow: 'auto', whiteSpace: 'pre-wrap', textAlign: 'center' }}>{record.detail}</div>
         </>)}
 
-        <h4 className="sec-title" style={{ marginTop: 12 }}>指导意见（{list.length} 条）</h4>
-        {/* 固定高度 + 内部滚动：指导意见再多也不改变弹窗尺寸 */}
+        {/* 只显示最新一条跟进指导（历史指导在下方用一行摘要提示，不铺满弹窗） */}
+        <h4 className="sec-title" style={{ marginTop: 12 }}>最新跟进指导{list.length > 1 ? `（共 ${list.length} 条）` : ''}</h4>
         <div className="gd-list">
-          {list.length === 0 && <div className="hint">暂无评论，可在下方写下跟进建议（如：先确认技术规格、下周约客户现场演示）。</div>}
-          {list.map((c) => (
-            <div key={c.id} className="gd-item-box">
-              <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{c.content}</div>
-              <div className="hint" style={{ marginTop: 4, fontSize: 11.5 }}>{c.by_name || '—'} · {String(c.created_at).slice(0, 16).replace('T', ' ')}</div>
+          {list.length === 0 && <div className="hint">暂无指导，可在下方写下跟进建议（如：先确认技术规格、下周约客户现场演示）。</div>}
+          {list.length > 0 && (
+            <div className="gd-item-box">
+              <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{list[list.length - 1].content}</div>
+              <div className="hint" style={{ marginTop: 4, fontSize: 11.5 }}>{list[list.length - 1].by_name || '—'} · {String(list[list.length - 1].created_at).slice(0, 16).replace('T', ' ')}</div>
             </div>
-          ))}
+          )}
+          {list.length > 1 && (
+            <div className="hint" style={{ marginTop: 6 }} title={list.slice(0, -1).map((c) => `${c.by_name || '—'}（${String(c.created_at).slice(0, 16).replace('T', ' ')}）：${c.content}`).join('\n')}>
+              另有 {list.length - 1} 条较早的指导（悬停可查看历史内容）
+            </div>
+          )}
         </div>
 
         {!readOnly && (<>
