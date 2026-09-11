@@ -11,7 +11,7 @@ import Contracts from './Contracts'
 import ContractsAnalysis from './ContractsAnalysis'
 import FollowUps from './FollowUps'
 import InquiryManager from './InquiryManager'
-import SettingsView from './SettingsView'
+import Settings from './Settings'
 import { currencyOptions } from './currencies'
 
 interface ItemD { productName: string; qty: string; amount: string; currency: string }
@@ -44,7 +44,7 @@ const NAV: { key: PageKey; label: string; icon: JSX.Element }[] = [
   { key: 'contractsAnalysis', label: '销售订单分析', icon: <ChartColumnIcon /> },
   { key: 'customers', label: '客户档案', icon: <UserIcon /> },
   { key: 'products', label: '产品档案', icon: <CartIcon /> },
-  { key: 'settings', label: '字段与选项设置', icon: <SettingIcon /> },
+  { key: 'settings', label: '设置', icon: <SettingIcon /> },
 ]
 const PAGES: PageKey[] = ['dashboard', 'entry', 'manage', 'followups', 'contracts', 'contractsAnalysis', 'customers', 'products', 'settings']
 /** 记忆当前页面：优先 URL hash，其次 localStorage，刷新后保持 */
@@ -55,7 +55,7 @@ function initialPage(): PageKey {
   if (PAGES.includes(saved as PageKey)) return saved as PageKey
   return 'entry'
 }
-const TITLES: Record<PageKey, string> = { dashboard: '仪表盘', entry: '询报价录入', manage: '询报价管理', followups: '询报价跟进', contracts: '销售订单管理', contractsAnalysis: '销售订单分析', customers: '客户档案', products: '产品档案', settings: '字段与选项设置' }
+const TITLES: Record<PageKey, string> = { dashboard: '仪表盘', entry: '询报价录入', manage: '询报价管理', followups: '询报价跟进', contracts: '销售订单管理', contractsAnalysis: '销售订单分析', customers: '客户档案', products: '产品档案', settings: '设置' }
 function Shell({ page, onNav, children, headRight }: { page: PageKey; onNav: (p: PageKey) => void; children: React.ReactNode; headRight?: React.ReactNode }) {
   return (
     <div className="sa-layout">
@@ -295,7 +295,7 @@ export default function App() {
       {page === 'contractsAnalysis' && <ContractsAnalysis meta={meta} />}
       {page === 'customers' && <CustomerArchive />}
       {page === 'products' && <ProductArchive />}
-      {page === 'settings' && <SettingsView />}
+      {page === 'settings' && <Settings />}
     </Shell>
   )
   return (

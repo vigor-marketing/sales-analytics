@@ -2,11 +2,36 @@
 import cors from 'cors'
 import express from 'express'
 import { schema, ensurePeople, backfillProducts, migrateWonToOrders, syncWonFlags, getDb, getSources, getCountries, saveSources, getFollowMethods, saveFollowMethods, getLostReasons, saveLostReasons, getWinReasons, saveWinReasons, getSetting, setSetting, newId, nowIso, todayStr, text, num, getCurrencies, saveCurrencies, currencyCodes, fxRates, fxRateOf, renameCurrencyInData, currencyUsage } from './db.js'
-import { existsSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+/** 极简 .env 读取：只在服务端生效（工作台令牌等敏感配置不进前端/仓库）；已存在的环境变量优先 */
+function loadEnvFile(file: string): void {
+  if (!existsSync(file)) return
+  try {
+    for (const line of String(readFileSyncSafe(file)).split(/\r?\n/)) {
+      const t = line.trim()
+      if (!t || t.startsWith('#')) continue
+      const i = t.indexOf('=')
+      if (i < 1) continue
+      const k = t.slice(0, i).trim(); const v = t.slice(i + 1).trim().replace(/^["']|["']$/g, '')
+      if (process.env[k] === undefined) process.env[k] = v
+    }
+  } catch { /* 读不到就忽略 */ }
+}
+function readFileSyncSafe(file: string): string {
+  try { return readFileSync(file, 'utf8') } catch { return '' }
+}
+loadEnvFile(path.join(__dirname, '..', '.env'))
+loadEnvFile(path.join(__dirname, '..', '..', '.env'))
+
+/** 工作台（vigor-workbench-platform）组织架构对接配置 */
+const WORKBENCH_BASE = (process.env.WORKBENCH_BASE ?? 'http://1.15.91.150').replace(/\/+$/, '')
+const WORKBENCH_TOKEN = process.env.ORG_PICKER_TOKEN ?? process.env.WORKBENCH_PICKER_TOKEN ?? ''
+
 const app = express()
 app.use(cors())
 // 图片/附件以 base64 JSON 上传，body 上限放到 12MB（对应单文件约 8MB 的原始大小）
@@ -256,6 +281,139 @@ app.get('/api/meta/bootstrap', (_req, res) => {
     .map((p) => ({ name: p.name, team: p.team_name || p.department }))
   ok(res, { sales, purchasers, purchaserTeams, sources: getSources(), methods: getFollowMethods(), lostReasons: getLostReasons(), winReasons: getWinReasons(), countries: getCountries(), currencies: currencyCodes(), fx: fxRates(), month: todayStr().slice(0, 7) })
 })
+
+// ============================ 组织架构（对接工作台，保持同步） ============================
+/** 工作台 org 数据（部门 → 团队 → 人员） */
+interface WbPerson { id: string; role: string; name: string; englishName?: string; department: string; team: string }
+interface OrgPerson { id: string; name: string; cnName: string; englishName: string; department: string; team: string; role: string; roleLabel: string }
+interface OrgDept { name: string; teams: { name: string; persons: OrgPerson[] }[] }
+
+/** 本系统里的角色归属：销售部→sales；采购部/销售支持组→support；其它部门→other（只镜像展示，不进销售/采购下拉） */
+function orgRoleOf(department: string): { role: string; label: string } {
+  if (department === '销售部') return { role: 'sales', label: '销售' }
+  if (department === '采购部') return { role: 'support', label: '采购' }
+  if (department === '销售支持组') return { role: 'support', label: '销售支持' }
+  return { role: 'other', label: '其它部门' }
+}
+/** 本系统里显示的名字：优先英文名（历史询价/订单里记的就是英文名），没有英文名时用中文名 */
+const orgDisplayName = (p: WbPerson) => String(p.englishName || '').trim() || String(p.name || '').trim()
+
+/** 拉取工作台组织架构（服务端调用，令牌只在服务端） */
+async function fetchWorkbenchOrg(): Promise<{ persons: OrgPerson[]; departments: OrgDept[]; fetchedAt: string }> {
+  if (!WORKBENCH_TOKEN) throw new Error('未配置工作台令牌（ORG_PICKER_TOKEN），请在 server/.env 里配置后重启')
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 10000)
+  try {
+    const r = await fetch(`${WORKBENCH_BASE}/api/org/tree`, { headers: { 'X-Picker-Token': WORKBENCH_TOKEN }, signal: ctl.signal })
+    if (r.status === 401 || r.status === 403) throw new Error('工作台令牌无效或无权限（401/403）')
+    if (!r.ok) throw new Error(`工作台返回 ${r.status}`)
+    const tree = await r.json() as { department: string; teams: { team: string; persons: WbPerson[] }[] }[]
+    if (!Array.isArray(tree)) throw new Error('工作台返回的 org/tree 结构不正确')
+    const departments: OrgDept[] = tree.map((d) => ({
+      name: String(d.department ?? ''),
+      teams: (d.teams ?? []).map((t) => ({
+        name: String(t.team ?? ''),
+        persons: (t.persons ?? []).map((p) => {
+          const info = orgRoleOf(String(d.department ?? ''))
+          return {
+            id: String(p.id ?? ''), name: orgDisplayName(p), cnName: String(p.name ?? ''), englishName: String(p.englishName ?? ''),
+            department: String(d.department ?? ''), team: String(t.team ?? ''), role: info.role, roleLabel: String(p.role || info.label),
+          }
+        }),
+      })),
+    }))
+    const persons = departments.flatMap((d) => d.teams.flatMap((t) => t.persons))
+    return { persons, departments, fetchedAt: nowIso() }
+  } finally { clearTimeout(timer) }
+}
+
+/** 本系统当前人员档案 + 与工作台的差异（用于设置页展示与同步确认） */
+function localOrgState(persons?: OrgPerson[]) {
+  const d = getDb()
+  const local = d.prepare('SELECT name, department, team_name, role FROM people ORDER BY department, team_name, name').all() as { name: string; department: string; team_name: string; role: string }[]
+  // 名字是否还被询价/订单/跟进引用（同步删除前提示用）
+  const refOf = (name: string) => {
+    const q = d.prepare('SELECT (SELECT COUNT(*) FROM inquiries WHERE sales = ?) + (SELECT COUNT(*) FROM followups WHERE by_name = ?) AS a, (SELECT COUNT(*) FROM inquiries WHERE purchaser = ?) AS b').get(name, name, name) as { a: number; b: number }
+    return Number(q?.a ?? 0) + Number(q?.b ?? 0)
+  }
+  const base = { local, teams: Array.from(new Set(local.filter((x) => x.role === 'sales').map((x) => x.team_name))).sort(), syncedAt: getSetting('orgSyncAt') || '', syncInfo: getSetting('orgSyncInfo') || '' }
+  if (!persons) return { ...base, add: [], update: [], remove: [], unchanged: 0 }
+  const byName = new Map(persons.map((p) => [p.name.toLowerCase(), p]))
+  const localByName = new Map(local.map((p) => [p.name.toLowerCase(), p]))
+  const add = persons.filter((p) => !localByName.has(p.name.toLowerCase())).map((p) => ({ name: p.name, cnName: p.cnName, department: p.department, team: p.team, role: p.role, roleLabel: p.roleLabel }))
+  const update = persons.filter((p) => {
+    const l = localByName.get(p.name.toLowerCase())
+    return l && (l.department !== p.department || l.team_name !== p.team || l.role !== p.role)
+  }).map((p) => {
+    const l = localByName.get(p.name.toLowerCase()) as { department: string; team_name: string; role: string }
+    const parts: string[] = []
+    if (l.department !== p.department) parts.push(`部门 ${l.department} → ${p.department}`)
+    if (l.team_name !== p.team) parts.push(`小组 ${l.team_name} → ${p.team}`)
+    if (l.role !== p.role) parts.push(`角色 ${l.role} → ${p.role}`)
+    return { name: p.name, changes: parts, department: p.department, team: p.team, role: p.role }
+  })
+  const remove = local.filter((p) => !byName.has(p.name.toLowerCase())).map((p) => ({ name: p.name, department: p.department, team: p.team_name, role: p.role, refs: refOf(p.name) }))
+  const unchanged = persons.length - add.length - update.length
+  return { ...base, add, update, remove, unchanged }
+}
+
+/** 全量镜像：以工作台为准写入本系统人员档案（多出的删除） */
+function applyOrgMirror(persons: OrgPerson[]): { added: number; updated: number; removed: number; total: number } {
+  const d = getDb()
+  let added = 0; let updated = 0; let removed = 0
+  d.transaction(() => {
+    const up = d.prepare(`INSERT INTO people (id, name, department, team_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET name = excluded.name, department = excluded.department, team_name = excluded.team_name, role = excluded.role`)
+    const find = d.prepare('SELECT id FROM people WHERE name = ? COLLATE NOCASE')
+    const before = d.prepare('SELECT name FROM people').all() as { name: string }[]
+    const beforeSet = new Set(before.map((x) => x.name.toLowerCase()))
+    persons.forEach((p) => {
+      const hit = find.get(p.name) as { id: string } | undefined
+      up.run(hit ? hit.id : `wb-${p.id || newId()}`, p.name, p.department, p.team, p.role, nowIso())
+      if (hit) updated += 1; else added += 1
+    })
+    const keep = new Set(persons.map((p) => p.name.toLowerCase()))
+    before.forEach((x) => { if (!keep.has(x.name.toLowerCase())) { d.prepare('DELETE FROM people WHERE name = ? COLLATE NOCASE').run(x.name); removed += 1 } })
+  })()
+  return { added, updated, removed, total: persons.length }
+}
+
+/** 同步一次（拉取 + 镜像写入），返回结果供接口/启动日志使用 */
+async function syncOrgFromWorkbench(): Promise<{ fetchedAt: string; departments: number; persons: number; applied: { added: number; updated: number; removed: number; total: number } }> {
+  const { persons, departments, fetchedAt } = await fetchWorkbenchOrg()
+  const applied = applyOrgMirror(persons)
+  setSetting('orgSyncAt', fetchedAt)
+  setSetting('orgSyncInfo', JSON.stringify({ ...applied, departments: departments.length, base: WORKBENCH_BASE }))
+  return { fetchedAt, departments: departments.length, persons: persons.length, applied }
+}
+
+/** 活动/停用：工作台有这个人，本系统就应该有（保持同步的判定依据） */
+app.get('/api/org/workbench', async (_req, res) => {
+  try {
+    const { persons, departments, fetchedAt } = await fetchWorkbenchOrg()
+    ok(res, {
+      base: WORKBENCH_BASE, tokenConfigured: !!WORKBENCH_TOKEN, fetchedAt,
+      departments, persons: persons.map((p) => ({ ...p })),
+      counts: {
+        departments: departments.length,
+        teams: departments.reduce((a, d) => a + d.teams.length, 0),
+        persons: persons.length,
+        sales: persons.filter((p) => p.role === 'sales').length,
+        support: persons.filter((p) => p.role === 'support').length,
+        other: persons.filter((p) => p.role === 'other').length,
+      },
+      diff: localOrgState(persons),
+    })
+  } catch (e) { fail(res, (e as Error).message, 502) }
+})
+app.post('/api/org/sync', async (_req, res) => {
+  try {
+    const r = await syncOrgFromWorkbench()
+    ok(res, { ...r, local: localOrgState() })
+  } catch (e) { fail(res, (e as Error).message, 502) }
+})
+// 只读：本系统当前人员档案（不调用工作台）
+app.get('/api/org/local', (_req, res) => ok(res, { base: WORKBENCH_BASE, tokenConfigured: !!WORKBENCH_TOKEN, ...localOrgState() }))
 
 // —— 产品档案：录入自动沉淀 + 查询/维护 ——
 app.get('/api/products', (req, res) => {
@@ -1378,7 +1536,17 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 })
 
 const PORT = Number(process.env.PORT ?? 3218)
-const server = app.listen(PORT, '127.0.0.1', () => console.log(`[sales-analytics v3] http://127.0.0.1:${PORT}/api/meta/bootstrap`))
+const server = app.listen(PORT, '127.0.0.1', () => {
+  console.log(`[sales-analytics v3] http://127.0.0.1:${PORT}/api/meta/bootstrap`)
+  // 启动后台把工作台组织架构同步一次（保持同步更新）；失败不影响服务，仅记日志
+  if (WORKBENCH_TOKEN) {
+    setTimeout(() => {
+      syncOrgFromWorkbench()
+        .then((r) => console.log(`[org] 已从工作台同步组织架构：${r.departments} 个部门 / ${r.persons} 人（新增 ${r.applied.added} · 更新 ${r.applied.updated} · 删除 ${r.applied.removed}）`))
+        .catch((e) => console.log(`[org] 启动同步跳过：${(e as Error).message}`))
+    }, 1500)
+  }
+})
 
 // 优雅退出：先落盘（WAL 检查点）再停止接收请求，最后关闭数据库
 const shutdown = (sig: string) => {
