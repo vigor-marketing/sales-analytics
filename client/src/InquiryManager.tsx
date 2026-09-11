@@ -374,35 +374,57 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                 <span style={{ fontSize: 12.5, fontWeight: 700 }}>金额版本记录</span>
                 <span className="hint">保存后自动同步到产品档案：为每个产品生成一个新版本（单价/数量/币种有变化时）</span>
               </div>
-              {form.items.filter((it) => it.productName.trim()).map((it, i) => {
-                const pr = products.find((x) => x.name.toLowerCase() === it.productName.trim().toLowerCase())
-                const amt = Number(it.amount) || 0
-                const qty = it.qty === '' ? null : Number(it.qty)
-                const changed = !pr
-                  || Number(pr.last_amount ?? -1) !== amt
-                  || Number(pr.last_qty ?? -1) !== Number(qty ?? -1)
-                  || pr.currency !== it.currency
-                return (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap', fontSize: 12.5 }}>
-                    <span style={{ minWidth: 180, fontWeight: 600 }}>{it.productName}</span>
-                    {pr
-                      ? <>
-                        <span className="badge new">当前 V{pr.version ?? 0}</span>
-                        <span className="hint">最近单价 {money(pr.last_amount)} {pr.currency}{pr.last_qty != null ? ` · 数量 ${pr.last_qty}` : ''}</span>
-                        {pr.prev_amount != null && <span className="hint">（上一版 {money(pr.prev_amount)}）</span>}
-                        <span className="hint">→ 本次录入 单价 <b className="mono">{money(amt)} {it.currency}</b> × {qty != null && qty > 0 ? qty : 1} ＝ <b className="mono">{money(amt * (qty != null && qty > 0 ? qty : 1))}</b> {it.currency}</span>
-                        {changed
-                          ? <span style={{ color: '#a35c00', fontWeight: 700 }}>保存后生成 V{(pr.version ?? 0) + 1}</span>
-                          : <span className="hint" style={{ color: '#059669' }}>与最近一致，保存后版本不变</span>}
-                      </>
-                      : <>
-                        <span className="badge">未建档</span>
-                        <span style={{ color: '#a35c00', fontWeight: 700 }}>保存后创建 V1</span>
-                      </>}
-                    <button className="btn xs" disabled={!pr} onClick={() => pr && setHistName(pr.name)}>查看记录</button>
-                  </div>
-                )
-              })}
+              {(() => {
+                // 与后端同一顺序对齐旧明细（都按「有产品名且单价>0」的有效行顺序），识别「这一行换了产品」
+                const savedNames = (detail?.items ?? []).map((x) => x.product_name)
+                let vi = 0
+                return form.items
+                  .map((it) => {
+                    const valid = !!it.productName.trim() && (Number(it.amount) || 0) > 0
+                    const prevName = valid ? (savedNames[vi] ?? null) : null
+                    if (valid) vi += 1
+                    return { it, prevName }
+                  })
+                  .filter(({ it }) => it.productName.trim())
+                  .map(({ it, prevName }, i) => {
+                    const swapped = !!prevName && prevName.toLowerCase() !== it.productName.trim().toLowerCase()
+                    const pr = products.find((x) => x.name.toLowerCase() === it.productName.trim().toLowerCase())
+                    const amt = Number(it.amount) || 0
+                    const qty = it.qty === '' ? null : Number(it.qty)
+                    const changed = swapped || !pr
+                      || Number(pr.last_amount ?? -1) !== amt
+                      || Number(pr.last_qty ?? -1) !== Number(qty ?? -1)
+                      || pr.currency !== it.currency
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap', fontSize: 12.5 }}>
+                        <span style={{ minWidth: 180, fontWeight: 600 }}>{it.productName}</span>
+                        {swapped && (
+                          <span className="badge" style={{ background: '#fff4e5', color: '#a35c00' }}
+                            title="这一行原来是另一个产品：保存后会把「版本 + 价格」一起记入新产品档案（即使单价恰好相同）">
+                            产品变更：{prevName} → {it.productName}
+                          </span>
+                        )}
+                        {pr
+                          ? <>
+                            {(pr.version ?? 0) > 0
+                              ? <span className="badge new">当前 V{pr.version}</span>
+                              : <span className="badge" title="该产品还没有价格变动记录（多由旧数据迁移而来）">暂无版本记录</span>}
+                            <span className="hint">最近单价 {money(pr.last_amount)} {pr.currency}{pr.last_qty != null ? ` · 数量 ${pr.last_qty}` : ''}</span>
+                            {pr.prev_amount != null && <span className="hint">（上一版 {money(pr.prev_amount)}）</span>}
+                            <span className="hint">→ 本次录入 单价 <b className="mono">{money(amt)} {it.currency}</b> × {qty != null && qty > 0 ? qty : 1} ＝ <b className="mono">{money(amt * (qty != null && qty > 0 ? qty : 1))}</b> {it.currency}</span>
+                            {changed
+                              ? <span style={{ color: '#a35c00', fontWeight: 700 }}>保存后生成 V{(pr.version ?? 0) + 1}{swapped ? '（产品变更）' : ''}</span>
+                              : <span className="hint" style={{ color: '#059669' }}>与最近一致，保存后版本不变</span>}
+                          </>
+                          : <>
+                            <span className="badge">未建档</span>
+                            <span style={{ color: '#a35c00', fontWeight: 700 }}>保存后创建 V1</span>
+                          </>}
+                        <button className="btn xs" disabled={!pr} onClick={() => pr && setHistName(pr.name)}>查看记录</button>
+                      </div>
+                    )
+                  })
+              })()}
               {(() => {
                 const fv = (detail?.feeVersions ?? [])[0]
                 const feeNow = liveTotals.feeTotal > 0
