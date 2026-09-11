@@ -405,7 +405,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           <span className="ana-sum-i"><b>{money(stats?.usdTotal ?? 0)}</b> USD</span>
           <span className="ana-sum-i">平均周期 <b>{stats?.avgCycle == null ? '—' : `${stats.avgCycle} 天`}</b></span>
           <span className="ana-sum-i">成交 <b>{winSum?.total ?? 0}</b> · 丢单 <b>{lostSum?.total ?? 0}</b></span>
-          <span className="ana-sum-i">客户 <b>{topCustomers.length}</b> 家 · 产品 <b>{productRows.length}</b> 个</span>
+          <span className="ana-sum-i">客户 <b>{topCustomers.length}</b> 家 · 产品 <b>{productRows.length}</b> 个 · 小组 <b>{teamRows.length}</b> 个</span>
         </>)}
         {tab === 'team' && (<>
           <span className="ana-sum-i">小组 <b>{teamRows.length}</b> 个</span>
@@ -600,6 +600,37 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         </Panel>
 
         </>)}
+
+        {tab === 'all' && (
+        <Panel title="小组对比" hint={`${teamRows.length} 个小组 · 合计 ${money(sumUsd)} USD${teamRows[0] ? ` · 最高 ${teamRows[0].name}` : ''}`}
+          style={{ gridColumn: '1 / -1' }}
+          extra={teamRows.length > 1 ? <span className="hint" style={{ fontSize: 11 }}>组均 {money(Math.round(sumUsd / teamRows.length))} USD · 最高组占比 {teamRows[0]?.share ?? 0}%</span> : undefined}>
+          <DataTable
+            cols={['排名', '小组', '订单数', '金额（折USD）', '金额占比', '平均周期', '组内人数', '与最高组差距']}
+            widths={['6%', '20%', '10%', '15%', '12%', '12%', '11%', '14%']}
+            topCol={3} topLabel="第一"
+            empty="本期暂无成单，无法进行小组对比（可调整时间范围或筛选）"
+            rows={teamRows.map((t, i) => [
+              `${i + 1}`,
+              i === 0 && teamRows.length > 1 ? `${t.name}（第一）` : t.name,
+              `${t.n} 单`,
+              money(t.usd),
+              `${t.share}%`,
+              t.avgCycle == null ? '—' : `${t.avgCycle} 天`,
+              `${t.people} 人`,
+              i === 0 ? '—' : (() => {
+                const top = teamRows[0]?.usd ?? 0
+                const pct = top ? Math.round((t.usd / top) * 100) : 0
+                return `${pct}%（少 ${money(Math.max(0, top - t.usd))}）`
+              })(),
+            ])}
+          />
+          <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
+            小组归属按「销售人员 → 组别」，未匹配到组别的销售归入「未分组」；金额为该组成单金额折算 USD，随上方筛选（时间/客户/产品等）联动。
+            更细的「月度 × 小组拆解」与「组内成员排名」见「小组」「组内」两个板块。
+          </div>
+        </Panel>
+        )}
 
         {tab === 'all' && (<>
         <Panel title="成交原因分析" hint={`${winSum?.total ?? 0} 单 · ${money(winSum?.usdTotal ?? 0)} USD`}
