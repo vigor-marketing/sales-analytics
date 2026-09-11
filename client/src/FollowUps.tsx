@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get, post } from './api'
 import { StatusChip } from './StatusChip'
 import { KeyTags } from './KeyTags'
@@ -47,6 +47,16 @@ export default function FollowUps({ meta, target }: {
   const photoInput = useRef<HTMLInputElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const [list, setList] = useState<Fu[]>([])
+  // 同一询价可能有多条跟进：列表只显示一行（取最新一条），其余明细在「查看详情」弹窗里查
+  const rows = useMemo(() => {
+    const m = new Map<string, Fu>()
+    list.forEach((r) => {
+      const cur = m.get(r.inquiry_id)
+      const newer = !cur || Number(r.seq ?? 0) > Number(cur.seq ?? 0) || (Number(r.seq ?? 0) === Number(cur.seq ?? 0) && String(r.date) > String(cur.date))
+      if (newer) m.set(r.inquiry_id, r)
+    })
+    return Array.from(m.values()).sort((a, b) => (String(b.date) < String(a.date) ? -1 : String(b.date) > String(a.date) ? 1 : 0))
+  }, [list])
   const [options, setOptions] = useState<{ id: string; inquiry_no: string; customer_name: string; date: string }[]>([])
   const [optLoading, setOptLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -218,35 +228,23 @@ export default function FollowUps({ meta, target }: {
         <div className="tablewrap" style={{ overflowX: 'auto' }}>
           <table className="grid follow-table fit-table" style={{ borderCollapse: 'collapse', fontSize: 12.5 }}>
             <colgroup>
-              <col style={{ width: '8%' }} /><col style={{ width: '12%' }} /><col style={{ width: '13%' }} /><col style={{ width: '8%' }} /><col style={{ width: '7%' }} />
-              <col style={{ width: '17%' }} /><col style={{ width: '10%' }} /><col style={{ width: '9%' }} /><col style={{ width: '7%' }} /><col style={{ width: '9%' }} />
+              <col style={{ width: '10%' }} /><col style={{ width: '15%' }} /><col style={{ width: '9%' }} /><col style={{ width: '8%' }} />
+              <col style={{ width: '20%' }} /><col style={{ width: '11%' }} /><col style={{ width: '11%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} />
             </colgroup>
-            <thead><tr>{['跟进日期', '第几次跟进', '询价号 / 客户', '销售 / 跟进人', '方式', '跟进简述与内容', '跟进指导', '下次跟进', '录入时间', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '操作' ? '为该询价新增一条跟进记录（展开下方「建立跟进」表单）' : (h === '第几次跟进' ? '按跟进日期先后排序（同一天按录入先后）：第 1 次 = 该询价最早的一次跟进，最新一次标注「最新」' : undefined)}>{h === '第几次跟进' ? '第几次跟进（按日期）' : h}</th>)}</tr></thead>
+            <thead><tr>{['跟进日期', '询价号 / 客户', '销售 / 跟进人', '方式', '跟进简述与内容', '跟进指导', '下次跟进', '录入时间', '操作'].map((h) => <th key={h} style={{ background: '#f8fafd', padding: '7px 8px', textAlign: 'left', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap' }} title={h === '跟进日期' ? '同一询价多次跟进只显示一行（最新一次）；每条跟进的明细请在「查看详情」里查询' : (h === '操作' ? '为该询价新增一条跟进记录（展开下方「建立跟进」表单）' : undefined)}>{h}</th>)}</tr></thead>
             <tbody>
-              {list.map((r) => {
+              {rows.map((r) => {
                 const detail = r.detail || r.content || ''
                 return (
                   // 行点击不再进入跟进详情：要进入某询价请用「操作」列的「添加跟进」
                   <tr key={r.id} style={{ borderBottom: '1px solid var(--line2)' }}>
-                    <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.date}</td>
-                    {/* 第几次跟进：按跟进日期先后自动编号（同日按录入先后） */}
-                    <td className="cell-seq" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}
-                      title={r.seq
-                        ? `该询价共 ${r.seq_total} 次跟进，本条是第 ${r.seq} 次${Number(r.seq) === Number(r.seq_total) ? '（最新一次）' : '（较早的记录）'}；排序依据：跟进日期先后，同一天按录入先后`
-                        : '暂无跟进次数信息'}>
-                      {/* 单行显示：徽标＝第 N 次；后面并排显示「共M次」或（最新一次）「最新」——编号按 1..M 连续，最新那条的次数即总次数 */}
-                      {r.seq
-                        ? (Number(r.seq) === Number(r.seq_total)
-                            ? <>
-                                <span className="badge latest" title={`该询价共 ${r.seq_total} 次跟进，本条是第 ${r.seq} 次（最新一次，故总次数即 ${r.seq}）；排序依据：跟进日期先后，同一天按录入先后`}>第 {r.seq} 次</span>
-                                <span className="cell-latest" title="这是该询价最新的一次跟进（编号即总次数）">最新</span>
-                              </>
-                            : <>
-                                <span className="badge new" title={`该询价共 ${r.seq_total} 次跟进，本条是第 ${r.seq} 次（较早的记录）；排序依据：跟进日期先后，同一天按录入先后`}>第 {r.seq} 次</span>
-                                {r.seq_total ? <span className="cell-note" title={`该询价共 ${r.seq_total} 次跟进`}>共{r.seq_total}次</span> : null}
-                              </>)
-                        : <span className="hint">—</span>}
+                    <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>
+                      {r.date}
+                      {Number(r.seq_total ?? 1) > 1 && (
+                        <span className="cell-note" title={`该询价共 ${r.seq_total} 次跟进，这里显示最新一次；全部记录在「查看详情」里查`}>共{r.seq_total}次</span>
+                      )}
                     </td>
+                    {/* 第几次跟进：按跟进日期先后自动编号（同日按录入先后） */}
                     <td style={{ padding: '7px 8px' }}>
                       <div className="mono" style={{ fontWeight: 600 }}>{r.inquiry_no}</div>
                       <div style={{ marginTop: 2 }}>{r.customer_name}</div>
@@ -294,7 +292,7 @@ export default function FollowUps({ meta, target }: {
                   </tr>
                 )
               })}
-              {list.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 20, color: 'var(--sub)' }}>暂无跟进记录</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', padding: 20, color: 'var(--sub)' }}>暂无跟进记录</td></tr>}
             </tbody>
           </table>
         </div>
