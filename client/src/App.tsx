@@ -395,7 +395,7 @@ export default function App() {
 
       {/* 询价明细 */}
       <div className="card">
-        <h3 className="sec-title">询价明细 <small>可添加多个产品；小计＝单价×数量，总报价自动合计</small></h3>
+        <h3 className="sec-title">询价明细 <small>可添加多个产品 · 产品名称可手输或点「选择 ▾」从产品档案选 · 小计＝单价×数量</small></h3>
         <div className="row" style={{ alignItems: 'center', gap: 18, marginBottom: 10 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>重点项目 *</span>
           <label className="chk"><input type="radio" name="kp" checked={keyProj === '1'} onChange={() => setKeyProj('1')} /> <span className="tag kp">是</span></label>
@@ -406,7 +406,7 @@ export default function App() {
           <div key={i} className="item-row">
             <div className="col w-idx"><label>序号</label><div className="idx-cell">{i + 1}</div></div>
             <div className="col grow1">
-              <label>产品名称 <span className="hint">（可手输；点右侧按钮从产品档案选择）</span></label>
+              <label>产品名称 *</label>
               <ProductPicker
                 value={it.productName}
                 products={products as ProductLite[]}

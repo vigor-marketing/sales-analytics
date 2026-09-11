@@ -119,7 +119,7 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
             {(d.items || []).map((it, i) => (
               <div key={i} className="item-row">
                 <div className="col w-idx"><label>序号</label><div className="idx-cell">{i + 1}</div></div>
-                <div className="col grow1"><label>产品名称</label><div className="ro">{it.product_name || '—'}</div></div>
+                <div className="col grow1"><label>产品名称</label><div className="ro" title={it.product_name || '—'}>{it.product_name || '—'}</div></div>
                 <div className="col w1"><label>数量</label><div className="ro">{it.qty == null ? '—' : it.qty}</div></div>
                 <div className="col w1"><label>单价</label><div className="ro mono">{money2(it.amount)}</div></div>
                 <div className="col w1"><label>币种</label><div className="ro">{it.currency}</div></div>

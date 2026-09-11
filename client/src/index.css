@@ -389,6 +389,11 @@ tr.row-lost:hover>td{background:#ffecec}
 
 /* 产品行删除：固定预留动作位，避免出现/消失引发布局抖动 */
 .item-row{align-items:center}
+/* 询报价录入/查看的明细行：产品名称列限宽（原来 flex:1 会拉到 500+px），其余数值列平分剩余宽度，多行逐列对齐 */
+.item-row .col.grow1{flex:0 1 340px;min-width:200px;max-width:340px}
+.item-row .col.w1{flex:1 1 128px;min-width:112px}
+.item-row .col.w1 input,.item-row .col.w1 select{width:100%}
+.item-row .col label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row-act{flex:0 0 34px;width:34px;display:flex;align-items:center;justify-content:center}
 .icon-del{width:26px;height:26px;border-radius:50%;border:1px solid #f2b8b4;background:#fff;color:var(--danger);font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;padding:0}
 .icon-del:hover{background:var(--danger-soft);border-color:var(--danger);transform:scale(1.06)}
