@@ -363,7 +363,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   const TABS: { key: TabKey; label: string; note: string }[] = [
     { key: 'all', label: '整体数据', note: '关键指标、金额趋势、按产品、小组业绩对比与月度小组拆解、成交与丢单原因、客户排行（每张表可单独筛选）' },
     { key: 'person', label: '个人分析', note: '按销售看其名下所有客户的订单：客户单价（每个客户的平均订单金额）与单均价（所有订单的平均金额）' },
-    { key: 'group', label: '组内', note: '小组内部各成员的成单明细与排名（每个小组一张卡片）' },
+    { key: 'group', label: '组内分析', note: '小组内部各成员的成单明细与排名（每个小组一张卡片）' },
   ]
   const [tab, setTab] = useState<TabKey>(() => {
     const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('sa:anaTab') : null
@@ -594,7 +594,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
             口径：人数＝该组销售（按人员档案归属，未匹配归「未分组」）；<b>人均金额＝金额÷人数</b>、<b>单均价＝金额÷订单数</b>、<b>客户单价＝金额÷客户数</b>；
             「占第一组」＝本组金额÷第一名金额，「与组均」＝(本组金额−组均)÷组均；金额取订单上填写的成交金额折 USD，随上方筛选联动。
-            月度趋势见「月度小组分析」，组内成员排名见「组内」标签页。
+            月度趋势见「月度小组分析」，组内成员排名见「组内分析」标签页。
           </div>
         </Panel>
         )}
