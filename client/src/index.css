@@ -520,3 +520,22 @@ td .act-group .act-btn:focus-visible { outline: 2px solid rgba(0, 82, 217, .35);
 .opt-x.ok:hover { background: var(--brand-light); color: var(--brand) }
 .opt-add { display: flex; gap: 6px; margin-top: 8px }
 .opt-add .sa { height: 28px; flex: 1; min-width: 0 }
+
+/* ===== 销售订单详情（查看）优化布局 ===== */
+.ov-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 1px solid var(--line) }
+.ov-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin: 10px 0 2px }
+.ov-kpi { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: linear-gradient(180deg, #fbfdff, #f5f8fd) }
+.ov-kpi-label { display: block; font-size: 11.5px; color: var(--sub) }
+.ov-kpi-value { display: block; font-size: 16px; font-weight: 800; margin: 2px 0 1px; letter-spacing: .2px }
+.ov-kpi-note { display: block; font-size: 11px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ov-sec { margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 10px }
+.ov-sec-title { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 13.5px; font-weight: 700 }
+.ov-sec-title::before { content: ''; width: 3px; height: 13px; border-radius: 2px; background: var(--brand) }
+.kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 4px 18px }
+.kv-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 3px 0; border-bottom: 1px dashed #eef1f6 }
+.kv-row.block { grid-column: 1 / -1 }
+.kv-k { flex: 0 0 96px; font-size: 12px; color: var(--sub) }
+.kv-v { flex: 1; min-width: 0; font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere }
+.ov-note { margin-top: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: #fbfcff }
+.ov-note > div { margin-top: 2px; font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere }
+.ov-total-row > td { background: var(--brand-light) !important; font-weight: 800 !important }

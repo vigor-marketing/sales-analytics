@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { get, put } from './api'
-import ReasonPicker from './ReasonPicker'
+import { get } from './api'
+import InquiryFollowupsModal from './InquiryFollowupsModal'
 import { KeyTags } from './KeyTags'
-import { currencyOptions } from './currencies'
 import { RANGE_LABEL, rangeDates, type RangeKey } from './dateRange'
 
 interface Item { product_name: string; qty: number | null; amount: number; currency: string }
@@ -16,6 +15,9 @@ interface OrderRow {
   inquiry_id: string; inquiry_no: string; date: string; sales: string; purchaser: string; source: string
   customer_name: string; hand_total: number | null; hand_total_currency?: string | null; usdApprox: number; totals: { currency: string; total: number }[]
   productNames: string; itemCount: number; items: Item[]; cycleDays: number | null
+  feeBuckets?: { currency: string; total: number }[]; fees?: { key: string; label: string; value: number | null; currency: string; rate?: number; usd: number }[]
+  grandTotals?: { currency: string; total: number }[]; fxUsed?: Record<string, number>
+  freight?: number | null; tax?: number | null; commission?: number | null; other_fee?: number | null; fee_currency?: string | null
 }
 interface MetaLite { currencies?: string[]; sales: { name: string; team: string }[]; purchasers?: string[]; sources?: string[]; winReasons?: string[]; lostReasons?: string[] }
 
@@ -33,7 +35,7 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
     get<{ id: string; name: string }[]>('/products').then((l) => setProducts(Array.isArray(l) ? l : [])).catch(() => { /* */ })
   }, [])
   const [rows, setRows] = useState<OrderRow[]>([])
-  const [msg, setMsg] = useState(''); const [viewId, setViewId] = useState<string | null>(null); const [editId, setEditId] = useState<string | null>(null)
+  const [msg, setMsg] = useState(''); const [viewId, setViewId] = useState<string | null>(null)
   const load = useCallback(async () => {
     try {
       const p = new URLSearchParams()
@@ -56,7 +58,7 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
     <div className="card">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0 }}>销售订单管理</h3>
-        <span className="hint">成交以订单为准：询价是否成交由是否存在订单自动判定；订单在「询报价管理」中生成</span>
+        <span className="hint">成交以订单为准：询价是否成交由是否存在订单自动判定；订单在「询报价管理」中生成，本页只读查看</span>
         <span style={{ flex: 1 }} />
         <input className="sa" style={{ width: 150 }} value={orderNo} onChange={(e) => setOrderNo(e.target.value)} placeholder="订单号/询价号" />
         <select className="sa" style={{ maxWidth: 170 }} value={customer} onChange={(e) => setCustomer(e.target.value)} title="按客户筛选">
@@ -105,7 +107,6 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
                 <td className="mono" title={r.order_amount == null ? `按报价合计折 USD ≈ ${money(r.usdApprox)}` : `${money(r.order_amount)} ${r.order_currency}`}>{r.order_amount == null ? `≈USD ${money(r.usdApprox)}` : `${money(r.order_amount)} ${r.order_currency}`}</td>
                 <td>
                   <button className="btn sm" onClick={() => setViewId(r.order_id)}>查看</button>
-                  <button className="btn sm" onClick={() => setEditId(r.order_id)}>编辑</button>
                 </td>
               </tr>
             ))}
@@ -115,7 +116,6 @@ export default function Contracts({ meta }: { meta: MetaLite }) {
       </div>
 
       {viewId && <OrderView id={viewId} onClose={() => setViewId(null)} />}
-      {editId && <OrderEdit id={editId} winReasons={meta.winReasons} currencies={meta.currencies} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); void load() }} />}
     </div>
     </div>
   )
@@ -131,129 +131,184 @@ function useOrder(id: string) {
 function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
   const { d, err } = useOrder(id)
   const [fus, setFus] = useState<FuLite[]>([])
+  const [fuOpen, setFuOpen] = useState(false)
   useEffect(() => {
     if (!d?.inquiry_id) return
     get<FuLite[]>(`/followups?inquiryId=${encodeURIComponent(d.inquiry_id)}`).then((l) => setFus(Array.isArray(l) ? l : [])).catch(() => { /* */ })
   }, [d?.inquiry_id])
-  const totalQuote = (d?.items || []).reduce((sum, it) => sum + (Number(it.amount) || 0), 0)
-  // 报价口径：产品合计 + 费用（运费/税费/佣金/其他）＝ 总报价
-  const feeTotal = ['freight', 'tax', 'commission', 'other_fee'].reduce((sum, k) => sum + (Number((d as unknown as Record<string, number>)?.[k]) || 0), 0)
-  const feeCur = (d as unknown as { fee_currency?: string })?.fee_currency || d?.order_currency || 'USD'
+  const feeList = (d?.fees ?? []).filter((f) => f.value)
+  const feeBuckets = (d?.feeBuckets ?? []).filter((b) => b.total)
+  const quoteRows = d?.grandTotals ?? d?.totals ?? []
+  const orderAmt = d?.order_amount == null ? null : `${money(d.order_amount)} ${d.order_currency}`
   return (
     <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 'min(1040px, 97vw)', maxHeight: '92vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="订单详情">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>订单详情 · {d?.order_no ?? '加载中…'}{d?.customer_name ? `（${d.customer_name}）` : ''}</h3>
+      <div className="modal" style={{ width: 'min(1060px, 97vw)', maxHeight: '92vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="订单详情">
+        {/* 头部：订单号 + 关键指标 */}
+        <div className="ov-head">
+          <div>
+            <h3 style={{ margin: 0 }}>订单详情 · <span className="mono">{d?.order_no ?? '加载中…'}</span></h3>
+            {d && <div className="hint" style={{ marginTop: 2 }}>{d.customer_name} · 询价 {d.inquiry_no} · 成单 {d.won_date}</div>}
+          </div>
+          <span style={{ flex: 1 }} />
+          {d && <span className={'badge ' + (d.win_reason ? 'latest' : '')} title="成交原因">{d.win_reason ? `成交原因：${d.win_reason}` : '未填写成交原因'}</span>}
           <button className="btn sm" onClick={onClose}>关闭</button>
         </div>
         {err && <div className="msg err">{err}</div>}
         {d && (
           <>
+            <div className="ov-kpis">
+              <div className="ov-kpi">
+                <span className="ov-kpi-label">订单金额</span>
+                <b className="ov-kpi-value">{orderAmt ?? `≈USD ${money(d.usdApprox)}`}</b>
+                <span className="ov-kpi-note">{d.order_amount == null ? '未填写，按报价折算' : `折 USD ≈ ${money(d.usdApprox)}`}</span>
+              </div>
+              <div className="ov-kpi">
+                <span className="ov-kpi-label">成交总报价（含费用）</span>
+                <b className="ov-kpi-value">{quoteRows.map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</b>
+                <span className="ov-kpi-note">折 USD ≈ {money(d.usdApprox)}</span>
+              </div>
+              <div className="ov-kpi">
+                <span className="ov-kpi-label">转化周期</span>
+                <b className="ov-kpi-value" style={{ color: cycleTone(d.cycleDays) }}>{d.cycleDays == null ? '—' : `${d.cycleDays} 天`}</b>
+                <span className="ov-kpi-note">询价 {d.date} → 成单 {d.won_date}</span>
+              </div>
+              <div className="ov-kpi">
+                <span className="ov-kpi-label">客户 / 归属</span>
+                <b className="ov-kpi-value" style={{ fontSize: 14 }}>{d.customer_name}</b>
+                <span className="ov-kpi-note">销售 {d.sales} · 采购 {d.purchaser} · 来源 {d.source}</span>
+              </div>
+            </div>
+
             {/* 订单信息 */}
-            <h4 className="sec-title" style={{ marginTop: 12 }}>订单信息</h4>
-            <div className="grid-2">
-              <Info label="订单号" value={d.order_no} mono />
-              <Info label="成单日期" value={d.won_date} mono />
-              <Info label="订单金额" value={d.order_amount == null ? `未填写（报价 ≈USD ${money(d.usdApprox)}）` : `${money(d.order_amount)} ${d.order_currency}`} mono />
-              <Info label="折 USD" value={`≈USD ${money(d.usdApprox)}`} mono />
-              <Info label="成交原因" value={d.win_reason || '未填写'} />
-              <Info label="转化周期" value={d.cycleDays == null ? '—' : `${d.cycleDays} 天（询价 ${d.date} → 成单 ${d.won_date}）`} />
-              <Info label="录入时间" value={d.order_created_at ? String(d.order_created_at).slice(0, 16).replace('T', ' ') : '—'} mono />
-              <Info label="最后更新" value={d.order_updated_at ? String(d.order_updated_at).slice(0, 16).replace('T', ' ') : '—'} mono />
-            </div>
-            {d.order_note && <Info label="订单备注" value={d.order_note} block />}
+            <section className="ov-sec">
+              <h4 className="ov-sec-title">订单信息</h4>
+              <div className="kv">
+                <Kv k="订单号" v={d.order_no} mono />
+                <Kv k="成单日期" v={d.won_date} mono />
+                <Kv k="订单金额" v={orderAmt ?? '未填写'} mono />
+                <Kv k="成交原因" v={d.win_reason || '未填写'} />
+                <Kv k="录入时间" v={d.order_created_at ? String(d.order_created_at).slice(0, 16).replace('T', ' ') : '—'} mono />
+                <Kv k="最后更新" v={d.order_updated_at ? String(d.order_updated_at).slice(0, 16).replace('T', ' ') : '—'} mono />
+              </div>
+              {d.order_note && <div className="ov-note"><span className="hint">订单备注</span><div>{d.order_note}</div></div>}
+            </section>
 
-            {/* 询价与客户信息 */}
-            <h4 className="sec-title" style={{ marginTop: 14 }}>询价与客户信息</h4>
-            <div className="grid-2">
-              <Info label="询价号" value={d.inquiry_no} mono />
-              <Info label="询价日期" value={d.date} mono />
-              <Info label="客户名称" value={d.customer_name} />
-              <Info label="客户星级" value={d.customer_stars ? `${'★'.repeat(Number(d.customer_stars))}（${d.customer_stars} 星）` : '—'} />
-              <Info label="国别" value={d.country || d.customer_country || '—'} />
-              <Info label="使用地" value={d.use_location || '—'} />
-              <Info label="销售人员" value={d.sales} />
-              <Info label="采购人员" value={d.purchaser} />
-              <Info label="询价来源" value={d.source} />
-              <Info label="标签" value={`${Number(d.is_key_customer) === 1 ? '重点客户 ' : ''}${Number(d.is_key_project) === 1 ? '重点项目' : ''}`.trim() || '—'} />
-              <Info label="成交时总报价（自动）" value={`${money(totalQuote + feeTotal)} ${feeTotal > 0 ? feeCur : d.order_currency}${feeTotal > 0 ? `（产品 ${money(totalQuote)} + 费用 ${money(feeTotal)}）` : ''}`} mono />
-              <Info label="询价手填总金额" value={d.hand_total == null ? '—' : `${money(d.hand_total)} ${d.hand_total_currency || 'USD'}`} mono />
-            </div>
+            {/* 询价与客户 */}
+            <section className="ov-sec">
+              <h4 className="ov-sec-title">询价与客户</h4>
+              <div className="kv">
+                <Kv k="询价号" v={d.inquiry_no} mono />
+                <Kv k="询价日期" v={d.date} mono />
+                <Kv k="客户名称" v={d.customer_name} />
+                <Kv k="客户星级" v={d.customer_stars ? `${'★'.repeat(Number(d.customer_stars))}（${d.customer_stars} 星）` : '—'} />
+                <Kv k="国别" v={d.country || d.customer_country || '—'} />
+                <Kv k="使用地" v={d.use_location || '—'} />
+                <Kv k="销售人员" v={d.sales} />
+                <Kv k="采购人员" v={d.purchaser} />
+                <Kv k="询价来源" v={d.source} />
+                <Kv k="标签" v={`${Number(d.is_key_customer) === 1 ? '重点客户 ' : ''}${Number(d.is_key_project) === 1 ? '重点项目' : ''}`.trim() || '—'} />
+                <Kv k="询价手填总金额" v={d.hand_total == null ? '—' : `${money(d.hand_total)} ${d.hand_total_currency || 'USD'}`} mono />
+                <Kv k="最近 / 下次跟进" v={`${d.last_followup_at || '—'} / ${d.next_followup_at ? String(d.next_followup_at).replace('T', ' ') : '—'}`} mono />
+              </div>
+            </section>
 
-            {/* 产品明细 */}
-            <h4 className="sec-title" style={{ marginTop: 14 }}>产品明细（{d.items?.length ?? 0} 行）</h4>
-            <div className="tablewrap">
-              <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
-                <colgroup><col style={{ width: '8%' }} /><col style={{ width: '42%' }} /><col style={{ width: '12%' }} /><col style={{ width: '20%' }} /><col style={{ width: '18%' }} /></colgroup>
-                <thead><tr>{['序号', '产品名称', '数量', '金额', '币种'].map((h, i) => <th key={h} style={{ textAlign: i === 0 || i === 1 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {(d.items || []).map((it, i) => (
-                    <tr key={i}>
-                      <td className="mono">{i + 1}</td>
-                      <td title={it.product_name}>{it.product_name}</td>
-                      <td className="mono" style={{ textAlign: 'right' }}>{it.qty ?? '—'}</td>
-                      <td className="mono" style={{ textAlign: 'right' }}>{money(it.amount)}</td>
-                      <td title={it.currency} style={{ textAlign: 'right' }}>{it.currency}</td>
-                    </tr>
-                  ))}
-                  {feeTotal > 0 && (
-                    <tr>
-                      <td colSpan={3} style={{ fontWeight: 700 }}>费用合计（运费/税费/佣金/其他）</td>
-                      <td className="mono" style={{ fontWeight: 700, textAlign: 'right' }}>{money(feeTotal)}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 700 }}>{feeCur}</td>
-                    </tr>
-                  )}
-                  <tr>
-                    <td colSpan={3} style={{ fontWeight: 700 }}>{feeTotal > 0 ? '总报价（含费用）' : '报价合计'}</td>
-                    <td className="mono" style={{ fontWeight: 800, textAlign: 'right' }}>{money(totalQuote + feeTotal)}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700 }}>{feeTotal > 0 ? feeCur : d.order_currency}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* 询价补充信息 */}
-            {(d.blockers || d.action_plan || d.support_needed || d.note) && (
-              <>
-                <h4 className="sec-title" style={{ marginTop: 14 }}>询价补充信息</h4>
-                <div className="grid-eq3">
-                  {d.blockers && <Info label="卡点/问题" value={d.blockers} block />}
-                  {d.action_plan && <Info label="行动计划" value={d.action_plan} block />}
-                  {d.support_needed && <Info label="需要的支持" value={d.support_needed} block />}
-                </div>
-                {d.note && <Info label="询价备注" value={d.note} block />}
-              </>
-            )}
-
-            {/* 跟进情况 */}
-            <h4 className="sec-title" style={{ marginTop: 14 }}>跟进情况（{fus.length} 条）</h4>
-            <div className="grid-2">
-              <Info label="最近跟进" value={d.last_followup_at || '—'} mono />
-              <Info label="下次跟进" value={d.next_followup_at ? String(d.next_followup_at).replace('T', ' ') : '—'} mono />
-            </div>
-            {fus.length > 0 ? (
-              <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 6 }}>
-                <table className="grid data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                  <thead><tr>{['跟进日期', '方式', '简述', '具体内容', '下次跟进', '跟进人'].map((h, i) => <th key={h} style={{ textAlign: i === 3 ? 'left' : i === 0 || i === 2 || i === 4 ? 'left' : 'left' }}>{h}</th>)}</tr></thead>
+            {/* 报价明细 */}
+            <section className="ov-sec">
+              <h4 className="ov-sec-title">报价明细<span className="hint">（产品明细 ＋ 各项费用，币种各自计算）</span></h4>
+              <div className="tablewrap">
+                <table className="grid data-table fit-table" style={{ fontSize: 12.5 }}>
+                  <colgroup><col style={{ width: '6%' }} /><col style={{ width: '40%' }} /><col style={{ width: '10%' }} /><col style={{ width: '16%' }} /><col style={{ width: '10%' }} /><col style={{ width: '18%' }} /></colgroup>
+                  <thead><tr>{['序号', '产品 / 费用项目', '数量', '金额', '币种', '折 USD'].map((h) => <th key={h}>{h}</th>)}</tr></thead>
                   <tbody>
-                    {fus.map((f) => (
-                      <tr key={f.id}>
-                        <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.date}</td>
-                        <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.method || '—'}</td>
-                        <td style={{ padding: '6px 8px' }}>{f.summary || '—'}</td>
-                        <td style={{ padding: '6px 8px', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{f.detail || '—'}</td>
-                        <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.next_followup_at ? String(f.next_followup_at).replace('T', ' ') : '—'}</td>
-                        <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.by_name || '—'}</td>
+                    {(d.items || []).map((it, i) => (
+                      <tr key={i}>
+                        <td className="mono">{i + 1}</td>
+                        <td title={it.product_name}>{it.product_name}</td>
+                        <td className="mono">{it.qty ?? '—'}</td>
+                        <td className="mono">{money(it.amount)}</td>
+                        <td title={it.currency}>{it.currency}</td>
+                        <td className="mono hint">{money(Math.round((Number(it.amount) || 0) / ((d.fxUsed ?? {})[it.currency] || 1)))}</td>
                       </tr>
                     ))}
+                    {feeList.map((f) => (
+                      <tr key={f.key}>
+                        <td className="mono">—</td>
+                        <td title={`${f.label}（费用）`}><span className="badge">{f.label}</span></td>
+                        <td className="hint">—</td>
+                        <td className="mono">{money(f.value)}</td>
+                        <td title={f.rate && f.rate !== 1 ? `本单汇率 1 USD = ${f.rate} ${f.currency}` : f.currency}>{f.currency}{f.rate && f.rate !== 1 ? <span className="hint" style={{ marginLeft: 3 }}>@{f.rate}</span> : null}</td>
+                        <td className="mono hint">{money(f.usd)}</td>
+                      </tr>
+                    ))}
+                    <tr className="ov-total-row">
+                      <td colSpan={3} style={{ fontWeight: 700 }}>{feeList.length ? '总报价（含费用）' : '报价合计'}</td>
+                      <td colSpan={2} className="mono" style={{ fontWeight: 800 }}>{quoteRows.map((t) => `${money(t.total)} ${t.currency}`).join(' + ') || '—'}</td>
+                      <td className="mono" style={{ fontWeight: 800 }}>≈USD {money(d.usdApprox)}</td>
+                    </tr>
+                    {feeBuckets.length > 1 && (
+                      <tr><td colSpan={6} className="hint" style={{ textAlign: 'left' }}>费用按各自币种与汇率分别折算（{feeList.map((f) => `${f.label} ${money(f.value)} ${f.currency}`).join(' · ')}）</td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>
-            ) : <div className="hint" style={{ marginTop: 4 }}>该询价暂无跟进记录（可到「询报价跟进」页录入）</div>}
+            </section>
+
+            {/* 跟进情况 */}
+            <section className="ov-sec">
+              <h4 className="ov-sec-title">
+                跟进情况<span className="hint">（共 {fus.length} 条）</span>
+                <span style={{ flex: 1 }} />
+                {fus.length > 0 && <button className="btn xs" title="查看该询价的全部跟进详情（简述、详情、图片、附件、跟进指导）" onClick={() => setFuOpen(true)}>查看全部跟进详情</button>}
+              </h4>
+              {fus.length > 0 ? (
+                <div className="tablewrap">
+                  <table className="grid data-table fit-table" style={{ fontSize: 12.5 }}>
+                    <colgroup><col style={{ width: '12%' }} /><col style={{ width: '10%' }} /><col style={{ width: '26%' }} /><col style={{ width: '14%' }} /><col style={{ width: '10%' }} /><col style={{ width: '28%' }} /></colgroup>
+                    <thead><tr>{['跟进日期', '方式', '跟进简述', '下次跟进', '跟进人', '具体内容'].map((h) => <th key={h}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {fus.map((f) => (
+                        <tr key={f.id}>
+                          <td className="mono">{f.date}</td>
+                          <td>{f.method || '—'}</td>
+                          <td>{f.summary || '—'}</td>
+                          <td className="mono">{f.next_followup_at ? String(f.next_followup_at).replace('T', ' ') : '—'}</td>
+                          <td>{f.by_name || '—'}</td>
+                          <td title={f.detail || '—'} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{(f.detail || '—').slice(0, 60)}{(f.detail || '').length > 60 ? '…' : ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : <div className="hint">该询价暂无跟进记录（可到「询报价跟进」页录入）</div>}
+            </section>
+
+            {/* 询价补充信息 */}
+            {(d.blockers || d.action_plan || d.support_needed || d.note) && (
+              <section className="ov-sec">
+                <h4 className="ov-sec-title">询价补充信息</h4>
+                <div className="kv">
+                  {d.blockers && <Kv k="卡点/问题" v={d.blockers} block />}
+                  {d.action_plan && <Kv k="行动计划" v={d.action_plan} block />}
+                  {d.support_needed && <Kv k="需要的支持" v={d.support_needed} block />}
+                  {d.note && <Kv k="询价备注" v={d.note} block />}
+                </div>
+              </section>
+            )}
+            {fuOpen && <InquiryFollowupsModal inquiryId={d.inquiry_id} inquiryNo={d.inquiry_no} customerName={d.customer_name} onClose={() => setFuOpen(false)} />}
           </>
         )}
         <div className="modal-foot"><button className="btn" onClick={onClose}>关闭</button></div>
       </div>
+    </div>
+  )
+}
+
+/** 只读键值行：标签固定宽度在左、值在右，逐行对齐 */
+function Kv({ k, v, mono, block }: { k: string; v: string; mono?: boolean; block?: boolean }) {
+  return (
+    <div className={'kv-row' + (block ? ' block' : '')}>
+      <span className="kv-k">{k}</span>
+      <span className={'kv-v' + (mono ? ' mono' : '')}>{v}</span>
     </div>
   )
 }
@@ -263,55 +318,3 @@ interface FuLite {
   next_followup_at: string | null; by_name: string | null
 }
 
-/** 只读信息项：标签在上、值在下（保持固定尺寸，不做拉伸） */
-function Info({ label, value, mono, block }: { label: string; value: string; mono?: boolean; block?: boolean }) {
-  return (
-    <div className="col" style={block ? { gridColumn: '1 / -1', marginTop: 6 } : undefined}>
-      <label>{label}</label>
-      <div className={'ro' + (mono ? ' mono' : '')} style={{ minHeight: 30, whiteSpace: 'pre-wrap' }}>{value}</div>
-    </div>
-  )
-}
-
-function OrderEdit({ id, onClose, onSaved, winReasons = [], currencies }: { id: string; onClose: () => void; onSaved: () => void; winReasons?: string[]; currencies?: string[] }) {
-  const { d } = useOrder(id)
-  const [form, setForm] = useState<{ orderNo: string; wonDate: string; amount: string; currency: string; note: string; winReason: string } | null>(null)
-  const [err, setErr] = useState('')
-  const [busy, setBusy] = useState(false)
-  useEffect(() => { if (d) setForm({ orderNo: d.order_no, wonDate: d.won_date, amount: d.order_amount == null ? '' : String(d.order_amount), currency: d.order_currency, note: d.order_note || '', winReason: (d as { win_reason?: string | null }).win_reason || '' }) }, [d])
-  const save = async () => {
-    if (!form) return
-    setBusy(true); setErr('')
-    try { await put(`/orders/${id}`, { orderNo: form.orderNo, wonDate: form.wonDate, amount: form.amount ? Number(form.amount) : undefined, currency: form.currency, note: form.note, winReason: form.winReason }); onSaved() } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
-  }
-  return (
-    <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 'min(560px, 96vw)' }} role="dialog" aria-modal="true" aria-label="编辑订单">
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <h3 style={{ margin: 0 }}>编辑销售订单</h3>
-          <button className="btn sm" onClick={onClose}>取消</button>
-        </div>
-        {err && <div className="msg err">{err}</div>}
-        {form && (
-          <>
-            <div className="row" style={{ marginTop: 8 }}>
-              <div className="col w2"><label>订单号</label><input className="sa" value={form.orderNo} onChange={(e) => setForm({ ...form, orderNo: e.target.value })} /></div>
-              <div className="col w2"><label>成单日期</label><input className="sa" type="date" value={form.wonDate} onChange={(e) => setForm({ ...form, wonDate: e.target.value })} /></div>
-            </div>
-            <div className="row">
-              <div className="col w2"><label>订单金额</label><input className="sa" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
-              <div className="col w1"><label>币种</label><select className="sa" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>{currencyOptions(currencies, form.currency).map((c) => <option key={c}>{c}</option>)}</select></div>
-            </div>
-            <div className="row">
-              <div className="col w2"><label>成交原因 <span className="hint">（用于成交原因分析，选填）</span></label>
-                <ReasonPicker value={form.winReason} onChange={(v) => setForm({ ...form, winReason: v })} options={winReasons} />
-              </div>
-            </div>
-            <div className="col"><label>备注</label><textarea className="sa" rows={2} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></div>
-            <div className="actions" style={{ marginTop: 10 }}><button className="btn pri" disabled={busy} onClick={() => void save()}>保存修改</button></div>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}

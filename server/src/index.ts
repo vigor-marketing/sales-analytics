@@ -789,7 +789,7 @@ app.get('/api/orders', (req, res) => {
       o.created_at AS order_created_at, o.updated_at AS order_updated_at,
       i.id AS inquiry_id, i.inquiry_no, i.date, i.sales, i.purchaser, i.source, i.country, i.use_location, i.hand_total, i.hand_total_currency, i.is_key_customer, i.is_key_project,
       i.customer_stars, i.note, i.blockers, i.action_plan, i.support_needed, i.is_lost, i.lost_reason, i.lost_date, i.last_followup_at, i.next_followup_at,
-      i.freight, i.tax, i.commission, i.other_fee, i.fee_currency, i.freight_currency, i.tax_currency, i.commission_currency, i.other_fee_currency,
+      i.freight, i.tax, i.commission, i.other_fee, i.fee_currency, i.freight_currency, i.tax_currency, i.commission_currency, i.other_fee_currency, i.fx_overrides,
       c.name AS customer_name, c.country AS customer_country
     FROM orders o JOIN inquiries i ON i.id = o.inquiry_id LEFT JOIN customers c ON c.id = i.customer_id
     WHERE ${parts.join(' AND ')} ORDER BY o.won_date DESC, o.created_at DESC LIMIT 1000`).all(...args) as Record<string, unknown>[]
@@ -801,7 +801,8 @@ app.get('/api/orders', (req, res) => {
     const feeTotal = Math.round(feeBuckets.reduce((a, b) => a + b.total / rateIn(rates, b.currency), 0))
     const grand = grandTotals(totals, feeBuckets)
     const cycle = (r.won_date && r.date) ? Math.round((Date.parse(String(r.won_date)) - Date.parse(String(r.date))) / 86400000) : null
-    return { ...r, items, itemCount: items.length, totals, feeTotal, grandTotals: grand, usdApprox: Math.round(usdOfTotals(grand, rates)), quoteUsdApprox: Math.round(usdOfTotals(totals, rates)), cycleDays: cycle, productNames: items.map((x) => x.product_name).join(' / ') }
+    return { ...r, items, itemCount: items.length, totals, feeTotal, feeBuckets, fees: feeBreakdown(r), fxUsed: rates, grandTotals: grand,
+      usdApprox: Math.round(usdOfTotals(grand, rates)), quoteUsdApprox: Math.round(usdOfTotals(totals, rates)), cycleDays: cycle, productNames: items.map((x) => x.product_name).join(' / ') }
   })
   const cycles = list.map((x) => x.cycleDays).filter((x): x is number => typeof x === 'number' && x >= 0).sort((a, b) => a - b)
   const sum = cycles.reduce((a, b) => a + b, 0)
