@@ -174,7 +174,11 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
                             <button className="btn xs" style={{ flex: '0 0 auto' }} title="在本页弹窗查看该询价的全部跟进详情（简述、详情、图片、附件、跟进指导），与「询报价管理」一致"
                               onClick={(e) => { e.stopPropagation(); setFuOf({ id: r.id, no: r.inquiry_no, customer: r.customer_name }) }}>查看详情</button>
                           </span>
-                        : <span className="hint">—</span>}
+                        : (r.lastFollowupId
+                            /* 该询价还没有指导，但已有跟进记录：仍可打开「跟进详情」查看简述/详情/附件 */
+                            ? <button className="btn xs" title="该询价暂无跟进指导；点这里查看它的全部跟进详情（简述、详情、图片、附件）"
+                                onClick={(e) => { e.stopPropagation(); setFuOf({ id: r.id, no: r.inquiry_no, customer: r.customer_name }) }}>查看详情</button>
+                            : <span className="hint">—</span>)}
                     </td>
                     <td style={{ padding: '0 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <button className="btn xs pri" onClick={() => onGoFollow?.({ sales: r.sales, no: r.inquiry_no })}>去跟进</button>
