@@ -14,6 +14,177 @@ interface ReasonItem { reason: string; count: number; usd: number; share: number
 interface ReasonStat { total: number; usdTotal: number; items: ReasonItem[]; missing: number }
 interface ReasonData { win: ReasonStat; lost: ReasonStat; reasons: { win: string[]; lost: string[] } }
 
+/** 只读表格筛选：时间范围（成单日期）+ 产品名包含 */
+function filterPanelRows(all: { won_date?: string | null; productNames?: string }[], f: { range: RangeKey; product: string }) {
+  const { from, to } = rangeDates(f.range)
+  return all.filter((x) => {
+    const d = String(x.won_date || '')
+    if (from && d < from) return false
+    if (to && d > to) return false
+    if (f.product && !String(x.productNames || '').includes(f.product)) return false
+    return true
+  }) as never[]
+}
+
+/** 月度折线数据 */
+function buildTrend(rows: OrderRow[], mode: 'year' | 'month', activeYear: string) {
+  if (mode === 'year') {
+    const m = new Map<string, { usd: number; n: number }>()
+    rows.forEach((r) => {
+      const k = String(r.won_date).slice(0, 4)
+      if (!/^\d{4}$/.test(k)) return
+      const a = m.get(k) ?? { usd: 0, n: 0 }; a.usd += r.usdApprox || 0; a.n += 1; m.set(k, a)
+    })
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([key, v]) => ({ key, label: `${key}年`, ...v }))
+  }
+  const arr = Array.from({ length: 12 }, (_, i) => ({ key: `${activeYear}-${String(i + 1).padStart(2, '0')}`, label: `${i + 1}月`, usd: 0, n: 0 }))
+  rows.forEach((r) => {
+    const dd = String(r.won_date)
+    if (!dd.startsWith(activeYear + '-')) return
+    const i = Number(dd.slice(5, 7)) - 1
+    if (i < 0 || i > 11) return
+    arr[i].usd += r.usdApprox || 0; arr[i].n += 1
+  })
+  return arr
+}
+
+/** 一张表所需的全部口径（产品 / 小组业绩 / 组内成员 / 个人 / 客户 / 月度小组） */
+function computeAggregate(rows: OrderRow[], ctx: { fx: Record<string, number>; teamOf: Map<string, string>; salesMeta: { name: string; team: string }[]; teamNamesAll: string[] }) {
+  const { fx, teamOf, salesMeta, teamNamesAll } = ctx
+  const sumUsd = rows.reduce((a, r) => a + (r.usdApprox || 0), 0)
+  const cycles = rows.map((r) => r.cycleDays).filter((x): x is number => typeof x === 'number' && x >= 0)
+  const avgCycle = cycles.length ? Math.round(cycles.reduce((a, b) => a + b, 0) / cycles.length) : null
+
+  // 产品维度
+  const pm = new Map<string, { count: number; usd: number; cycles: number[] }>()
+  rows.forEach((r) => {
+    (r.items || []).forEach((it) => {
+      const a = pm.get(it.product_name) ?? { count: 0, usd: 0, cycles: [] as number[] }
+      a.count += 1
+      a.usd += (Number(it.amount) || 0) / (fx[it.currency] || 1)
+      if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
+      pm.set(it.product_name, a)
+    })
+  })
+  const productRows = Array.from(pm.entries()).map(([name, v]) => ({
+    name, count: v.count, usd: Math.round(v.usd),
+    avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
+  })).sort((a, b) => b.count - a.count || b.usd - a.usd)
+
+  // 月度 × 小组
+  const mm = new Map<string, { month: string; total: { usd: number; n: number }; teams: Map<string, { usd: number; n: number }> }>()
+  rows.forEach((r) => {
+    const month = String(r.won_date).slice(0, 7)
+    if (!/^\d{4}-\d{2}$/.test(month)) return
+    const team = teamOf.get(r.sales) ?? '未分组'
+    const cell = mm.get(month) ?? { month, total: { usd: 0, n: 0 }, teams: new Map<string, { usd: number; n: number }>() }
+    const t = cell.teams.get(team) ?? { usd: 0, n: 0 }
+    t.usd += r.usdApprox || 0; t.n += 1
+    cell.teams.set(team, t)
+    cell.total.usd += r.usdApprox || 0; cell.total.n += 1
+    mm.set(month, cell)
+  })
+  const monthTeams = Array.from(mm.values()).sort((a, b) => b.month.localeCompare(a.month)).slice(0, 12)
+  const names = new Set<string>()
+  monthTeams.forEach((mo) => mo.teams.forEach((_v, k) => names.add(k)))
+  const ordered = salesMeta.map((x) => x.team || '未分组').filter((t, i, a) => a.indexOf(t) === i)
+  const activeTeams = ordered.filter((t) => names.has(t)).concat(Array.from(names).filter((n) => !ordered.includes(n)))
+
+  // 客户排行
+  const cm = new Map<string, { usd: number; n: number }>()
+  rows.forEach((r) => { const a = cm.get(r.customer_name) ?? { usd: 0, n: 0 }; a.usd += r.usdApprox || 0; a.n += 1; cm.set(r.customer_name, a) })
+  const topCustomers = Array.from(cm.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.usd - a.usd).slice(0, 10)
+
+  // 小组业绩
+  const gm = new Map<string, { n: number; usd: number; cycles: number[]; people: Set<string>; customers: Set<string> }>()
+  rows.forEach((r) => {
+    const team = teamOf.get(r.sales) ?? '未分组'
+    const a = gm.get(team) ?? { n: 0, usd: 0, cycles: [] as number[], people: new Set<string>(), customers: new Set<string>() }
+    a.n += 1; a.usd += r.usdApprox || 0; a.people.add(r.sales || '未指定'); a.customers.add(r.customer_name || '未知客户')
+    if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
+    gm.set(team, a)
+  })
+  teamNamesAll.forEach((t) => { if (!gm.has(t)) gm.set(t, { n: 0, usd: 0, cycles: [], people: new Set(salesMeta.filter((x) => (x.team || '未分组') === t).map((x) => x.name)), customers: new Set<string>() }) })
+  const tlist = Array.from(gm.entries()).map(([name, v]) => ({
+    name, n: v.n, usd: Math.round(v.usd),
+    people: Math.max(v.people.size, salesMeta.filter((x) => (x.team || '未分组') === name).length),
+    customerCount: v.customers.size, share: 0,
+    perPerson: v.people.size || salesMeta.some((x) => (x.team || '未分组') === name) ? Math.round(v.usd / Math.max(v.people.size, salesMeta.filter((x) => (x.team || '未分组') === name).length)) : null,
+    perOrder: v.n ? Math.round(v.usd / v.n) : null,
+    perCustomer: v.customers.size ? Math.round(v.usd / v.customers.size) : null,
+    avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
+  }))
+  const tTotal = tlist.reduce((x, v) => x + v.usd, 0)
+  const tCount = tlist.filter((t) => t.n > 0).length || 1
+  const tAvg = tTotal / tCount
+  const teamRows = tlist.map((t) => ({
+    ...t, share: tTotal ? Math.round((t.usd / tTotal) * 1000) / 10 : 0,
+    vsAvg: tTotal ? Math.round(((t.usd - tAvg) / tAvg) * 1000) / 10 : 0,
+    vsTop: 0, gapTop: 0,
+  })).sort((a, b) => b.usd - a.usd).map((t, _i, arr) => ({ ...t, vsTop: arr[0]?.usd ? Math.round((t.usd / arr[0].usd) * 1000) / 10 : 0, gapTop: Math.max(0, (arr[0]?.usd ?? 0) - t.usd) }))
+
+  // 组内成员（按小组分组）
+  const bm = new Map<string, { n: number; usd: number; cycles: number[]; customers: Map<string, { usd: number; n: number }> }>()
+  rows.forEach((r) => {
+    const k = r.sales || '未指定'
+    const a = bm.get(k) ?? { n: 0, usd: 0, cycles: [] as number[], customers: new Map<string, { usd: number; n: number }>() }
+    a.n += 1; a.usd += r.usdApprox || 0
+    const cust = r.customer_name || '未知客户'
+    const c = a.customers.get(cust) ?? { usd: 0, n: 0 }
+    c.usd += r.usdApprox || 0; c.n += 1
+    a.customers.set(cust, c)
+    if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
+    bm.set(k, a)
+  })
+  const gNames = Array.from(new Set(salesMeta.map((x) => x.team || '未分组')))
+  rows.forEach((r) => { const t = teamOf.get(r.sales) ?? '未分组'; if (!gNames.includes(t)) gNames.push(t) })
+  const teamMembers = gNames.map((team) => {
+    const members = Array.from(new Set(salesMeta.filter((x) => (x.team || '未分组') === team).map((x) => x.name)))
+    bm.forEach((_v, k) => { if ((teamOf.get(k) ?? '未分组') === team && !members.includes(k)) members.push(k) })
+    const list = members.map((name) => {
+      const v = bm.get(name) ?? { n: 0, usd: 0, cycles: [], customers: new Map<string, { usd: number; n: number }>() }
+      const customerList = Array.from((v.customers ?? new Map()).entries()).map(([cname, cv]) => ({ name: cname, usd: Math.round(cv.usd), n: cv.n })).sort((a, b) => b.usd - a.usd)
+      return {
+        name, n: v.n, usd: Math.round(v.usd), customerCount: customerList.length, customers: customerList,
+        perOrder: v.n ? Math.round(v.usd / v.n) : null,
+        perCustomer: customerList.length ? Math.round(v.usd / customerList.length) : null,
+        avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
+      }
+    }).sort((a, b) => b.usd - a.usd)
+    const total = list.reduce((x, v) => x + v.usd, 0)
+    return { team, list, usd: Math.round(total), n: list.reduce((x, v) => x + v.n, 0), rows: list.map((m) => ({ ...m, share: total ? Math.round((m.usd / total) * 1000) / 10 : 0 })) }
+  }).filter((t) => t.list.length > 0).sort((a, b) => b.usd - a.usd)
+
+  // 个人（销售）维度
+  const sm = new Map<string, { n: number; usd: number; cycles: number[]; customers: Map<string, { usd: number; n: number }> }>()
+  rows.forEach((r) => {
+    const k = r.sales || '未指定'
+    const a = sm.get(k) ?? { n: 0, usd: 0, cycles: [] as number[], customers: new Map<string, { usd: number; n: number }>() }
+    a.n += 1; a.usd += r.usdApprox || 0
+    if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
+    const cust = r.customer_name || '未知客户'
+    const c = a.customers.get(cust) ?? { usd: 0, n: 0 }
+    c.usd += r.usdApprox || 0; c.n += 1
+    a.customers.set(cust, c)
+    sm.set(k, a)
+  })
+  salesMeta.forEach((x) => { if (!sm.has(x.name)) sm.set(x.name, { n: 0, usd: 0, cycles: [], customers: new Map() }) })
+  const salesRows = Array.from(sm.entries()).map(([name, v]) => {
+    const customers = Array.from(v.customers.entries()).map(([cname, cv]) => ({ name: cname, usd: Math.round(cv.usd), n: cv.n })).sort((a, b) => b.usd - a.usd)
+    return {
+      name, n: v.n, usd: Math.round(v.usd), team: teamOf.get(name) ?? '未分组',
+      customerCount: customers.length, customers,
+      perCustomer: customers.length ? Math.round(v.usd / customers.length) : null,
+      perOrder: v.n ? Math.round(v.usd / v.n) : null,
+      customerRows: customers.map((c) => ({ ...c, avgOrder: c.n ? Math.round(c.usd / c.n) : null, share: v.usd ? Math.round((c.usd / v.usd) * 1000) / 10 : 0 })),
+      avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
+    }
+  }).sort((a, b) => b.usd - a.usd)
+
+  const cycleRange: [number, number] | null = cycles.length ? [Math.min(...cycles), Math.max(...cycles)] : null
+  return { rows, sumUsd, avgCycle, cycleRange, productRows, monthTeams, activeTeams, topCustomers, teamRows, teamMembers, salesRows }
+}
+
 /** 组内对比卡片的主色（每组一条，便于区分） */
 const TEAM_TONES = ['#0052d9', '#0f7a45', '#a35c00', '#7c3aed', '#dc2626', '#0e7490']
 
@@ -167,9 +338,22 @@ function TrendChart({ data }: { data: { key: string; label: string; usd: number;
 }
 
 export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
-  const [sales, setSales] = useState(''); const [range, setRange] = useState<RangeKey>(''); const [product, setProduct] = useState('')
-  const [rows, setRows] = useState<OrderRow[]>([]); const [stats, setStats] = useState<Stats | null>(null); const [msg, setMsg] = useState('')
-  const [reasons, setReasons] = useState<ReasonData | null>(null)
+  /* ===== 每张表各自筛选（不再有全局筛选）：时间范围 + 可选产品/小组/个人 ===== */
+  type PanelF = { range: RangeKey; product: string }
+  const [fKpi, setFKpi] = useState<PanelF>({ range: '', product: '' })
+  const [fTrend, setFTrend] = useState<PanelF>({ range: '', product: '' })
+  const [fProduct, setFProduct] = useState<PanelF>({ range: '', product: '' })
+  const [fTeam, setFTeam] = useState<PanelF>({ range: '', product: '' })
+  const [fMonth, setFMonth] = useState<PanelF>({ range: '', product: '' })
+  const [fReason, setFReason] = useState<PanelF>({ range: '', product: '' })
+  const [fCustomer, setFCustomer] = useState<PanelF>({ range: '', product: '' })
+  const [fPerson, setFPerson] = useState<PanelF>({ range: '', product: '' })
+  const [fGroup, setFGroup] = useState<PanelF>({ range: '', product: '' })
+
+  const [allRows, setAllRows] = useState<OrderRow[]>([])
+  const [msg, setMsg] = useState('')
+  const [kpiReason, setKpiReason] = useState<ReasonData | null>(null)
+  const [reasonData, setReasonData] = useState<ReasonData | null>(null)
   // 按产品分析：产品下拉（取自产品档案）
   const [products, setProducts] = useState<{ id: string; name: string; use_count: number }[]>([])
   useEffect(() => { get<{ id: string; name: string; use_count: number }[]>('/products').then((l) => setProducts(Array.isArray(l) ? l : [])).catch(() => { /* */ }) }, [])
@@ -177,9 +361,9 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   // 分析子页面：拆分查看，避免一屏堆叠混乱；选择记在本地，刷新后保持
   type TabKey = 'all' | 'person' | 'group'
   const TABS: { key: TabKey; label: string; note: string }[] = [
-    { key: 'all', label: '整体数据', note: '关键指标、金额趋势、按产品、小组对比与月度小组拆解、成交与丢单原因、客户排行' },
+    { key: 'all', label: '整体数据', note: '关键指标、金额趋势、按产品、小组业绩对比与月度小组拆解、成交与丢单原因、客户排行（每张表可单独筛选）' },
     { key: 'person', label: '个人分析', note: '按销售看其名下所有客户的订单：客户单价（每个客户的平均订单金额）与单均价（所有订单的平均金额）' },
-    { key: 'group', label: '组内', note: '小组内部各成员的成单明细与排名' },
+    { key: 'group', label: '组内', note: '小组内部各成员的成单明细与排名（每个小组一张卡片）' },
   ]
   const [tab, setTab] = useState<TabKey>(() => {
     const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('sa:anaTab') : null
@@ -193,239 +377,92 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   const [personSel, setPersonSel] = useState('')
   const [year, setYear] = useState('')
 
+  // 只加载全量订单：各表格用自己的筛选在本地过滤
   const load = useCallback(async () => {
-    try {
-      const p = new URLSearchParams()
-      const { from, to } = rangeDates(range)
-      if (sales) p.set('sales', sales); if (from) p.set('from', from); if (to) p.set('to', to); if (product) p.set('product', product)
-      const d = await get<{ rows: OrderRow[]; stats: Stats }>(`/orders?${p.toString()}`)
-      setRows(d.rows); setStats(d.stats)
-      try { setReasons(await get<ReasonData>(`/analysis/reasons?${p.toString()}`)) } catch { setReasons(null) }
-    } catch (e) { setMsg((e as Error).message) }
-  }, [sales, range, product])
+    try { const d = await get<{ rows: OrderRow[] }>('/orders'); setAllRows(d.rows); setMsg('') }
+    catch (e) { setMsg((e as Error).message) }
+  }, [])
   useEffect(() => { void load() }, [load])
 
-  const years = useMemo(() => {
-    const s2 = new Set<string>()
-    rows.forEach((r) => { const y = String(r.won_date).slice(0, 4); if (/^\d{4}$/.test(y)) s2.add(y) })
-    return Array.from(s2).sort((a, b) => b.localeCompare(a))
-  }, [rows])
-  const curYear = String(new Date().getFullYear())
-  const activeYear = year || (years.includes(curYear) ? curYear : (years[0] ?? curYear))
+  // 成交原因 / 丢单原因：按各自表格的筛选单独请求（这两项依赖丢单询价，需服务端算）
+  const reasonQs = useCallback((f: PanelF) => {
+    const p = new URLSearchParams(); const { from, to } = rangeDates(f.range)
+    if (from) p.set('from', from); if (to) p.set('to', to); if (f.product) p.set('product', f.product)
+    return p.toString()
+  }, [])
+  useEffect(() => { get<ReasonData>(`/analysis/reasons?${reasonQs(fKpi)}`).then(setKpiReason).catch(() => setKpiReason(null)) }, [fKpi, reasonQs])
+  useEffect(() => { get<ReasonData>(`/analysis/reasons?${reasonQs(fReason)}`).then(setReasonData).catch(() => setReasonData(null)) }, [fReason, reasonQs])
 
-  const trend = useMemo(() => {
-    if (trendMode === 'year') {
-      const m = new Map<string, { usd: number; n: number }>()
-      rows.forEach((r) => {
-        const k = String(r.won_date).slice(0, 4)
-        if (!/^\d{4}$/.test(k)) return
-        const a = m.get(k) ?? { usd: 0, n: 0 }; a.usd += r.usdApprox || 0; a.n += 1; m.set(k, a)
-      })
-      return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([key, v]) => ({ key, label: `${key}年`, ...v }))
-    }
-    const arr = Array.from({ length: 12 }, (_, i) => ({ key: `${activeYear}-${String(i + 1).padStart(2, '0')}`, label: `${i + 1}月`, usd: 0, n: 0 }))
-    rows.forEach((r) => {
-      const dd = String(r.won_date)
-      if (!dd.startsWith(activeYear + '-')) return
-      const i = Number(dd.slice(5, 7)) - 1
-      if (i < 0 || i > 11) return
-      arr[i].usd += r.usdApprox || 0; arr[i].n += 1
-    })
-    return arr
-  }, [rows, trendMode, activeYear])
-  const trendN = trend.reduce((a, b) => a + b.n, 0)
-
-  // 产品维度（含金额折USD，用于图文结合）
   const fx = meta.fx ?? { USD: 1, CNY: 7.12, EUR: 0.92 }
-  const productRows = useMemo(() => {
-    const m = new Map<string, { count: number; usd: number; cycles: number[] }>()
-    rows.forEach((r) => {
-      (r.items || []).forEach((it) => {
-        const a = m.get(it.product_name) ?? { count: 0, usd: 0, cycles: [] }
-        a.count += 1
-        a.usd += (Number(it.amount) || 0) / (fx[it.currency] || 1)
-        if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
-        m.set(it.product_name, a)
-      })
-    })
-    return Array.from(m.entries()).map(([name, v]) => ({
-      name, count: v.count, usd: Math.round(v.usd),
-      avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
-    })).sort((a, b) => b.count - a.count || b.usd - a.usd)
-  }, [rows, fx])
-
   // 小组（团队）维度：销售 → 组别；未匹配到的归入「未分组」
   const teamOf = useMemo(() => {
     const m = new Map<string, string>()
     meta.sales.forEach((x) => m.set(x.name, x.team || '未分组'))
     return m
   }, [meta.sales])
-
-  /** 月度 × 小组：每月各组的订单数与金额（折USD），以及月度合计 */
-  const monthTeams = useMemo(() => {
-    const m = new Map<string, { month: string; total: { usd: number; n: number }; teams: Map<string, { usd: number; n: number }> }>()
-    rows.forEach((r) => {
-      const month = String(r.won_date).slice(0, 7)
-      if (!/^\d{4}-\d{2}$/.test(month)) return
-      const team = teamOf.get(r.sales) ?? '未分组'
-      const cell = m.get(month) ?? { month, total: { usd: 0, n: 0 }, teams: new Map() }
-      const t = cell.teams.get(team) ?? { usd: 0, n: 0 }
-      t.usd += r.usdApprox || 0; t.n += 1
-      cell.teams.set(team, t)
-      cell.total.usd += r.usdApprox || 0; cell.total.n += 1
-      m.set(month, cell)
-    })
-    return Array.from(m.values()).sort((a, b) => b.month.localeCompare(a.month)).slice(0, 12)
-  }, [rows, teamOf])
-  const activeTeams = useMemo(() => {
-    const names = new Set<string>()
-    monthTeams.forEach((mo) => mo.teams.forEach((_v, k) => names.add(k)))
-    const ordered = meta.sales.map((x) => x.team || '未分组').filter((t, i, a) => a.indexOf(t) === i)
-    return ordered.filter((t) => names.has(t)).concat(Array.from(names).filter((n) => !ordered.includes(n)))
-  }, [monthTeams, meta.sales])
-
-  const topCustomers = useMemo(() => {
-    const m = new Map<string, { usd: number; n: number }>()
-    rows.forEach((r) => { const a = m.get(r.customer_name) ?? { usd: 0, n: 0 }; a.usd += r.usdApprox || 0; a.n += 1; m.set(r.customer_name, a) })
-    return Array.from(m.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.usd - a.usd).slice(0, 10)
-  }, [rows])
-
   const teamNamesAll = useMemo(() => Array.from(new Set(meta.sales.map((x) => (x.team || '未分组')))), [meta.sales])
-  /** 小组业绩：订单数 / 客户数 / 人数 / 金额 / 占比 / 人均金额 / 单均价 / 客户单价 / 平均周期 */
-  const teamRows = useMemo(() => {
-    const m = new Map<string, { n: number; usd: number; cycles: number[]; people: Set<string>; customers: Set<string> }>()
-    rows.forEach((r) => {
-      const team = teamOf.get(r.sales) ?? '未分组'
-      const a = m.get(team) ?? { n: 0, usd: 0, cycles: [] as number[], people: new Set<string>(), customers: new Set<string>() }
-      a.n += 1; a.usd += r.usdApprox || 0; a.people.add(r.sales || '未指定'); a.customers.add(r.customer_name || '未知客户')
-      if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
-      m.set(team, a)
-    })
-    // 本期无成单的小组也列出（人数取自人员档案），便于横向对比
-    teamNamesAll.forEach((t) => { if (!m.has(t)) m.set(t, { n: 0, usd: 0, cycles: [], people: new Set(meta.sales.filter((x) => (x.team || '未分组') === t).map((x) => x.name)), customers: new Set<string>() }) })
-    const list = Array.from(m.entries()).map(([name, v]) => ({
-      name, n: v.n, usd: Math.round(v.usd), people: Math.max(v.people.size, meta.sales.filter((x) => (x.team || '未分组') === name).length),
-      customerCount: v.customers.size,
-      share: 0,
-      perPerson: v.people.size ? Math.round(v.usd / Math.max(v.people.size, meta.sales.filter((x) => (x.team || '未分组') === name).length)) : null,
-      perOrder: v.n ? Math.round(v.usd / v.n) : null,
-      perCustomer: v.customers.size ? Math.round(v.usd / v.customers.size) : null,
-      avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
-    }))
-    const total = list.reduce((x, v) => x + v.usd, 0)
-    const teamCount = list.filter((t) => t.n > 0).length || 1
-    const avg = total / teamCount
-    return list.map((t) => ({
-      ...t,
-      share: total ? Math.round((t.usd / total) * 1000) / 10 : 0,
-      vsTop: 0, gapTop: 0, vsAvg: total ? Math.round(((t.usd - avg) / avg) * 1000) / 10 : 0,
-    })).sort((a, b) => b.usd - a.usd).map((t, _i, arr) => ({ ...t, vsTop: arr[0]?.usd ? Math.round((t.usd / arr[0].usd) * 1000) / 10 : 0, gapTop: Math.max(0, (arr[0]?.usd ?? 0) - t.usd) }))
-  }, [rows, teamOf, meta.sales, teamNamesAll])
 
-  /** 全部小组名（含本期无成单的小组），供小组业绩对比与组内分析使用 */
-  const teamNames = teamNamesAll
+  /** 每张表的数据：按该表自己的筛选过滤后，算出这张表需要的全部口径 */
+  const aggregate = useCallback((rowsIn: OrderRow[]) => computeAggregate(rowsIn, { fx, teamOf, salesMeta: meta.sales, teamNamesAll }), [fx, teamOf, meta.sales, teamNamesAll])
+  const usePanel = (f: PanelF) => useMemo(() => aggregate(filterPanelRows(allRows, f)), [allRows, f, aggregate])
+  const K = usePanel(fKpi)
+  const T = usePanel(fTrend)
+  const PD = usePanel(fProduct)
+  const TM = usePanel(fTeam)
+  const MO = usePanel(fMonth)
+  const CU = usePanel(fCustomer)
+  const PE = usePanel(fPerson)
+  const GR = usePanel(fGroup)
 
-  const teamMembers = useMemo(() => {
-    const byMember = new Map<string, { n: number; usd: number; cycles: number[]; customers: Map<string, { usd: number; n: number }> }>()
-    rows.forEach((r) => {
-      const k = r.sales || '未指定'
-      const a = byMember.get(k) ?? { n: 0, usd: 0, cycles: [] as number[], customers: new Map<string, { usd: number; n: number }>() }
-      a.n += 1; a.usd += r.usdApprox || 0
-      const cust = r.customer_name || '未知客户'
-      const c = a.customers.get(cust) ?? { usd: 0, n: 0 }
-      c.usd += r.usdApprox || 0; c.n += 1
-      a.customers.set(cust, c)
-      if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
-      byMember.set(k, a)
-    })
-    const teamNames = Array.from(new Set(meta.sales.map((x) => x.team || '未分组')))
-    rows.forEach((r) => { const t = teamOf.get(r.sales) ?? '未分组'; if (!teamNames.includes(t)) teamNames.push(t) })
-    return teamNames.map((team) => {
-      const members = Array.from(new Set(meta.sales.filter((x) => (x.team || '未分组') === team).map((x) => x.name)))
-      byMember.forEach((_v, k) => { if ((teamOf.get(k) ?? '未分组') === team && !members.includes(k)) members.push(k) })
-      const list = members.map((name) => {
-        const v = byMember.get(name) ?? { n: 0, usd: 0, cycles: [], customers: new Map<string, { usd: number; n: number }>() }
-        const customerList = Array.from((v.customers ?? new Map()).entries()).map(([cname, cv]) => ({ name: cname, usd: Math.round(cv.usd), n: cv.n })).sort((a, b) => b.usd - a.usd)
-        return {
-          name, n: v.n, usd: Math.round(v.usd),
-          customerCount: customerList.length, customers: customerList,
-          perOrder: v.n ? Math.round(v.usd / v.n) : null,
-          perCustomer: customerList.length ? Math.round(v.usd / customerList.length) : null,
-          avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
-        }
-      }).sort((a, b) => b.usd - a.usd)
-      const total = list.reduce((x, v) => x + v.usd, 0)
-      return {
-        team, list, usd: Math.round(total), n: list.reduce((x, v) => x + v.n, 0),
-        rows: list.map((m) => ({ ...m, share: total ? Math.round((m.usd / total) * 1000) / 10 : 0 })),
-      }
-    }).filter((t) => t.list.length > 0).sort((a, b) => b.usd - a.usd)
-  }, [rows, teamOf, meta.sales])
-  /** 组内子页面当前展示的小组（按小组筛选后） */
-  const shownTeams = useMemo(() => (teamFilter ? teamMembers.filter((t) => t.team === teamFilter) : teamMembers), [teamMembers, teamFilter])
-
-  /** 按销售：成单次数、金额折USD、平均转化周期 */
-  /** 个人分析：该销售名下所有客户的订单、客户数、客单价（金额÷客户数）、单均价（金额÷订单数） */
-  const salesRows = useMemo(() => {
-    const m = new Map<string, { n: number; usd: number; cycles: number[]; customers: Map<string, { usd: number; n: number }> }>()
-    rows.forEach((r) => {
-      const k = r.sales || '未指定'
-      const a = m.get(k) ?? { n: 0, usd: 0, cycles: [] as number[], customers: new Map<string, { usd: number; n: number }>() }
-      a.n += 1; a.usd += r.usdApprox || 0
-      if (typeof r.cycleDays === 'number' && r.cycleDays >= 0) a.cycles.push(r.cycleDays)
-      const cust = r.customer_name || '未知客户'
-      const c = a.customers.get(cust) ?? { usd: 0, n: 0 }
-      c.usd += r.usdApprox || 0; c.n += 1
-      a.customers.set(cust, c)
-      m.set(k, a)
-    })
-    // 本期没有成单的销售也列出来（便于对比），归到其所属小组
-    meta.sales.forEach((x) => { if (!m.has(x.name)) m.set(x.name, { n: 0, usd: 0, cycles: [], customers: new Map() }) })
-    const all = Array.from(m.entries()).map(([name, v]) => {
-      const customers = Array.from(v.customers.entries())
-        .map(([cname, cv]) => ({ name: cname, usd: Math.round(cv.usd), n: cv.n }))
-        .sort((a, b) => b.usd - a.usd)
-      return {
-        name, n: v.n, usd: Math.round(v.usd), team: teamOf.get(name) ?? '未分组',
-        customerCount: customers.length, customers,
-        perCustomer: customers.length ? Math.round(v.usd / customers.length) : null,
-        perOrder: v.n ? Math.round(v.usd / v.n) : null,
-        // 每个客户的平均订单金额（该客户 金额 ÷ 订单数）
-        customerRows: customers.map((c) => ({ ...c, avgOrder: c.n ? Math.round(c.usd / c.n) : null, share: v.usd ? Math.round((c.usd / v.usd) * 1000) / 10 : 0 })),
-        avgCycle: v.cycles.length ? Math.round(v.cycles.reduce((x, y) => x + y, 0) / v.cycles.length) : null,
-      }
-    })
-    return all.sort((a, b) => b.usd - a.usd)
-  }, [rows, meta.sales, teamOf])
+  const years = useMemo(() => {
+    const set = new Set<string>()
+    T.rows.forEach((r) => { const y = String(r.won_date).slice(0, 4); if (/^\d{4}$/.test(y)) set.add(y) })
+    return Array.from(set).sort((a, b) => b.localeCompare(a))
+  }, [T.rows])
+  const curYear = String(new Date().getFullYear())
+  const activeYear = year || (years.includes(curYear) ? curYear : (years[0] ?? curYear))
+  const trend = useMemo(() => buildTrend(T.rows, trendMode, activeYear), [T.rows, trendMode, activeYear])
+  const trendN = trend.reduce((a, b) => a + b.n, 0)
 
   /** 个人分析：按小组/个人筛选后的销售列表（默认全部） */
   const personRows = useMemo(() => {
-    const list = personTeam ? salesRows.filter((p) => p.team === personTeam) : salesRows
+    const list = personTeam ? PE.salesRows.filter((p) => p.team === personTeam) : PE.salesRows
     return personSel ? list.filter((p) => p.name === personSel) : list
-  }, [salesRows, personTeam, personSel])
+  }, [PE.salesRows, personTeam, personSel])
+  /** 组内子页面当前展示的小组（按小组筛选后） */
+  const shownTeams = useMemo(() => (teamFilter ? GR.teamMembers.filter((t) => t.team === teamFilter) : GR.teamMembers), [GR.teamMembers, teamFilter])
+  const activeTeams = MO.activeTeams
+  const kpiWin = kpiReason?.win
+  const kpiLost = kpiReason?.lost
+  const winSum = reasonData?.win
+  const lostSum = reasonData?.lost
+  const stats = { contractCount: K.rows.length, usdTotal: K.sumUsd, avgCycle: K.avgCycle }
+  const sumUsd = CU.sumUsd
 
-  const sumUsd = rows.reduce((s, r) => s + (r.usdApprox || 0), 0)
-  const winSum = reasons?.win
-  const lostSum = reasons?.lost
+  /** 表格自己的筛选条：时间范围（+ 可选产品） */
+  const rangeSelect = (f: PanelF, set: (v: PanelF) => void) => (
+    <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+      <select className="sa" style={{ width: 122 }} value={f.range} title="本表时间范围（仅影响这张表）"
+        onChange={(e) => set({ ...f, range: e.target.value as RangeKey })}>
+        {(Object.keys(RANGE_LABEL) as RangeKey[]).map((k) => <option key={k} value={k}>{RANGE_LABEL[k]}</option>)}
+      </select>
+      <select className="sa" style={{ width: 150 }} value={f.product} title="本表产品筛选（仅影响这张表）"
+        onChange={(e) => set({ ...f, product: e.target.value })}>
+        <option value="">全部产品</option>
+        {products.map((pr) => <option key={pr.id} value={pr.name}>{pr.name}</option>)}
+        {f.product && !products.some((pr) => pr.name === f.product) && <option value={f.product}>{f.product}</option>}
+      </select>
+    </span>
+  )
 
   return (
     <div className="page-fit scroll">
-      {/* 筛选条 */}
+      {/* 页头：不再有全局筛选（每张表各自筛选），只保留标题与刷新 */}
       <section className="card panel-tight auto">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <h3 style={{ margin: 0, fontSize: 16 }}>销售订单分析</h3>
-          <span className="hint" style={{ flex: 1, minWidth: 180 }}>{RANGE_LABEL[range]} · 成交金额、转化周期、小组/产品/销售/客户与成交·丢单原因（全部跟随筛选）</span>
-          <select className="sa" value={sales} onChange={(e) => setSales(e.target.value)}><option value="">全部销售</option>{meta.sales.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}</select>
-          <select className="sa" style={{ maxWidth: 220 }} value={product} onChange={(e) => setProduct(e.target.value)} title="按产品筛选（下拉可选）">
-            <option value="">全部产品</option>
-            {products.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
-            {product && !products.some((p) => p.name === product) && <option value={product}>{product}</option>}
-          </select>
-          <select className="sa" value={range} onChange={(e) => setRange(e.target.value as RangeKey)} title="时间范围（成单日期 / 丢单日期口径）">
-            {(Object.keys(RANGE_LABEL) as RangeKey[]).map((k) => <option key={k} value={k}>{RANGE_LABEL[k]}</option>)}
-          </select>
-          <button className="btn sm" onClick={() => void load()}>查询</button>
-          <button className="btn sm" onClick={() => { setSales(''); setRange(''); setProduct('') }}>重置</button>
+          <span className="hint" style={{ flex: 1, minWidth: 220 }}>每张表都有自己的筛选条（时间范围 + 产品/小组/个人视表而定），互不影响；金额均取订单上填写的成交金额折 USD</span>
+          <button className="btn sm" onClick={() => void load()}>刷新</button>
         </div>
         {msg && <div className="msg err">{msg}</div>}
       </section>
@@ -439,41 +476,37 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         </div>
         <span className="hint ana-note">{TABS.find((t) => t.key === tab)?.note}</span>
         {tab === 'group' && (
-          <select className="sa" style={{ width: 150, marginLeft: 'auto' }} value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} title="按小组筛选组内成员">
-            <option value="">全部小组</option>
-            {teamNames.map((t) => <option key={t} value={t}>{t}</option>)}
-            {teamFilter && !teamNames.includes(teamFilter) && <option value={teamFilter}>{teamFilter}</option>}
-          </select>
+          <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', marginLeft: 'auto' }}>
+            {rangeSelect(fGroup, setFGroup)}
+            <select className="sa" style={{ width: 150 }} value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} title="按小组筛选（本页）">
+              <option value="">全部小组</option>
+              {teamNamesAll.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </span>
         )}
       </div>
 
       {/* 当前子页的关键数字速览 */}
       <div className="ana-sum">
         {tab === 'all' && (<>
-          <span className="ana-sum-i"><b>{stats?.contractCount ?? 0}</b> 单</span>
-          <span className="ana-sum-i"><b>{money(stats?.usdTotal ?? 0)}</b> USD</span>
-          <span className="ana-sum-i">平均周期 <b>{stats?.avgCycle == null ? '—' : `${stats.avgCycle} 天`}</b></span>
-          <span className="ana-sum-i">成交 <b>{winSum?.total ?? 0}</b> · 丢单 <b>{lostSum?.total ?? 0}</b></span>
-          <span className="ana-sum-i">客户 <b>{topCustomers.length}</b> 家 · 产品 <b>{productRows.length}</b> 个 · 小组 <b>{teamRows.length}</b> 个 · 销售 <b>{salesRows.length}</b> 名</span>
+          <span className="ana-sum-i"><b>{K.rows.length}</b> 单</span>
+          <span className="ana-sum-i"><b>{money(K.sumUsd)}</b> USD</span>
+          <span className="ana-sum-i">平均周期 <b>{K.avgCycle == null ? '—' : `${K.avgCycle} 天`}</b></span>
+          <span className="ana-sum-i">成交 <b>{kpiWin?.total ?? 0}</b> · 丢单 <b>{kpiLost?.total ?? 0}</b></span>
+          <span className="ana-sum-i">客户 <b>{CU.topCustomers.length}</b> 家 · 产品 <b>{PD.productRows.length}</b> 个 · 小组 <b>{TM.teamRows.length}</b> 个 · 销售 <b>{PE.salesRows.length}</b> 名</span>
         </>)}
         {tab === 'person' && (<>
-          <span className="ana-sum-i">销售 <b>{salesRows.length}</b> 名</span>
-          <span className="ana-sum-i">客户 <b>{topCustomers.length}</b> 家</span>
-          <span className="ana-sum-i">订单 <b>{stats?.contractCount ?? 0}</b> 单</span>
-          <span className="ana-sum-i">金额 <b>{money(sumUsd)}</b> USD</span>
-          <span className="ana-sum-i">单均价 <b>{stats?.contractCount ? money(Math.round(sumUsd / stats.contractCount)) : '—'}</b></span>
-        </>)}
-        {false && (<>
-          <span className="ana-sum-i">小组 <b>{teamRows.length}</b> 个</span>
-          <span className="ana-sum-i">合计 <b>{money(teamRows.reduce((a, b) => a + b.usd, 0))}</b> USD</span>
-          <span className="ana-sum-i">最高 <b>{teamRows[0]?.name ?? '—'}</b>{teamRows[0] ? `（${money(teamRows[0].usd)} · ${teamRows[0].share}%）` : ''}</span>
-          <span className="ana-sum-i">月份数 <b>{monthTeams.length}</b></span>
+          <span className="ana-sum-i">销售 <b>{personRows.length}</b> 名</span>
+          <span className="ana-sum-i">客户 <b>{PE.topCustomers.length}</b> 家</span>
+          <span className="ana-sum-i">订单 <b>{PE.rows.length}</b> 单</span>
+          <span className="ana-sum-i">金额 <b>{money(PE.sumUsd)}</b> USD</span>
+          <span className="ana-sum-i">单均价 <b>{PE.rows.length ? money(Math.round(PE.sumUsd / PE.rows.length)) : '—'}</b></span>
         </>)}
         {tab === 'group' && (<>
           <span className="ana-sum-i">成员 <b>{shownTeams.reduce((a, t) => a + t.list.length, 0)}</b> 人</span>
           <span className="ana-sum-i">其中有成单 <b>{shownTeams.reduce((a, t) => a + t.rows.filter((m) => m.n > 0).length, 0)}</b> 人</span>
           <span className="ana-sum-i">合计 <b>{money(shownTeams.reduce((a, t) => a + t.usd, 0))}</b> USD</span>
-          <span className="ana-sum-i">最高成员 <b>{(() => { const all = shownTeams.flatMap((t) => t.rows); const top = all.sort((a, b) => b.usd - a.usd)[0]; return top ? `${top.name}（${money(top.usd)}）` : '—' })()}</b></span>
+          <span className="ana-sum-i">最高成员 <b>{(() => { const all = shownTeams.flatMap((t) => t.rows); const top = [...all].sort((a, b) => b.usd - a.usd)[0]; return top ? `${top.name}（${money(top.usd)}）` : '—' })()}</b></span>
         </>)}
       </div>
 
@@ -481,10 +514,10 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         {tab === 'all' && (<>
         <div className="dash-span2 kpi-grid">
           {stats && (<>
-            <Kpi label="销售订单数" value={`${stats.contractCount} 单`} note={stats.contractCount ? `平均单值 ${money(stats.usdTotal / stats.contractCount)} USD` : ''} />
-            <Kpi label="订单金额（折USD）" value={money(stats.usdTotal)} tone="var(--brand)" note={`成交 ${winSum?.total ?? 0} · 丢单 ${lostSum?.total ?? 0}`} />
-            <Kpi label="平均转化周期" value={stats.avgCycle == null ? '—' : `${stats.avgCycle} 天`} tone={cycleTone(stats.avgCycle)} note={stats.minCycle == null ? '' : `${stats.minCycle} ~ ${stats.maxCycle} 天`} />
-            <Kpi label="丢单金额（折USD）" value={money(lostSum?.usdTotal ?? 0)} tone="var(--danger)" note={winSum && winSum.usdTotal > 0 && lostSum ? `占成交 ${Math.round((lostSum.usdTotal / winSum.usdTotal) * 100)}%` : ''} />
+            <Kpi label="销售订单数" value={`${K.rows.length} 单`} note={K.rows.length ? `平均单值 ${money(K.sumUsd / K.rows.length)} USD` : ''} />
+            <Kpi label="订单金额（折USD）" value={money(K.sumUsd)} tone="var(--brand)" note={`成交 ${kpiWin?.total ?? 0} · 丢单 ${kpiLost?.total ?? 0}`} />
+            <Kpi label="平均转化周期" value={K.avgCycle == null ? '—' : `${K.avgCycle} 天`} tone={cycleTone(K.avgCycle)} note={K.cycleRange ? `${K.cycleRange[0]} ~ ${K.cycleRange[1]} 天` : ''} />
+            <Kpi label="丢单金额（折USD）" value={money(kpiLost?.usdTotal ?? 0)} tone="var(--danger)" note={kpiWin && kpiWin.usdTotal > 0 && kpiLost ? `占成交 ${Math.round((kpiLost.usdTotal / kpiWin.usdTotal) * 100)}%` : ''} />
           </>)}
         </div>
 
@@ -494,6 +527,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           hint={trendMode === 'year' ? `按年 · 合计 ≈USD ${money(trend.reduce((a, b) => a + b.usd, 0))} · ${trendN} 单` : `${activeYear} 年各月 · 合计 ≈USD ${money(trend.reduce((a, b) => a + b.usd, 0))} · ${trendN} 单`}
           extra={(
             <>
+              {rangeSelect(fTrend, setFTrend)}
               <span className="seg">
                 <button className={trendMode === 'year' ? 'on' : ''} onClick={() => setTrendMode('year')}>年度</button>
                 <button className={trendMode === 'month' ? 'on' : ''} onClick={() => setTrendMode('month')}>月度</button>
@@ -512,32 +546,36 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         </>)}
 
         {tab === 'all' && (
-        <Panel title="按产品" hint={`${product ? `已筛「${product}」· ` : ''}${productRows.length} 个产品 · 合计 ${productRows.reduce((a, b) => a + b.count, 0)} 次 · ${money(sumUsd)} USD`}>
+        <Panel title="按产品" hint={`${fProduct.product ? `已筛「${fProduct.product}」· ` : ''}${PD.productRows.length} 个产品 · 合计 ${PD.productRows.reduce((a, b) => a + b.count, 0)} 次 · ${money(PD.sumUsd)} USD`}
+          extra={rangeSelect(fProduct, setFProduct)}>
           <DataTable
             cols={['产品', '成单次数', '金额（折USD）', '金额占比', '平均周期']}
             widths={['34%', '15%', '20%', '15%', '16%']}
             topCol={2} topLabel="最高"
             empty="暂无成单产品"
-            rows={productRows.slice(0, 15).map((p) => [
-              p.name, `${p.count} 次`, money(p.usd), `${sumUsd ? Math.round((p.usd / sumUsd) * 1000) / 10 : 0}%`,
+            rows={PD.productRows.slice(0, 15).map((p) => [
+              p.name, `${p.count} 次`, money(p.usd), `${PD.sumUsd ? Math.round((p.usd / PD.sumUsd) * 1000) / 10 : 0}%`,
               p.avgCycle == null ? '—' : `${p.avgCycle} 天`,
             ])}
           />
-          {productRows.length > 15 && <div className="hint" style={{ fontSize: 11 }}>仅显示前 15 个产品</div>}
+          {PD.productRows.length > 15 && <div className="hint" style={{ fontSize: 11 }}>仅显示前 15 个产品</div>}
         </Panel>
         )}
 
         {tab === 'all' && (
         <Panel title="小组业绩分析对比"
-          hint={`${teamRows.filter((t) => t.n > 0).length} 个有成单小组 · 合计 ${money(sumUsd)} USD${teamRows[0] ? ` · 第一 ${teamRows[0].name}` : ''}`}
+          hint={`${TM.teamRows.filter((t) => t.n > 0).length} 个有成单小组 · 合计 ${money(TM.sumUsd)} USD${TM.teamRows[0] ? ` · 第一 ${TM.teamRows[0].name}` : ''}`}
           style={{ gridColumn: '1 / -1' }}
-          extra={teamRows.length > 1 ? <span className="hint" style={{ fontSize: 11 }}>组均 {money(Math.round(sumUsd / Math.max(1, teamRows.filter((t) => t.n > 0).length)))} USD · 第一组占比 {teamRows[0]?.share ?? 0}%</span> : undefined}>
+          extra={<span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+            {rangeSelect(fTeam, setFTeam)}
+            {TM.teamRows.length > 1 && <span className="hint" style={{ fontSize: 11 }}>组均 {money(Math.round(TM.sumUsd / Math.max(1, TM.teamRows.filter((t) => t.n > 0).length)))} USD</span>}
+          </span>}>
           <DataTable
             cols={['排名', '小组', '人数', '订单数', '客户数', '金额（折USD）', '金额占比', '人均金额', '单均价', '客户单价', '平均周期', '占第一组', '与组均']}
             widths={['6%', '12%', '5%', '6%', '5%', '12%', '8%', '8%', '8%', '8%', '8%', '7%', '7%']}
             topCol={5} topLabel="第一"
             empty="本期暂无成单，无法进行小组业绩对比（可调整时间范围或筛选）"
-            rows={teamRows.map((t, i) => [
+            rows={TM.teamRows.map((t, i) => [
               `${i + 1}`,
               i === 0 && t.n > 0 ? `${t.name}（第一）` : t.name,
               `${t.people} 人`,
@@ -562,6 +600,11 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         )}
 
         {/* 组内对比：每个小组一张独立卡片（组间用卡片边框 + 左侧色条区分，不与其它组混在一张表里） */}
+        {tab === 'group' && shownTeams.length === 0 && (
+          <Panel title="组内对比" hint="本页筛选下暂无数据" style={{ gridColumn: '1 / -1' }}>
+            <div className="hint" style={{ fontSize: 12 }}>当前筛选（时间范围/产品/小组）下暂无成单成员，可在页面右上调整。</div>
+          </Panel>
+        )}
         {tab === 'group' && shownTeams.map((t, ti) => {
           const tone = TEAM_TONES[ti % TEAM_TONES.length]
           const customers = t.list.reduce((a, m) => a + (m.customerCount || 0), 0)
@@ -611,11 +654,6 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
             </Panel>
           )
         })}
-        {tab === 'group' && shownTeams.length === 0 && (
-          <Panel title="组内对比" hint={teamFilter ? `已筛「${teamFilter}」` : '全部小组'} style={{ gridColumn: '1 / -1' }}>
-            <div className="hint" style={{ fontSize: 12 }}>当前筛选下暂无成单成员，可调整时间范围或小组筛选。</div>
-          </Panel>
-        )}
 
         {/* 个人分析（独立标签页）：销售汇总 + 该销售名下每个客户的平均订单金额 */}
         {tab === 'person' && (
@@ -623,6 +661,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           hint={`${personRows.length} 名销售 · 合计 ${money(personRows.reduce((a, b) => a + b.usd, 0))} USD · 含该销售名下所有客户的订单`}
           style={{ gridColumn: '1 / -1' }}
           extra={<span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+            {rangeSelect(fPerson, setFPerson)}
             <select className="sa" style={{ width: 140 }} value={personTeam} title="先按小组筛选"
               onChange={(e) => { setPersonTeam(e.target.value); setPersonSel('') }}>
               <option value="">全部小组</option>
@@ -684,7 +723,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                 topCol={2} topLabel="最高"
                 empty="该销售本期暂无成单客户"
                 rows={cur.customerRows.map((c) => [
-                  c.name, `${c.n} 单`, money(c.usd), `${sumUsd ? Math.round((c.usd / sumUsd) * 1000) / 10 : 0}%`,
+                  c.name, `${c.n} 单`, money(c.usd), `${PE.sumUsd ? Math.round((c.usd / PE.sumUsd) * 1000) / 10 : 0}%`,
                   c.avgOrder == null ? '—' : money(c.avgOrder), `${c.share}%`,
                 ])}
               />
@@ -702,24 +741,25 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         {/* 月度小组分析：每月各组订单数与金额（跟随筛选） */}
         <Panel
           title="月度小组分析"
-          hint={monthTeams.length ? `近 ${monthTeams.length} 个月 · 每月按小组拆解金额与单数（括号内为订单数）` : '按成单月份 × 销售人员所属小组'}
+          hint={MO.monthTeams.length ? `近 ${MO.monthTeams.length} 个月 · 每月按小组拆解金额与单数（括号内为订单数）` : '按成单月份 × 销售人员所属小组'}
           style={{ gridColumn: '1 / -1' }}
+          extra={rangeSelect(fMonth, setFMonth)}
         >
-          {monthTeams.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
+          {MO.monthTeams.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
             <>
               <div className="tablewrap h240">
                 <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
-                  <colgroup><col style={{ width: '14%' }} />{[...activeTeams, '合计'].map((t) => <col key={t} style={{ width: `${Math.round(86 / (activeTeams.length + 1))}%` }} />)}</colgroup>
-                  <thead><tr>{['月份', ...activeTeams, '合计'].map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
+                  <colgroup><col style={{ width: '14%' }} />{[...MO.activeTeams, '合计'].map((t) => <col key={t} style={{ width: `${Math.round(86 / (MO.activeTeams.length + 1))}%` }} />)}</colgroup>
+                  <thead><tr>{['月份', ...MO.activeTeams, '合计'].map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
                   <tbody>
-                    {monthTeams.map((mo) => {
-                      const best = activeTeams.reduce((bi, t, i) => ((mo.teams.get(t)?.usd ?? 0) > (mo.teams.get(activeTeams[bi])?.usd ?? 0) ? i : bi), 0)
+                    {MO.monthTeams.map((mo) => {
+                      const best = MO.activeTeams.reduce((bi, t, i) => ((mo.teams.get(t)?.usd ?? 0) > (mo.teams.get(MO.activeTeams[bi])?.usd ?? 0) ? i : bi), 0)
                       return (
                         <tr key={mo.month} style={{ borderBottom: '1px solid var(--line2)' }}>
                           <td className="mono" style={{ padding: '6px 8px', fontWeight: 700 }}>{mo.month}</td>
-                          {activeTeams.map((t, i) => {
+                          {MO.activeTeams.map((t, i) => {
                             const v = mo.teams.get(t)
-                            const isBest = i === best && !!v && activeTeams.filter((x) => mo.teams.has(x)).length > 1
+                            const isBest = i === best && !!v && MO.activeTeams.filter((x) => mo.teams.has(x)).length > 1
                             return (
                               <td key={t} style={{ padding: '6px 8px', whiteSpace: 'nowrap', textAlign: 'right', background: isBest ? '#f2f8ff' : undefined }}>
                                 {v ? <>
@@ -735,17 +775,17 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                     })}
                     <tr style={{ borderTop: '2px solid var(--line)' }}>
                       <td style={{ padding: '6px 8px', fontWeight: 700 }}>合计</td>
-                      {activeTeams.map((t) => {
-                        const usd = monthTeams.reduce((a, mo) => a + (mo.teams.get(t)?.usd ?? 0), 0)
-                        const n = monthTeams.reduce((a, mo) => a + (mo.teams.get(t)?.n ?? 0), 0)
+                      {MO.activeTeams.map((t) => {
+                        const usd = MO.monthTeams.reduce((a, mo) => a + (mo.teams.get(t)?.usd ?? 0), 0)
+                        const n = MO.monthTeams.reduce((a, mo) => a + (mo.teams.get(t)?.n ?? 0), 0)
                         return <td key={t} style={{ padding: '6px 8px', whiteSpace: 'nowrap', fontWeight: 700, textAlign: 'right' }}>{money(usd)}<span className="hint" style={{ marginLeft: 4 }}>（{n} 单）</span></td>
                       })}
-                      <td className="mono" style={{ padding: '6px 8px', fontWeight: 800, textAlign: 'right' }}>{money(monthTeams.reduce((a, mo) => a + mo.total.usd, 0))} USD<span className="hint" style={{ marginLeft: 4 }}>（{monthTeams.reduce((a, mo) => a + mo.total.n, 0)} 单）</span></td>
+                      <td className="mono" style={{ padding: '6px 8px', fontWeight: 800, textAlign: 'right' }}>{money(MO.monthTeams.reduce((a, mo) => a + mo.total.usd, 0))} USD<span className="hint" style={{ marginLeft: 4 }}>（{MO.monthTeams.reduce((a, mo) => a + mo.total.n, 0)} 单）</span></td>
                     </tr>
                   </tbody>
                 </table>
               </div>
-              <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>小组：{activeTeams.join(' · ')}（未匹配到小组的销售归入「未分组」）</div>
+              <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>小组：{MO.activeTeams.join(' · ')}（未匹配到小组的销售归入「未分组」）</div>
             </>
           )}
         </Panel>
@@ -754,7 +794,10 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
 
         {tab === 'all' && (<>
         <Panel title="成交原因分析" hint={`${winSum?.total ?? 0} 单 · ${money(winSum?.usdTotal ?? 0)} USD`}
-          extra={winSum && winSum.missing > 0 ? <span className="hint" style={{ color: '#a35c00', fontSize: 11 }}>{winSum.missing} 笔未填</span> : undefined}>
+          extra={<span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+            {rangeSelect(fReason, setFReason)}
+            {winSum && winSum.missing > 0 && <span className="hint" style={{ color: '#a35c00', fontSize: 11 }}>{winSum.missing} 笔未填</span>}
+          </span>}>
           <DataTable
             cols={['成交原因', '订单数', '占比', '金额（折USD）', '金额占比', '平均周期']}
             widths={['26%', '13%', '12%', '18%', '13%', '18%']}
@@ -764,7 +807,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           />
         </Panel>
 
-        <Panel title="丢单原因分析" hint={`${lostSum?.total ?? 0} 单 · ${money(lostSum?.usdTotal ?? 0)} USD`}>
+        <Panel title="丢单原因分析" hint={`${lostSum?.total ?? 0} 单 · ${money(lostSum?.usdTotal ?? 0)} USD`}
+          extra={rangeSelect(fReason, setFReason)}>
           <DataTable
             cols={['丢单原因', '丢单数', '占比', '丢单金额（折USD）', '金额占比', '丢单周期']}
             widths={['26%', '13%', '12%', '18%', '13%', '18%']}
@@ -777,12 +821,12 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         </>)}
 
         {tab === 'all' && (
-        <Panel title="客户 Top10" hint={`合计 ${money(sumUsd)} USD`} style={{ gridColumn: '1 / -1' }}>
+        <Panel title="客户 Top10" hint={`合计 ${money(CU.sumUsd)} USD`} style={{ gridColumn: '1 / -1' }} extra={rangeSelect(fCustomer, setFCustomer)}>
           <DataTable
             cols={['排名', '客户', '金额（折USD）', '订单数', '金额占比']}
             widths={['7%', '41%', '22%', '14%', '16%']}
             topCol={2} topLabel="第一"
-            rows={topCustomers.map((c, i) => [`${i + 1}`, c.name, money(c.usd), `${c.n} 单`, `${sumUsd ? Math.round((c.usd / sumUsd) * 100) : 0}%`])}
+            rows={CU.topCustomers.map((c, i) => [`${i + 1}`, c.name, money(c.usd), `${c.n} 单`, `${CU.sumUsd ? Math.round((c.usd / CU.sumUsd) * 100) : 0}%`])}
           />
         </Panel>
         )}
