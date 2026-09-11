@@ -129,9 +129,19 @@ body:has(.modal-mask) { overflow: hidden }
 .filechip .del{border:0;background:transparent;color:var(--sub);cursor:pointer;font-size:14px;line-height:1;padding:0 2px}
 .filechip .del:hover{color:var(--danger)}
 /* 产品明细：表头与数据行同一网格，列宽严格对齐；窄屏横向滚动 */
+/* 询报价编辑弹窗：加宽加高后内部排版更宽松（明细逐列对齐 + 汇总/费用不挤压） */
+.edit-modal{padding:16px 20px 14px}
+.edit-modal .item-scroll{max-height:none;overflow:visible}  /* 关键：不再裁剪「选择产品」下拉（原来 overflow-x:auto 会把下拉砍成几十像素高） */
+.edit-modal textarea.sa.fixed-h{min-height:64px}
+.edit-modal .grid-eq3{gap:12px}
 .item-scroll{overflow-x:auto}
-.item-grid{display:grid;grid-template-columns:minmax(150px,1fr) 100px 130px 96px 34px;gap:6px 10px;align-items:center;min-width:540px}
+.item-grid{display:grid;grid-template-columns:minmax(200px,1fr) 96px 130px 96px minmax(130px,168px) 40px;gap:6px 10px;align-items:center;min-width:760px}
 .item-grid > *{min-width:0}
+/* 明细行里的控件跟随列宽：.sa 默认 min-width:120px，会把 96px 的「数量/币种」列撑破、压到下一列 */
+.item-grid .sa{min-width:0;width:100%}
+.item-grid .prod-pick{min-width:0}
+.item-grid .prod-pick > button{white-space:nowrap}
+.item-grid .row-act{width:100%;display:flex;justify-content:center}
 .item-head{margin:2px 0 4px;padding:0 0 4px;border-bottom:1px solid var(--line);font-size:12px;font-weight:600;color:var(--sub)}
 /* 分析看板：紧凑排版（两列自适应、紧凑卡片、细条形） */
 .dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(620px,1fr));gap:12px;align-items:start}

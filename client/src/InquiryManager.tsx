@@ -290,7 +290,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
   }
   return (
     <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 'min(860px, 98vw)', maxHeight: '90vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="编辑询报价">
+      <div className="modal edit-modal" style={{ width: 'min(1180px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="编辑询报价">
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <h3 style={{ margin: 0 }}>编辑 · {form?.inquiryNo}（{form?.customerName}）</h3>
           <button className="btn sm" onClick={onClose}>取消</button>
@@ -432,8 +432,9 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
               <div className="item-grid item-head">
                 <span>产品名称</span>
                 <span>数量</span>
-                <span>金额 <i style={{ color: 'var(--danger)', fontStyle: 'normal' }}>*</i></span>
+                <span>单价 <i style={{ color: 'var(--danger)', fontStyle: 'normal' }}>*</i></span>
                 <span>币种</span>
+                <span>小计 <span style={{ fontWeight: 400 }}>单价×数量</span></span>
                 <span style={{ textAlign: 'center' }}>操作</span>
               </div>
               {form.items.map((it, i) => (
@@ -454,7 +455,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                   <input className="sa" type="number" placeholder="数量" value={it.qty} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, qty: e.target.value } : x) })} />
                   <input className="sa" type="number" placeholder="单价" value={it.amount} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, amount: e.target.value } : x) })} />
                   <select className="sa" value={it.currency} onChange={(e) => set({ items: form.items.map((x, j) => j === i ? { ...x, currency: e.target.value } : x) })}>{currencyOptions(meta.currencies, it.currency).map((c) => <option key={c}>{c}</option>)}</select>
-                  <span className="hint mono" title={`行小计＝单价 × 数量（数量留空按 1 计）`} style={{ whiteSpace: 'nowrap' }}>
+                  <span className="hint mono" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`行小计＝单价 × 数量（数量留空按 1 计）`}>
                     小计 {(() => { const q = Number(it.qty) > 0 ? Number(it.qty) : 1; const v = (Number(it.amount) || 0) * q; return v > 0 ? `${money(v)} ${it.currency}` : '—' })()}
                   </span>
                   <span className="row-act">
