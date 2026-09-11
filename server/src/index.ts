@@ -330,6 +330,9 @@ interface WbPerson { id: string; role: string; name: string; englishName?: strin
 interface OrgPerson { id: string; name: string; cnName: string; englishName: string; department: string; team: string; role: string; roleLabel: string }
 interface OrgDept { name: string; teams: { name: string; persons: OrgPerson[] }[] }
 
+/** 组织角色是否属于「负责人/管理者」（用于数据范围：本组） */
+const isHeadRole = (label: string) => /经理|主管|负责人|总监|总经理|副总|组长/.test(String(label || ''))
+
 /** 本系统里的角色归属：销售部→sales；采购部/销售支持组→support；其它部门→other（只镜像展示，不进销售/采购下拉） */
 function orgRoleOf(department: string): { role: string; label: string } {
   if (department === '销售部') return { role: 'sales', label: '销售' }
@@ -404,14 +407,15 @@ function applyOrgMirror(persons: OrgPerson[]): { added: number; updated: number;
   const d = getDb()
   let added = 0; let updated = 0; let removed = 0
   d.transaction(() => {
-    const up = d.prepare(`INSERT INTO people (id, name, department, team_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET name = excluded.name, department = excluded.department, team_name = excluded.team_name, role = excluded.role`)
+    const up = d.prepare(`INSERT INTO people (id, name, department, team_name, role, role_label, is_head, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET name = excluded.name, department = excluded.department, team_name = excluded.team_name,
+        role = excluded.role, role_label = excluded.role_label, is_head = excluded.is_head`)
     const find = d.prepare('SELECT id FROM people WHERE name = ? COLLATE NOCASE')
     const before = d.prepare('SELECT name FROM people').all() as { name: string }[]
     const beforeSet = new Set(before.map((x) => x.name.toLowerCase()))
     persons.forEach((p) => {
       const hit = find.get(p.name) as { id: string } | undefined
-      up.run(hit ? hit.id : `wb-${p.id || newId()}`, p.name, p.department, p.team, p.role, nowIso())
+      up.run(hit ? hit.id : `wb-${p.id || newId()}`, p.name, p.department, p.team, p.role, p.roleLabel || null, isHeadRole(p.roleLabel) ? 1 : 0, nowIso())
       if (hit) updated += 1; else added += 1
     })
     const keep = new Set(persons.map((p) => p.name.toLowerCase()))
@@ -470,6 +474,8 @@ interface SaActor {
   scope: SaScope; reason: string
   /** 可查看的销售名集合（null = 不限） */
   readNames: string[] | null
+  /** 可查看的采购名集合（采购/支持人员按「采购人员」字段的可见范围） */
+  readPurchasers?: string[] | null
   /** 可写入的销售名集合（null = 不限） */
   writeNames: string[] | null
 }
@@ -515,14 +521,24 @@ function actorOf(req: express.Request): SaActor | null {
   return { ...actor, ...scopeOf(actor) }
 }
 /** 按人员档案把「可读/可写名单」算出来 */
-function scopeOf(actor: Pick<SaActor, 'scope' | 'name'>): Pick<SaActor, 'readNames' | 'writeNames'> {
+function scopeOf(actor: Pick<SaActor, 'scope' | 'name'> & Partial<Pick<SaActor, 'department' | 'team' | 'head'>>): Pick<SaActor, 'readNames' | 'writeNames' | 'readPurchasers'> {
   const d = getDb()
-  if (actor.scope === 'all') return { readNames: null, writeNames: null }
-  if (actor.scope === 'self') return { readNames: [actor.name], writeNames: [actor.name] }
-  const team = (actor as unknown as { team?: string }).team ?? ''
-  const mates = d.prepare("SELECT name FROM people WHERE role = 'sales' AND team_name = ?").all(team) as { name: string }[]
-  const names = Array.from(new Set([actor.name, ...mates.map((m) => m.name)].filter(Boolean)))
-  return { readNames: names.length ? names : [actor.name], writeNames: [actor.name] }   // 组长：读本组，写只写自己的
+  if (actor.scope === 'all') return { readNames: null, writeNames: null, readPurchasers: null }
+  const a = actor as { name: string; department?: string; team?: string; head?: boolean }
+  const team = a.team ?? ''
+  // 采购/支持人员：可见范围落在「采购人员」字段上（采购经理看本组，其他人只看自己参与的）
+  const isPurchaserSide = ['采购部', '销售支持组'].includes(String(a.department ?? ''))
+  let readPurchasers: string[] = []
+  if (isPurchaserSide) {
+    if (a.head && team) {
+      const mates = d.prepare("SELECT name FROM people WHERE department IN ('采购部','销售支持组') AND team_name = ?").all(team) as { name: string }[]
+      readPurchasers = Array.from(new Set([a.name, ...mates.map((m) => m.name)].filter(Boolean)))
+    } else readPurchasers = [a.name]
+  }
+  if (actor.scope === 'self') return { readNames: [a.name], writeNames: [a.name], readPurchasers }
+  const mates = team ? (d.prepare("SELECT name FROM people WHERE role = 'sales' AND team_name = ?").all(team) as { name: string }[]) : []
+  const names = Array.from(new Set([a.name, ...mates.map((m) => m.name)].filter(Boolean)))
+  return { readNames: names.length ? names : [a.name], writeNames: [a.name], readPurchasers }   // 组长：读本组，写只写自己的
 }
 /** 工作台人员索引（id/英文名 → 本系统显示名与小组），登录时用于把账号映射到销售名 */
 async function workbenchPeopleIndex(): Promise<Map<string, { name: string; cnName: string; department: string; team: string; roleLabel: string }>> {
@@ -558,23 +574,48 @@ function scopeFor(u: { role?: string; department?: string; departmentHead?: bool
   if (u.departmentHead || /manager|head|lead|经理|主管|负责人/i.test(role)) return { scope: 'team', reason: '组长 / 部门负责人' }
   return { scope: 'self', reason: '个人' }
 }
-// —— 登录（本系统自带的简单登录入口；账号在 server/.env 的 LOCAL_LOGIN_USERS 里配置）——
-app.post('/api/auth/login', (req, res) => {
-  const username = str(req.body?.username).trim(); const password = str(req.body?.password)
-  if (!username || !password) return fail(res, '请输入账号和密码')
-  const users = localLoginUsers()
-  if (!users.length) return fail(res, '本系统还没有配置登录账号，请在服务端 server/.env 的 LOCAL_LOGIN_USERS 里添加', 503)
-  const hit = users.find((u) => u.username.toLowerCase() === username.toLowerCase() && u.password === password)
-  if (!hit) return fail(res, '账号或密码不正确', 401)
-  const actor: SaActor = {
-    username: hit.username, name: hit.name, cnName: '', role: 'local', roleLabel: '系统账号',
-    department: '', team: hit.team, head: hit.scope !== 'self', isAdmin: hit.scope === 'all',
-    scope: hit.scope, reason: '本系统账号', readNames: null, writeNames: null,
-  }
+/** 签发会话并写 Cookie（登录成功统一出口） */
+function issueSession(res: express.Response, actor: SaActor, mode: 'local' | 'org'): void {
   const full = { ...actor, ...scopeOf(actor) }
   const token = signSession({ actor: full })
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_HOURS * 3600}`)
-  ok(res, { actor: full, sessionHours: SESSION_HOURS, mode: 'local' })
+  ok(res, { actor: full, sessionHours: SESSION_HOURS, mode })
+}
+
+// —— 登录（本系统自带的简单登录入口：显式账号 + 组织架构人员统一初始密码）——
+app.post('/api/auth/login', (req, res) => {
+  const username = str(req.body?.username).trim(); const password = str(req.body?.password)
+  if (!username || !password) return fail(res, '请输入账号和密码')
+  // ① 显式配置的账号（LOCAL_LOGIN_USERS，可单独指定范围）
+  const users = localLoginUsers()
+  const hit = users.find((u) => u.username.toLowerCase() === username.toLowerCase() && u.password === password)
+  if (hit) {
+    const actor: SaActor = {
+      username: hit.username, name: hit.name, cnName: '', role: 'local', roleLabel: '系统账号',
+      department: '', team: hit.team, head: hit.scope !== 'self', isAdmin: hit.scope === 'all',
+      scope: hit.scope, reason: '本系统账号', readNames: null, writeNames: null,
+    }
+    return issueSession(res, actor, 'local')
+  }
+  // ② 组织架构里的同事：账号＝英文名/工号（如 vera、joseph），密码＝统一初始密码 LOGIN_DEFAULT_PASSWORD
+  const defPw = String(process.env.LOGIN_DEFAULT_PASSWORD ?? '')
+  if (defPw && password === defPw) {
+    const p2 = getDb().prepare('SELECT name, department, team_name, role, role_label, is_head FROM people WHERE name = ? COLLATE NOCASE').get(username) as
+      { name: string; department: string; team_name: string; role: string; role_label: string | null; is_head: number } | undefined
+    if (p2) {
+      const roleLabel = String(p2.role_label ?? '')
+      const head = Number(p2.is_head) === 1
+      const { scope, reason } = scopeFor({ role: roleLabel, department: p2.department, departmentHead: head })
+      const actor: SaActor = {
+        username, name: p2.name, cnName: '', role: p2.role, roleLabel: roleLabel || p2.role,
+        department: p2.department, team: p2.team_name, head, isAdmin: false,
+        scope, reason, readNames: null, writeNames: null,
+      }
+      return issueSession(res, actor, 'org')
+    }
+  }
+  if (!users.length && !defPw) return fail(res, '本系统还没有配置登录账号，请在服务端 server/.env 里配置 LOCAL_LOGIN_USERS 或 LOGIN_DEFAULT_PASSWORD', 503)
+  return fail(res, '账号或密码不正确', 401)
 })
 app.get('/api/auth/session', (req, res) => {
   const a = actorOf(req)
@@ -585,24 +626,31 @@ app.post('/api/auth/logout', (_req, res) => { res.setHeader('Set-Cookie', `${SES
 
 const actorIn = (req: express.Request): SaActor => (req as express.Request & { actor?: SaActor }).actor as SaActor
 /** 只读范围条件：返回 ` AND col IN (?,?)`（全部权限时为空串） */
-function scopeSql(actor: SaActor | undefined, col: string): { sql: string; args: string[] } {
-  const names = actor?.readNames
-  if (!actor || !names) return { sql: '', args: [] }
-  return { sql: ` AND ${col} IN (${names.map(() => '?').join(',')})`, args: names }
+function scopeSql(actor: SaActor | undefined, alias = 'i'): { sql: string; args: string[] } {
+  if (!actor || !actor.readNames) return { sql: '', args: [] }
+  const parts: string[] = []; const args: string[] = []
+  if (actor.readNames.length) { parts.push(`${alias}.sales IN (${actor.readNames.map(() => '?').join(',')})`); args.push(...actor.readNames) }
+  const rp = actor.readPurchasers ?? []
+  if (rp.length) { parts.push(`${alias}.purchaser IN (${rp.map(() => '?').join(',')})`); args.push(...rp) }
+  return parts.length ? { sql: ` AND (${parts.join(' OR ')})`, args } : { sql: '', args: [] }
 }
 /** 是否允许写这条（按销售名）：全部权限随便写，其它人只能写自己的 */
-function canWrite(actor: SaActor | undefined, salesName: unknown): boolean {
+function canWrite(actor: SaActor | undefined, salesName: unknown, purchaserName?: unknown): boolean {
   if (!actor) return false
   if (!actor.writeNames) return true
   const n = String(salesName || '').trim().toLowerCase()
-  return actor.writeNames.some((x) => x.toLowerCase() === n)
+  const p = String(purchaserName || '').trim().toLowerCase()
+  if (actor.writeNames.some((x) => x.toLowerCase() === n)) return true
+  return !!p && actor.name.toLowerCase() === p   // 该询价的采购人员本人也可维护
 }
 /** 读校验：能否看这条（按销售名） */
-function canRead(actor: SaActor | undefined, salesName: unknown): boolean {
+function canRead(actor: SaActor | undefined, salesName: unknown, purchaserName?: unknown): boolean {
   if (!actor) return false
   if (!actor.readNames) return true
   const n = String(salesName || '').trim().toLowerCase()
-  return actor.readNames.some((x) => x.toLowerCase() === n)
+  const p = String(purchaserName || '').trim().toLowerCase()
+  if (actor.readNames.some((x) => x.toLowerCase() === n)) return true
+  return !!p && (actor.readPurchasers ?? []).some((x) => x.toLowerCase() === p)
 }
 // —— 产品档案：录入自动沉淀 + 查询/维护 ——
 app.get('/api/products', (req, res) => {
@@ -767,7 +815,13 @@ app.get('/api/customers', (req, res) => {
   const parts: string[] = []; const args: unknown[] = []
   if (q) { parts.push('(name LIKE ? ESCAPE \'!\' OR country LIKE ? ESCAPE \'!\')'); args.push(like, like) }
   if (salesQ) { parts.push('EXISTS (SELECT 1 FROM inquiries i WHERE i.customer_id = customers.id AND i.sales = ?)'); args.push(salesQ) }
-  { const a = actorIn(req); if (a?.readNames) { const names = a.readNames; parts.push(`EXISTS (SELECT 1 FROM inquiries i WHERE i.customer_id = customers.id AND i.sales IN (${names.map(() => '?').join(',')}))`); args.push(...names) } }
+  { const a = actorIn(req); if (a?.readNames) {
+    const names = a.readNames; const purs = a.readPurchasers ?? []
+    const ors: string[] = []
+    if (names.length) { ors.push(`i.sales IN (${names.map(() => '?').join(',')})`); args.push(...names) }
+    if (purs.length) { ors.push(`i.purchaser IN (${purs.map(() => '?').join(',')})`); args.push(...purs) }
+    if (ors.length) parts.push(`EXISTS (SELECT 1 FROM inquiries i WHERE i.customer_id = customers.id AND (${ors.join(' OR ')}))`)
+  } }
   const where = parts.length ? `WHERE ${parts.join(' AND ')}` : ''
   const rows = d.prepare(`SELECT id, name, country, use_location, source, stars, created_at, updated_at FROM customers ${where} ORDER BY updated_at DESC LIMIT 500`).all(...args) as Record<string, unknown>[]
   const out = rows.map((c) => {
@@ -786,8 +840,9 @@ app.get('/api/customers/:id', (req, res) => {
   const c = d.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
   if (!c) return fail(res, '客户不存在', 404)
   const a0 = actorIn(req)
-  const scope0 = a0?.readNames ? ` AND i.sales IN (${a0.readNames.map(() => '?').join(',')})` : ''
-  const inqsArgs: unknown[] = [req.params.id, ...(a0?.readNames ?? [])]
+  const sc0 = scopeSql(a0)
+  const scope0 = sc0.sql
+  const inqsArgs: unknown[] = [req.params.id, ...sc0.args]
   const inqs = d.prepare(`SELECT i.*, o.order_no AS order_no, o.won_date AS order_won_date, CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END AS won_flag,
       (SELECT COALESCE(SUM(amount * COALESCE(NULLIF(qty,0),1)),0) FROM inquiry_items it WHERE it.inquiry_id = i.id) AS raw_amount
     FROM inquiries i LEFT JOIN orders o ON o.inquiry_id = i.id WHERE i.customer_id = ?${scope0} ORDER BY i.date DESC`).all(...inqsArgs) as Record<string, unknown>[]
@@ -1011,7 +1066,7 @@ app.get('/api/inquiries/lookup', (req, res) => {
   if (!no) return fail(res, '请提供询价号')
   const parts = ['i.inquiry_no = ?']; const args: unknown[] = [no]
   if (salesQ) { parts.push('i.sales = ?'); args.push(salesQ) }
-  { const sc = scopeSql(actorIn(req), 'i.sales'); if (sc.sql) { parts.push(sc.sql.replace(/^ AND /, '')); args.push(...sc.args) } }
+  { const sc = scopeSql(actorIn(req)); if (sc.sql) { parts.push(sc.sql.replace(/^ AND /, '')); args.push(...sc.args) } }
   const r = d.prepare(`SELECT i.*, c.name AS customer_name, o.order_no AS order_no, o.won_date AS order_won_date,
       CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END AS won_flag
     FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id LEFT JOIN orders o ON o.inquiry_id = i.id
@@ -1030,7 +1085,7 @@ app.get('/api/followups', (req, res) => {
   const d = getDb()
   const inquiryId = str(req.query.inquiryId), salesQ = str(req.query.sales), q = str(req.query.q)
   const parts: string[] = ['1=1']; const args: unknown[] = []
-  { const sc = scopeSql(actorIn(req), 'i.sales'); if (sc.sql) { parts.push(sc.sql.replace(/^ AND /, '')); args.push(...sc.args) } }
+  { const sc = scopeSql(actorIn(req)); if (sc.sql) { parts.push(sc.sql.replace(/^ AND /, '')); args.push(...sc.args) } }
   if (inquiryId) { parts.push('f.inquiry_id = ?'); args.push(inquiryId) }
   if (salesQ) { parts.push('i.sales = ?'); args.push(salesQ) }
   if (q) { parts.push('(i.inquiry_no LIKE ? ESCAPE \'!\' OR f.content LIKE ? ESCAPE \'!\' OR c.name LIKE ? ESCAPE \'!\')'); const l = likeArg(q); args.push(l, l, l) }
@@ -1074,7 +1129,7 @@ app.post('/api/followups', (req, res) => {
   const inquiryId = str(req.body?.inquiryId)
   const iq = d.prepare('SELECT * FROM inquiries WHERE id = ?').get(inquiryId) as Record<string, unknown> | undefined
   if (!iq) return fail(res, '询价不存在', 404)
-  if (!canWrite(actorIn(req), iq.sales)) return fail(res, '只能对自己名下的询价添加跟进', 403)
+  if (!canWrite(actorIn(req), iq.sales, iq.purchaser)) return fail(res, '只能对自己名下的询价添加跟进', 403)
   const date = str(req.body?.date) || todayStr()
   const summary = text(req.body?.summary) || null
   const detail = text(req.body?.detail) || text(req.body?.content) || null
@@ -1110,8 +1165,8 @@ app.put('/api/followups/:id', (req, res) => {
   const fid = str(req.params.id)
   const old = d.prepare('SELECT * FROM followups WHERE id = ?').get(fid) as Record<string, unknown> | undefined
   if (!old) return fail(res, '跟进记录不存在', 404)
-  { const iqRow = d.prepare('SELECT sales FROM inquiries WHERE id = ?').get(text(old.inquiry_id)) as { sales: string } | undefined
-    if (!canWrite(actorIn(req), iqRow?.sales)) return fail(res, '只能修改自己名下询价的跟进记录', 403) }
+  { const iqRow = d.prepare('SELECT sales, purchaser FROM inquiries WHERE id = ?').get(text(old.inquiry_id)) as { sales: string; purchaser: string } | undefined
+    if (!canWrite(actorIn(req), iqRow?.sales, iqRow?.purchaser)) return fail(res, '只能修改自己名下询价的跟进记录', 403) }
   const inquiryId = text(old.inquiry_id)
   const latest = d.prepare('SELECT id FROM followups WHERE inquiry_id = ? ORDER BY date DESC, created_at DESC, rowid DESC LIMIT 1').get(inquiryId) as { id: string } | undefined
   if (!latest || latest.id !== fid) return fail(res, '只能编辑该项目最新一条跟进记录；较早的记录只能查看', 409)
@@ -1156,7 +1211,7 @@ app.get('/api/orders', (req, res) => {
   const q = str(req.query.q), salesQ = str(req.query.sales), from = str(req.query.from), to = str(req.query.to), productQ = str(req.query.product)
   const orderNoQ = str(req.query.orderNo), customerQ = str(req.query.customer), purchaserQ = str(req.query.purchaser), sourceQ = str(req.query.source)
   const parts: string[] = ['1=1']; const args: unknown[] = []
-  { const sc = scopeSql(actorIn(req), 'i.sales'); if (sc.sql) { parts.push(sc.sql.replace(/^ AND /, '')); args.push(...sc.args) } }
+  { const sc = scopeSql(actorIn(req)); if (sc.sql) { parts.push(sc.sql.replace(/^ AND /, '')); args.push(...sc.args) } }
   if (q) { parts.push('(o.order_no LIKE ? ESCAPE \'!\' OR i.inquiry_no LIKE ? ESCAPE \'!\' OR c.name LIKE ? ESCAPE \'!\')'); const l = likeArg(q); args.push(l, l, l) }
   if (orderNoQ) { parts.push('(o.order_no LIKE ? ESCAPE \'!\' OR i.inquiry_no LIKE ? ESCAPE \'!\')'); const l = likeArg(orderNoQ); args.push(l, l) }
   if (customerQ) { parts.push('c.name LIKE ? ESCAPE \'!\''); args.push(likeArg(customerQ)) }
@@ -1203,7 +1258,7 @@ app.post('/api/orders', (req, res) => {
   const inquiryId = str(req.body?.inquiryId)
   const inq = d.prepare('SELECT * FROM inquiries WHERE id = ?').get(inquiryId) as Record<string, unknown> | undefined
   if (!inq) return fail(res, '询价不存在', 404)
-  if (!canWrite(actorIn(req), inq.sales)) return fail(res, '只能对自己名下的询价生成销售订单', 403)
+  if (!canWrite(actorIn(req), inq.sales, inq.purchaser)) return fail(res, '只能对自己名下的询价生成销售订单', 403)
   if (d.prepare('SELECT id FROM orders WHERE inquiry_id = ?').get(inquiryId)) return fail(res, '该询价已生成销售订单', 409)
   if (Number(inq.is_lost) === 1) return fail(res, '该询价已标记「未成单」，请先撤销未成单后再生成销售订单', 409)
   const wonDate = str(req.body?.wonDate) || todayStr()
@@ -1231,9 +1286,9 @@ app.post('/api/orders', (req, res) => {
 })
 app.put('/api/orders/:id', (req, res) => {
   const d = getDb()
-  const o = d.prepare('SELECT o.*, i.date, i.sales FROM orders o JOIN inquiries i ON i.id = o.inquiry_id WHERE o.id = ?').get(req.params.id) as Record<string, unknown> | undefined
+  const o = d.prepare('SELECT o.*, i.date, i.sales, i.purchaser FROM orders o JOIN inquiries i ON i.id = o.inquiry_id WHERE o.id = ?').get(req.params.id) as Record<string, unknown> | undefined
   if (!o) return fail(res, '订单不存在', 404)
-  if (!canWrite(actorIn(req), o.sales)) return fail(res, '只能修改自己名下询价的订单', 403)
+  if (!canWrite(actorIn(req), o.sales, o.purchaser)) return fail(res, '只能修改自己名下询价的订单', 403)
   const wonDate = req.body?.wonDate !== undefined ? str(req.body.wonDate) : str(o.won_date)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(wonDate)) return fail(res, '成单日期格式应为 YYYY-MM-DD')
   if (wonDate < str(o.date)) return fail(res, '成单日期不能早于询价日期')
@@ -1269,19 +1324,19 @@ app.get('/api/dashboard', (req2, res) => {
   const rowsOf = (sql: string, ...args: unknown[]) => d.prepare(sql).all(...args) as Record<string, unknown>[]
 
   // 本月询价（按询价日期）；按登录人的数据范围过滤
-  const dsc = scopeSql(actorIn(req2), 'i.sales')
+  const dsc = scopeSql(actorIn(req2))
   const inqs = rowsOf(`SELECT i.*, c.name AS customer_name FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id
     WHERE i.date >= ? AND i.date <= ?${dsc.sql} ORDER BY i.date DESC`, monthFrom, monthTo, ...dsc.args)
   const inqUsd = inqs.reduce((s2, r) => s2 + usdOf(text(r.id)), 0)
   const wonMonth = rowsOf(`SELECT o.id, o.won_date, o.amount, o.currency, o.inquiry_id FROM orders o JOIN inquiries i2 ON i2.id = o.inquiry_id
-    WHERE o.won_date >= ? AND o.won_date <= ?${dsc.sql.replace(/\bi\.sales\b/g, 'i2.sales')}`, monthFrom, monthTo, ...dsc.args)
+    WHERE o.won_date >= ? AND o.won_date <= ?${scopeSql(actorIn(req2), 'i2').sql}`, monthFrom, monthTo, ...dsc.args)
   // 本月成单金额：订单上填写的金额为准（未填则回退到询价报价合计）
   const wonUsd = wonMonth.reduce((s2, o) => s2 + orderUsdOf(d, o), 0)
   const lostMonth = inqs.filter((r) => Number(r.is_lost) === 1)
   const lostUsd = lostMonth.reduce((s2, r) => s2 + usdOf(text(r.id)), 0)
   const decided = wonMonth.length + lostMonth.length
   const newCustomers = (d.prepare('SELECT COUNT(*) AS n FROM customers WHERE created_at >= ? AND created_at <= ?').get(`${monthFrom}T00:00:00`, `${monthTo}T23:59:59`) as { n: number }).n
-  const fsc = scopeSql(actorIn(req2), 'i.sales')
+  const fsc = scopeSql(actorIn(req2))
   const followMonth = (d.prepare(`SELECT COUNT(*) AS n FROM followups f JOIN inquiries i ON i.id = f.inquiry_id WHERE f.date >= ? AND f.date <= ?${fsc.sql}`).get(monthFrom, monthTo, ...fsc.args) as { n: number }).n
 
   // 本月排行
@@ -1407,7 +1462,7 @@ app.get('/api/analysis/reasons', (req, res) => {
   const blank = (v: unknown) => text(v) || '未填写'
 
   const wParts: string[] = ['1=1']; const wArgs: unknown[] = []
-  { const sc = scopeSql(actorIn(req), 'i.sales'); if (sc.sql) { wParts.push(sc.sql.replace(/^ AND /, '')); wArgs.push(...sc.args) } }
+  { const sc = scopeSql(actorIn(req)); if (sc.sql) { wParts.push(sc.sql.replace(/^ AND /, '')); wArgs.push(...sc.args) } }
   if (salesQ) { wParts.push('i.sales = ?'); wArgs.push(salesQ) }
   if (from) { wParts.push('o.won_date >= ?'); wArgs.push(from) }
   if (to) { wParts.push('o.won_date <= ?'); wArgs.push(to) }
@@ -1416,7 +1471,7 @@ app.get('/api/analysis/reasons', (req, res) => {
     .all(...wArgs) as { inquiry_id: string; inq_date: string; won_date: string; win_reason: string | null; amount: number | null; currency: string | null }[]
 
   const lParts: string[] = ['o.id IS NULL', 'COALESCE(i.is_lost, 0) = 1']; const lArgs: unknown[] = []
-  { const sc = scopeSql(actorIn(req), 'i.sales'); if (sc.sql) { lParts.push(sc.sql.replace(/^ AND /, '')); lArgs.push(...sc.args) } }
+  { const sc = scopeSql(actorIn(req)); if (sc.sql) { lParts.push(sc.sql.replace(/^ AND /, '')); lArgs.push(...sc.args) } }
   if (salesQ) { lParts.push('i.sales = ?'); lArgs.push(salesQ) }
   if (from) { lParts.push('COALESCE(i.lost_date, i.date) >= ?'); lArgs.push(from) }
   if (to) { lParts.push('COALESCE(i.lost_date, i.date) <= ?'); lArgs.push(to) }
@@ -1528,7 +1583,7 @@ function fmtTotals(items: { currency: string; amount: number; qty?: number | nul
 app.get('/api/inquiries', (req, res) => {
   const d = getDb()
   const parts: string[] = []; const args: unknown[] = []
-  { const sc = scopeSql(actorIn(req), 'i.sales'); if (sc.sql) { parts.push(sc.sql.replace(/^ AND /, '')); args.push(...sc.args) } }
+  { const sc = scopeSql(actorIn(req)); if (sc.sql) { parts.push(sc.sql.replace(/^ AND /, '')); args.push(...sc.args) } }
   const q = str(req.query.q), from = str(req.query.from), to = str(req.query.to)
   const sales = str(req.query.sales), purchaser = str(req.query.purchaser), source = str(req.query.source), country = str(req.query.country)
   const statusQ = str(req.query.status)
@@ -1593,7 +1648,7 @@ app.get('/api/inquiries/:id', (req, res) => {
   const d = getDb()
   const r = d.prepare('SELECT i.*, c.name AS customer_name FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id WHERE i.id = ?').get(req.params.id) as Record<string, unknown> | undefined
   if (!r) return fail(res, '询价不存在', 404)
-  if (!canRead(actorIn(req), r.sales)) return fail(res, '无权查看该询价（不在你的数据范围内）', 403)
+  if (!canRead(actorIn(req), r.sales, r.purchaser)) return fail(res, '无权查看该询价（不在你的数据范围内）', 403)
   const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(req.params.id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
   const order = d.prepare('SELECT id, order_no, won_date, amount, currency, note, win_reason FROM orders WHERE inquiry_id = ?').get(req.params.id) as Record<string, unknown> | undefined
   const { is_won: _legacyWon, won_date: _legacyWonDate, ...base } = r
@@ -1616,7 +1671,7 @@ app.put('/api/inquiries/:id', (req, res) => {
   const d = getDb()
   const old = d.prepare('SELECT * FROM inquiries WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
   if (!old) return fail(res, '询价不存在', 404)
-  if (!canWrite(actorIn(req), old.sales)) return fail(res, '只能修改自己名下的询价（组长可查看本组，但不修改他人记录）', 403)
+  if (!canWrite(actorIn(req), old.sales, old.purchaser)) return fail(res, '只能修改自己名下的询价（组长可查看本组，但不修改他人记录）', 403)
   const date = str(req.body?.date) || str(old.date)
   if (!isDate(date)) return fail(res, '询价日期格式应为 YYYY-MM-DD（且为真实日期）')
   const country = req.body?.country !== undefined ? str(req.body?.country) || null : str(old.country) || null

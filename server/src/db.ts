@@ -141,6 +141,7 @@ export function schema(): void {
     'CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name COLLATE NOCASE)',
   ]
   indexes.forEach((sql) => { try { db.exec(sql) } catch { /* 忽略 */ } })
+  migrationPeopleRoleLabel()
 
   // 跟进评论表（旧库补建）
   try {
@@ -287,6 +288,12 @@ export function backfillProducts(): void {
 }
 
 /** 开发/演示组织（真实接入工作台后由组织同步覆盖） */
+/** 人员组织角色（如「销售经理 / 销售员 / 总经理」）与是否负责人：用于登录后自动判定数据范围 */
+function migrationPeopleRoleLabel(): void {
+  try { db.exec('ALTER TABLE people ADD COLUMN role_label TEXT') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE people ADD COLUMN is_head INTEGER NOT NULL DEFAULT 0') } catch { /* 已存在 */ }
+}
+
 export function ensurePeople(): void {
   const ins = db.prepare('INSERT OR IGNORE INTO people (id, name, department, team_name, role) VALUES (?, ?, ?, ?, ?)')
   const seed = [
