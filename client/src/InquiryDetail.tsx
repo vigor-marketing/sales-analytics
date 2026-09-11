@@ -17,8 +17,7 @@ interface Detail {
   items: { product_name: string; qty: number | null; amount: number; currency: string }[]
   totals: TotalItem[]; usdApprox: number
   freight?: number | null; tax?: number | null; commission?: number | null; other_fee?: number | null; fee_currency?: string | null
-  feeTotal?: number; grandTotals?: TotalItem[]; quoteUsdApprox?: number
-  fees?: { key: string; label: string; value: number | null }[]
+  feeTotal?: number; fees?: { key: string; label: string; value: number | null; currency: string; usd: number }[]; grandTotals?: TotalItem[]; quoteUsdApprox?: number
   feeVersions?: FeeVersion[]
   order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null
 }
@@ -183,9 +182,15 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                 <span key={t.currency} className="ro mono" style={{ width: 'auto', display: 'inline-flex' }}>{money2(t.total)} {t.currency}</span>
               ))}
               {(d.totals || []).length === 0 && <span className="hint">—</span>}
-              {(d.feeTotal ?? 0) > 0 && (
-                <span className="ro mono" style={{ width: 'auto', display: 'inline-flex' }} title={(d.fees || []).filter((f) => f.value).map((f) => `${f.label} ${money2(f.value)}`).join(' · ')}>
-                  费用 {money2(d.feeTotal)} {d.fee_currency || 'USD'}
+              {(d.fees || []).filter((f) => f.value).map((f) => (
+                <span key={f.key} className="ro mono" style={{ width: 'auto', display: 'inline-flex' }}
+                  title={`${f.label} ${money2(f.value)} ${f.currency}（按该币种汇率折算 ≈USD ${money2(f.usd)}）`}>
+                  {f.label} {money2(f.value)} {f.currency}
+                </span>
+              ))}
+              {(d.fees || []).filter((f) => f.value).length > 1 && (
+                <span className="ro mono" style={{ width: 'auto', display: 'inline-flex' }} title="各项费用按各自币种汇率折算后的 USD 合计">
+                  费用折 USD ≈ {money2(d.feeTotal)}
                 </span>
               )}
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--brand)' }} title={d.hand_total == null ? '产品明细合计 ＋ 运费/税费/佣金/其他费用' : '以下为自动合计（产品明细 ＋ 费用）；本询价已手填总金额，列表「报价合计」以手填为准'}>

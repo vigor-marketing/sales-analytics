@@ -13,11 +13,20 @@ import { COUNTRIES } from './countries'
 import { currencyOptions } from './currencies'
 
 interface TotalItem { currency: string; total: number }
-interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; hand_total_currency?: string | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; customer_stars?: number | null; won_date?: string | null; orderNo?: string | null; orderId?: string | null; last_followup_at?: string | null; next_followup_at?: string | null; is_lost?: number; lost_reason?: string | null; lost_date?: string | null; status?: Status; blockers?: string | null; action_plan?: string | null; support_needed?: string | null; last_followup_summary?: string | null; last_followup_detail?: string | null; last_followup_by?: string | null; followup_count?: number; last_followup_photos?: number; last_followup_files?: number; freight?: number | null; tax?: number | null; commission?: number | null; other_fee?: number | null; fee_currency?: string | null; feeTotal?: number; grandTotals?: TotalItem[]; quoteUsdApprox?: number; handTotalUsd?: number | null; quoteUsd?: number }
-interface Detail extends Row { hand_total_currency?: string | null; feeVersions?: { id: string; version: number; is_latest?: boolean; total: number; fee_currency: string; created_at: string }[]; items: { product_name: string; qty: number | null; amount: number; currency: string }[]; order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null }
+interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; hand_total_currency?: string | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; customer_stars?: number | null; won_date?: string | null; orderNo?: string | null; orderId?: string | null; last_followup_at?: string | null; next_followup_at?: string | null; is_lost?: number; lost_reason?: string | null; lost_date?: string | null; status?: Status; blockers?: string | null; action_plan?: string | null; support_needed?: string | null; last_followup_summary?: string | null; last_followup_detail?: string | null; last_followup_by?: string | null; followup_count?: number; last_followup_photos?: number; last_followup_files?: number; freight?: number | null; tax?: number | null; commission?: number | null; other_fee?: number | null; fee_currency?: string | null; feeTotal?: number; feeBuckets?: TotalItem[]; fees?: { key: string; label: string; value: number | null; currency: string; usd: number }[]; grandTotals?: TotalItem[]; quoteUsdApprox?: number; handTotalUsd?: number | null; quoteUsd?: number }
+interface Detail extends Row { hand_total_currency?: string | null; freight_currency?: string | null; tax_currency?: string | null; commission_currency?: string | null; other_fee_currency?: string | null; feeVersions?: { id: string; version: number; is_latest?: boolean; total: number; fee_currency: string; created_at: string }[]; items: { product_name: string; qty: number | null; amount: number; currency: string }[]; order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null }
 interface MetaLite { currencies?: string[]; sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; lostReasons?: string[]; winReasons?: string[]; fx?: Record<string, number> }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
+/** 费用文案：按各自币种分行展示，如「＋运费 100 USD ＋税费 500 CNY」 */
+const feeText = (r: { feeBuckets?: { currency: string; total: number }[]; fees?: { label: string; value: number | null; currency: string }[] }) => {
+  const items = (r.fees ?? []).filter((f) => f.value)
+  if (items.length === 0) {
+    const buckets = (r.feeBuckets ?? []).filter((b) => b.total)
+    return buckets.length ? buckets.map((b) => ` ＋费用 ${money(b.total)} ${b.currency}`).join('') : ''
+  }
+  return items.map((f) => ` ＋${f.label} ${money(f.value)} ${f.currency}`).join('')
+}
 const CURS = ['USD', 'CNY', 'EUR']
 const LOST_REASONS = ['价格无优势', '交期太长', '技术方案不满足', '客户选择竞品', '客户预算取消', '项目暂停/延期', '联系不上客户']
 /** 状态文案由后端自动判定：有订单=已成单，标记未成单=未成单，其余=跟进中 */
@@ -116,8 +125,8 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}><TagBlocks r={r} /></td>
                 <td style={{ padding: '6px 8px' }}
                   title={r.handTotalUsd != null
-                    ? `已手填总金额：${money(r.hand_total)} ${r.hand_total_currency || 'USD'}（≈USD ${money(r.handTotalUsd)}），以手填为准。\n自动合计：产品明细 ${fmtT(r) || '—'}${(r.feeTotal ?? 0) > 0 ? ` ＋ 费用 ${money(r.feeTotal)} ${r.fee_currency || 'USD'}` : ''} ≈USD ${money(r.usdApprox)}`
-                    : `报价合计（含费用）＝产品合计 ${fmtT(r) || '—'}${(r.feeTotal ?? 0) > 0 ? ` ＋ 费用 ${money(r.feeTotal)} ${r.fee_currency || 'USD'}` : ''}（折 USD 约 ${money(r.usdApprox)}）`}>
+                    ? `已手填总金额：${money(r.hand_total)} ${r.hand_total_currency || 'USD'}（≈USD ${money(r.handTotalUsd)}），以手填为准。\n自动合计：产品明细 ${fmtT(r) || '—'}${feeText(r)} ≈USD ${money(r.usdApprox)}`
+                    : `报价合计（含费用）＝产品合计 ${fmtT(r) || '—'}${feeText(r)}（折 USD 约 ${money(r.usdApprox)}）${(r.feeBuckets ?? []).length > 1 ? '\n费用按各自币种汇率分别折算' : ''}`}>
                   {r.handTotalUsd != null ? (
                     <>
                       <span className="badge latest" style={{ marginRight: 4 }} title="该询价已手填总金额，报价合计以手填为准">手填</span>
@@ -127,7 +136,7 @@ export default function InquiryManager({ meta = { sales: [], purchasers: [], sou
                   ) : (
                     <>
                       ≈USD {money(r.usdApprox)}
-                      <div className="hint">{fmtT(r)}{(r.feeTotal ?? 0) > 0 ? ` ＋费用 ${money(r.feeTotal)} ${r.fee_currency || 'USD'}` : ''}</div>
+                      <div className="hint">{fmtT(r)}{feeText(r)}</div>
                     </>
                   )}
                 </td>
@@ -199,7 +208,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
   const [detail, setDetail] = useState<Detail | null>(null)
   const [feeHist, setFeeHist] = useState(false)
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
-  const [form, setForm] = useState<{ freight: string; tax: string; commission: string; otherFee: string; feeCurrency: string; inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; handTotalCur: string; note: string; blockers: string; actionPlan: string; supportNeeded: string; stars: string; keyCust: boolean; keyProj: boolean; isLost: boolean; lostReason: string; lostDate: string; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
+  const [form, setForm] = useState<{ freight: string; tax: string; commission: string; otherFee: string; feeCurrency: string; feeCurFreight: string; feeCurTax: string; feeCurCommission: string; feeCurOther: string; inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; handTotalCur: string; note: string; blockers: string; actionPlan: string; supportNeeded: string; stars: string; keyCust: boolean; keyProj: boolean; isLost: boolean; lostReason: string; lostDate: string; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
   const set = (patch: Partial<typeof form>) => setForm((f) => (f ? { ...f, ...patch } : f))
   useEffect(() => {
     get<Detail>(`/inquiries/${id}`).then((d) => {
@@ -228,7 +237,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
     try { await del(`/orders/${order.id}`); onSaved() }
     catch (e) { setOrdErr((e as Error).message) } finally { setOrdBusy(false) }
   }
-  useEffect(() => { get<Detail>(`/inquiries/${id}`).then((d) => setForm({ freight: d.freight == null ? '' : String(d.freight), tax: d.tax == null ? '' : String(d.tax), commission: d.commission == null ? '' : String(d.commission), otherFee: d.other_fee == null ? '' : String(d.other_fee), feeCurrency: d.fee_currency || 'USD', inquiryNo: d.inquiry_no, customerName: d.customer_name, date: d.date, country: d.country || '', useLoc: d.use_location || '', sales: d.sales, purchaser: d.purchaser, source: d.source, handTotal: d.hand_total == null ? '' : String(d.hand_total), handTotalCur: d.hand_total_currency || 'USD', note: d.note || '', stars: d.customer_stars == null ? '' : String(d.customer_stars), blockers: d.blockers || '', actionPlan: d.action_plan || '', supportNeeded: d.support_needed || '', keyCust: Number(d.is_key_customer) === 1, keyProj: Number(d.is_key_project) === 1, isLost: Number(d.is_lost) === 1, lostReason: d.lost_reason || '', lostDate: d.lost_date || new Date().toISOString().slice(0, 10),  items: (d.items || []).map((it) => ({ productName: it.product_name, qty: it.qty == null ? '' : String(it.qty), amount: String(it.amount), currency: it.currency })) })).catch((e) => setErr((e as Error).message)) }, [id])
+  useEffect(() => { get<Detail>(`/inquiries/${id}`).then((d) => setForm({ freight: d.freight == null ? '' : String(d.freight), tax: d.tax == null ? '' : String(d.tax), commission: d.commission == null ? '' : String(d.commission), otherFee: d.other_fee == null ? '' : String(d.other_fee), feeCurrency: d.fee_currency || 'USD', feeCurFreight: d.freight_currency || d.fee_currency || 'USD', feeCurTax: d.tax_currency || d.fee_currency || 'USD', feeCurCommission: d.commission_currency || d.fee_currency || 'USD', feeCurOther: d.other_fee_currency || d.fee_currency || 'USD', inquiryNo: d.inquiry_no, customerName: d.customer_name, date: d.date, country: d.country || '', useLoc: d.use_location || '', sales: d.sales, purchaser: d.purchaser, source: d.source, handTotal: d.hand_total == null ? '' : String(d.hand_total), handTotalCur: d.hand_total_currency || 'USD', note: d.note || '', stars: d.customer_stars == null ? '' : String(d.customer_stars), blockers: d.blockers || '', actionPlan: d.action_plan || '', supportNeeded: d.support_needed || '', keyCust: Number(d.is_key_customer) === 1, keyProj: Number(d.is_key_project) === 1, isLost: Number(d.is_lost) === 1, lostReason: d.lost_reason || '', lostDate: d.lost_date || new Date().toISOString().slice(0, 10),  items: (d.items || []).map((it) => ({ productName: it.product_name, qty: it.qty == null ? '' : String(it.qty), amount: String(it.amount), currency: it.currency })) })).catch((e) => setErr((e as Error).message)) }, [id])
   // 实时合计：跟随产品明细的金额与币种变化（与「询报价录入」同一口径）
   const liveTotals = useMemo(() => {
     const m = new Map<string, number>()
@@ -256,7 +265,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
         date: form.date, country: form.country, useLocation: form.useLoc || form.country, sales: form.sales, purchaser: form.purchaser, source: form.source,
         totalAmount: form.handTotal ? Number(form.handTotal) : undefined, totalAmountCurrency: form.handTotal ? form.handTotalCur : undefined, note: form.note,
         freight: form.freight === '' ? undefined : Number(form.freight), tax: form.tax === '' ? undefined : Number(form.tax),
-        commission: form.commission === '' ? undefined : Number(form.commission), otherFee: form.otherFee === '' ? undefined : Number(form.otherFee), feeCurrency: form.feeCurrency,
+        commission: form.commission === '' ? undefined : Number(form.commission), otherFee: form.otherFee === '' ? undefined : Number(form.otherFee), feeCurrency: form.feeCurrency, freightCurrency: form.feeCurFreight, taxCurrency: form.feeCurTax, commissionCurrency: form.feeCurCommission, otherFeeCurrency: form.feeCurOther,
         blockers: form.blockers, actionPlan: form.actionPlan, supportNeeded: form.supportNeeded, customerStars: form.stars ? Number(form.stars) : undefined,
         isKeyCustomer: form.keyCust, isKeyProject: form.keyProj,
         isLost: order ? undefined : form.isLost, lostReason: order ? undefined : (form.lostReason.trim() || undefined), lostDate: order ? undefined : (form.lostDate || undefined),
@@ -291,13 +300,18 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
             </div>
             <div style={{ marginTop: 8, borderTop: '1px dashed var(--line)', paddingTop: 8 }}>
               <div className="row" style={{ marginBottom: 6, alignItems: 'flex-end' }}>
-                <div className="col w1"><label>运费</label><input className="sa" type="number" min="0" value={form.freight} onChange={(e) => set({ freight: e.target.value })} placeholder="0" /></div>
-                <div className="col w1"><label>税费</label><input className="sa" type="number" min="0" value={form.tax} onChange={(e) => set({ tax: e.target.value })} placeholder="0" /></div>
-                <div className="col w1"><label>佣金</label><input className="sa" type="number" min="0" value={form.commission} onChange={(e) => set({ commission: e.target.value })} placeholder="0" /></div>
-                <div className="col w1"><label>其他费用</label><input className="sa" type="number" min="0" value={form.otherFee} onChange={(e) => set({ otherFee: e.target.value })} placeholder="0" /></div>
-                <div className="col w1"><label>费用币种</label>
-                  <select className="sa" value={form.feeCurrency} onChange={(e) => set({ feeCurrency: e.target.value })}>{currencyOptions(meta.currencies, form.feeCurrency).map((c) => <option key={c}>{c}</option>)}</select>
-                </div>
+                {([['freight', '运费', 'feeCurFreight'], ['tax', '税费', 'feeCurTax'], ['commission', '佣金', 'feeCurCommission'], ['otherFee', '其他费用', 'feeCurOther']] as const).map(([k, label, ck]) => (
+                  <div className="col" key={k} style={{ minWidth: 150 }}>
+                    <label>{label} <span className="hint">（可单独选币种）</span></label>
+                    <div style={{ display: 'flex', gap: 5 }}>
+                      <input className="sa" style={{ flex: 1, minWidth: 0 }} type="number" min="0" value={form[k]} onChange={(e) => set({ [k]: e.target.value })} placeholder="0" />
+                      <select className="sa" style={{ width: 78, flexShrink: 0 }} title={`${label}的币种（按该币种汇率折算）`}
+                        value={form[ck]} onChange={(e) => set({ [ck]: e.target.value })}>
+                        {currencyOptions(meta.currencies, form[ck]).map((c) => <option key={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                ))}
               </div>
               <div className="totals" style={{ marginBottom: 6 }}>
                 <span className="badge new">总报价（含费用）：</span>

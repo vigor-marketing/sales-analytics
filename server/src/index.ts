@@ -102,27 +102,50 @@ const fail = (res: express.Response, msg: string, st = 400) => res.status(st).js
 
 // —— 费用（运费/税费/佣金/其他）：金额录入，与明细合并成「总报价」 ——
 const FEE_KEYS = [
-  { key: 'freight', label: '运费' },
-  { key: 'tax', label: '税费' },
-  { key: 'commission', label: '佣金' },
-  { key: 'otherFee', label: '其他费用' },
+  { key: 'freight', label: '运费', col: 'freight', curCol: 'freight_currency' },
+  { key: 'tax', label: '税费', col: 'tax', curCol: 'tax_currency' },
+  { key: 'commission', label: '佣金', col: 'commission', curCol: 'commission_currency' },
+  { key: 'otherFee', label: '其他费用', col: 'other_fee', curCol: 'other_fee_currency' },
 ] as const
+/** 每项费用各自的币种（老数据该列为空时回退到询价上的默认费用币种 fee_currency） */
+function feeCurOfRow(r: Record<string, unknown>, curCol: string): string {
+  const v = str(r[curCol])
+  return v ? normCurrency(v) : feeCurrencyOf(r.fee_currency)
+}
+/** 四项费用（金额 + 各自币种），供展示与折算 */
+function feeItemsOf(r: Record<string, unknown>): { key: string; label: string; value: number; currency: string }[] {
+  return FEE_KEYS.map((f) => ({ key: f.key, label: f.label, value: num(r[f.col]) ?? 0, currency: feeCurOfRow(r, f.curCol) }))
+}
+/** 费用按各自币种合计成若干档（供与产品明细合并成总报价） */
+function feeTotalsOf(r: Record<string, unknown>): { currency: string; total: number }[] {
+  const m = new Map<string, number>()
+  feeItemsOf(r).forEach((f) => { if (f.value) m.set(f.currency, (m.get(f.currency) ?? 0) + f.value) })
+  return Array.from(m.entries()).map(([currency, total]) => ({ currency, total: Math.round(total * 100) / 100 }))
+}
+/** 费用折 USD 合计（每项按各自币种汇率折算） */
+function feeUsdOf(r: Record<string, unknown>): number {
+  return Math.round(feeItemsOf(r).reduce((s, f) => s + f.value / fxRateOf(f.currency), 0))
+}
 /** 读取四项费用（非数字/负数视为 0），并校验范围 */
-function readFees(body: Record<string, unknown> | undefined): { values: Record<string, number | null>; total: number; err?: string } {
+function readFees(body: Record<string, unknown> | undefined): { values: Record<string, number | null>; currencies: Record<string, string | null>; total: number; err?: string } {
   const values: Record<string, number | null> = {}
+  const currencies: Record<string, string | null> = {}
   let total = 0
   for (const f of FEE_KEYS) {
     const v = num(body?.[f.key])
-    if (v != null && (v < 0 || v > 1e12)) return { values, total, err: `${f.label}需为 0 ~ 1e12 之间的数值` }
+    if (v != null && (v < 0 || v > 1e12)) return { values, currencies, total, err: `${f.label}需为 0 ~ 1e12 之间的数值` }
     values[f.key] = v
     total += v ?? 0
+    // 每项费用可单独指定币种（未传则沿用询价上的默认费用币种）
+    const rawCur = body?.[`${f.key}Currency`]
+    currencies[f.key] = rawCur === undefined || rawCur === null || rawCur === '' ? null : normCurrency(rawCur)
   }
-  return { values, total: Math.round(total * 100) / 100 }
+  return { values, currencies, total: Math.round(total * 100) / 100 }
 }
-/** 询价总额：明细按币种合计 + 费用（费用币种那一档） */
-function grandTotals(items: { currency: string; total: number }[], feeCurrency: string, feeTotal: number): { currency: string; total: number }[] {
+/** 询价总额：明细按币种合计 + 若干档费用（费用可来自不同币种） */
+function grandTotals(items: { currency: string; total: number }[], feeBuckets: { currency: string; total: number }[]): { currency: string; total: number }[] {
   const merged = items.map((x) => ({ currency: x.currency, amount: x.total }))
-  if (feeTotal) merged.push({ currency: feeCurrency, amount: feeTotal })
+  feeBuckets.forEach((b) => { if (b.total) merged.push({ currency: b.currency, amount: b.total }) })
   return fmtTotals(merged)
 }
 const usdOfTotals = (totals: { currency: string; total: number }[]) => totals.reduce((s, x) => s + x.total / fxRateOf(x.currency), 0)
@@ -137,18 +160,25 @@ function inquiryUsdTotal(d: ReturnType<typeof getDb>, inquiryId: string, row?: R
   const items = d.prepare('SELECT amount, currency FROM inquiry_items WHERE inquiry_id = ?').all(inquiryId) as { amount: number; currency: string }[]
   const r = row ?? (d.prepare('SELECT * FROM inquiries WHERE id = ?').get(inquiryId) as Record<string, unknown> | undefined)
   const totals = fmtTotals(items.map((x) => ({ currency: x.currency, amount: Number(x.amount) || 0 })))
-  const fee = r ? { currency: feeCurrencyOf(r.fee_currency), amount: feeTotalOf(r) } : null
-  const merged = fee && fee.amount ? [...totals, { currency: fee.currency, total: fee.amount }] : totals
-  return usdOfTotals(merged)
+  // 费用按各自币种折算后并入（每项费用可有独立汇率）
+  const feeUsd = r ? feeUsdOf(r) : 0
+  return usdOfTotals(totals) + feeUsd
 }
 
 /** 写一条费用版本（费用发生变化时调用，与产品价格版本并列，便于追溯） */
-function insertFeeVersion(inquiryId: string, vals: Record<string, number | null>, feeCurrency: string, source: string): void {
+function insertFeeVersion(inquiryId: string, vals: Record<string, number | null>, curs: Record<string, string | null>, feeCurrency: string, source: string): void {
   const total = FEE_KEYS.reduce((s, f) => s + (vals[f.key] ?? 0), 0)
   if (!total) return
-  getDb().prepare(`INSERT INTO fee_versions (id, inquiry_id, freight, tax, commission, other_fee, fee_currency, total, source, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(newId(), inquiryId, vals.freight ?? null, vals.tax ?? null, vals.commission ?? null, vals.otherFee ?? null, feeCurrency, Math.round(total * 100) / 100, source, nowIso())
+  // 每项费用的币种（未指定则用默认费用币种）；全部同币种时沿用原语义，混币种时 total 记折算 USD
+  const detail = FEE_KEYS.map((f) => ({ key: f.key, label: f.label, value: vals[f.key] ?? 0, currency: curs[f.key] ?? feeCurrency }))
+    .filter((x) => x.value)
+  const used = Array.from(new Set(detail.map((x) => x.currency)))
+  const sameCur = used.length === 1 ? used[0] : null
+  const totalOut = sameCur ? Math.round(total * 100) / 100 : Math.round(detail.reduce((s2, x) => s2 + x.value / fxRateOf(x.currency), 0) * 100) / 100
+  getDb().prepare(`INSERT INTO fee_versions (id, inquiry_id, freight, tax, commission, other_fee, fee_currency, total, source, created_at, fee_detail)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(newId(), inquiryId, vals.freight ?? null, vals.tax ?? null, vals.commission ?? null, vals.otherFee ?? null, sameCur ?? 'USD', totalOut, source, nowIso(),
+      JSON.stringify(detail))
 }
 /** 费用版本列表（按时间正序编号 V1、V2…） */
 function feeVersionsOf(inquiryId: string): Record<string, unknown>[] {
@@ -156,9 +186,13 @@ function feeVersionsOf(inquiryId: string): Record<string, unknown>[] {
   return rows.map((r, i) => ({ ...r, version: i + 1, is_latest: i === rows.length - 1 })).reverse()
 }
 
-/** 费用明细（含 0 项也返回，便于前端展示输入框回填） */
-function feeBreakdown(r: Record<string, unknown>): { key: string; label: string; value: number | null }[] {
-  return FEE_KEYS.map((f) => ({ key: f.key, label: f.label, value: num(r[f.key === 'otherFee' ? 'other_fee' : f.key]) }))
+/** 费用明细（含 0 项也返回，便于前端展示输入框回填；带各自币种与折 USD） */
+function feeBreakdown(r: Record<string, unknown>): { key: string; label: string; value: number | null; currency: string; usd: number }[] {
+  return FEE_KEYS.map((f) => {
+    const value = num(r[f.col])
+    const currency = feeCurOfRow(r, f.curCol)
+    return { key: f.key, label: f.label, value, currency, usd: Math.round((value ?? 0) / fxRateOf(currency)) }
+  })
 }
 
 // —— 基础元数据：组织人员 / 来源 / 国别 / 汇率（开发态近似，后续接设置）——
@@ -358,8 +392,9 @@ app.get('/api/customers/:id', (req, res) => {
     FROM inquiries i LEFT JOIN orders o ON o.inquiry_id = i.id WHERE i.customer_id = ? ORDER BY i.date DESC`).all(req.params.id) as Record<string, unknown>[]
   const list = inqs.map((i) => {
     const items = d.prepare('SELECT currency, amount FROM inquiry_items WHERE inquiry_id = ?').all(i.id) as { currency: string; amount: number }[]
-    const feeTotal = feeTotalOf(i)
-    const grand = grandTotals(fmtTotals(items), feeCurrencyOf(i.fee_currency), feeTotal)
+    const feeBuckets = feeTotalsOf(i)
+    const feeTotal = feeUsdOf(i)
+    const grand = grandTotals(fmtTotals(items), feeBuckets)
     const usd = usdOfTotals(grand)
     const { won_flag, order_won_date, order_no, is_won: _w, won_date: _wd, ...ibase } = i
     return { ...ibase, is_won: Number(won_flag) === 1 ? 1 : 0, status: inquiryStatus(Number(won_flag) === 1, (i as Record<string, unknown>).is_lost), won_date: str(order_won_date) || null, orderNo: str(order_no) || null, itemCount: items.length, totals: fmtTotals(items), feeTotal, grandTotals: grand, usdApprox: Math.round(usd) }
@@ -550,14 +585,16 @@ app.post('/api/inquiries', (req, res) => {
     d.prepare('UPDATE customers SET country = COALESCE(?, country), use_location = COALESCE(?, use_location), source = COALESCE(?, source), stars = COALESCE(?, stars), updated_at = ? WHERE id = ?')
       .run(country || null, useLocation || null, source || null, customerStars, t, customerId)
     d.prepare(`INSERT INTO inquiries (id, inquiry_no, date, customer_id, country, use_location, sales, purchaser, source, hand_total, hand_total_currency, note,
-        is_key_customer, is_key_project, is_won, blockers, action_plan, support_needed, customer_stars, freight, tax, commission, other_fee, fee_currency, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        is_key_customer, is_key_project, is_won, blockers, action_plan, support_needed, customer_stars, freight, tax, commission, other_fee, fee_currency,
+        freight_currency, tax_currency, commission_currency, other_fee_currency, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(iid, no, date, customerId, country || customerCountry || null, useLocation || country, sales, purchaser, source, handTotal, handTotal == null ? null : normCurrency(newHandTotalCur), note, keyCust, keyProj, isWon, blockers, actionPlan, supportNeeded, customerStars,
-        fees.values.freight, fees.values.tax, fees.values.commission, fees.values.otherFee, feeCurrency, t, t)
+        fees.values.freight, fees.values.tax, fees.values.commission, fees.values.otherFee, feeCurrency,
+        fees.currencies.freight ?? feeCurrency, fees.currencies.tax ?? feeCurrency, fees.currencies.commission ?? feeCurrency, fees.currencies.otherFee ?? feeCurrency, t, t)
     const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
     cleanItems.forEach((it) => ins.run(newId(), iid, it.productName, it.qty, it.amount, it.currency, it.sort))
     // 费用版本 V1（有费用时才记录）
-    insertFeeVersion(iid, fees.values, feeCurrency, '询报价录入')
+    insertFeeVersion(iid, fees.values, fees.currencies, feeCurrency, '询报价录入')
     upsertProducts(cleanItems, date, t, { inquiryId: iid, inquiryNo: no, customerName: text(customer.name), sales, source: '询报价录入' })
   })()
   ok(res, { id: iid, inquiryNo: no, customerId: customerId, createdCustomer, team: teamName || null }, 201)
@@ -577,8 +614,9 @@ app.get('/api/inquiries/lookup', (req, res) => {
   if (!r) return fail(res, salesQ ? '该销售名下未找到此询价号' : '未找到此询价号', 404)
   const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(r.id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
   const totals = fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount })))
-  const feeTotal = feeTotalOf(r)
-  const grand = grandTotals(totals, feeCurrencyOf(r.fee_currency), feeTotal)
+  const feeBuckets = feeTotalsOf(r)
+  const feeTotal = feeUsdOf(r)
+  const grand = grandTotals(totals, feeBuckets)
   const { won_flag, order_won_date, is_won: _w, won_date: _wd, ...base } = r
   ok(res, { ...base, is_won: Number(won_flag) === 1 ? 1 : 0, won_date: str(order_won_date) || null, orderNo: str(r.order_no) || null, items,
     totals, feeTotal, fees: feeBreakdown(r), grandTotals: grand, quoteUsdApprox: Math.round(usdOfTotals(totals)), usdApprox: Math.round(usdOfTotals(grand)), productNames: items.map((x) => x.product_name).join(' / ') })
@@ -715,15 +753,16 @@ app.get('/api/orders', (req, res) => {
       o.created_at AS order_created_at, o.updated_at AS order_updated_at,
       i.id AS inquiry_id, i.inquiry_no, i.date, i.sales, i.purchaser, i.source, i.country, i.use_location, i.hand_total, i.hand_total_currency, i.is_key_customer, i.is_key_project,
       i.customer_stars, i.note, i.blockers, i.action_plan, i.support_needed, i.is_lost, i.lost_reason, i.lost_date, i.last_followup_at, i.next_followup_at,
-      i.freight, i.tax, i.commission, i.other_fee, i.fee_currency,
+      i.freight, i.tax, i.commission, i.other_fee, i.fee_currency, i.freight_currency, i.tax_currency, i.commission_currency, i.other_fee_currency,
       c.name AS customer_name, c.country AS customer_country
     FROM orders o JOIN inquiries i ON i.id = o.inquiry_id LEFT JOIN customers c ON c.id = i.customer_id
     WHERE ${parts.join(' AND ')} ORDER BY o.won_date DESC, o.created_at DESC LIMIT 1000`).all(...args) as Record<string, unknown>[]
   const list = rows.map((r) => {
     const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(r.inquiry_id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
     const totals = fmtTotals(items)
-    const feeTotal = feeTotalOf(r)
-    const grand = grandTotals(totals, feeCurrencyOf(r.fee_currency), feeTotal)
+    const feeBuckets = feeTotalsOf(r)
+    const feeTotal = Math.round(feeBuckets.reduce((a, b) => a + b.total / fxRateOf(b.currency), 0))
+    const grand = grandTotals(totals, feeBuckets)
     const cycle = (r.won_date && r.date) ? Math.round((Date.parse(String(r.won_date)) - Date.parse(String(r.date))) / 86400000) : null
     return { ...r, items, itemCount: items.length, totals, feeTotal, grandTotals: grand, usdApprox: Math.round(usdOfTotals(grand)), quoteUsdApprox: Math.round(usdOfTotals(totals)), cycleDays: cycle, productNames: items.map((x) => x.product_name).join(' / ') }
   })
@@ -1063,7 +1102,7 @@ app.get('/api/inquiries', (req, res) => {
   const where = parts.length ? `WHERE ${parts.join(' AND ')}` : ''
   const join = 'FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id'
   const rows = d.prepare(`SELECT i.id, i.inquiry_no, i.date, i.country, i.use_location, i.sales, i.purchaser, i.source, i.hand_total, i.hand_total_currency, i.note, i.blockers, i.action_plan, i.support_needed, i.customer_stars, i.is_key_customer, i.is_key_project, i.is_lost, i.lost_reason, i.lost_date, i.last_followup_at, i.next_followup_at, i.created_at,
-      i.freight, i.tax, i.commission, i.other_fee, i.fee_currency, c.name AS customer_name,
+      i.freight, i.tax, i.commission, i.other_fee, i.fee_currency, i.freight_currency, i.tax_currency, i.commission_currency, i.other_fee_currency, c.name AS customer_name,
       (SELECT f.summary FROM followups f WHERE f.inquiry_id = i.id ORDER BY f.date DESC, f.created_at DESC, f.rowid DESC LIMIT 1) AS last_followup_summary,
       (SELECT f.detail FROM followups f WHERE f.inquiry_id = i.id ORDER BY f.date DESC, f.created_at DESC, f.rowid DESC LIMIT 1) AS last_followup_detail,
       (SELECT COALESCE(f.by_name, '') FROM followups f WHERE f.inquiry_id = i.id ORDER BY f.date DESC, f.created_at DESC, f.rowid DESC LIMIT 1) AS last_followup_by,
@@ -1081,11 +1120,12 @@ app.get('/api/inquiries', (req, res) => {
   }
   const out = rows.map((r) => {
     const t = fmtTotals(totalsOf.get(str(r.id)) ?? [])
-    const feeTotal = feeTotalOf(r)
-    const grand = grandTotals(t, feeCurrencyOf(r.fee_currency), feeTotal)
+    const feeBuckets = feeTotalsOf(r)
+    const feeTotal = Math.round(feeBuckets.reduce((a, b) => a + b.total / fxRateOf(b.currency), 0))
+    const grand = grandTotals(t, feeBuckets)
     const { _won, _won_date, _order_no, _order_id, ...rest } = r
     return { ...rest, is_won: Number(_won) === 1 ? 1 : 0, status: inquiryStatus(Number(_won) === 1, r.is_lost), won_date: (str(_won_date) || null), orderNo: str(_order_no) || null, orderId: str(_order_id) || null,
-      itemCount: (totalsOf.get(str(r.id)) ?? []).length, totals: t, feeTotal, grandTotals: grand,
+      itemCount: (totalsOf.get(str(r.id)) ?? []).length, totals: t, feeTotal, feeBuckets, fees: feeBreakdown(r), grandTotals: grand,
       quoteUsdApprox: Math.round(usdOfTotals(t)), usdApprox: Math.round(usdOfTotals(grand)),
       // 手填总金额（若有）：按手填币种折算 USD，供列表「报价合计」以手填为准
       handTotalUsd: num(r.hand_total) == null ? null : Math.round(Number(num(r.hand_total)) / fxRateOf(str(r.hand_total_currency) || 'USD')),
@@ -1112,8 +1152,9 @@ app.get('/api/inquiries/:id', (req, res) => {
   const order = d.prepare('SELECT id, order_no, won_date, amount, currency, note, win_reason FROM orders WHERE inquiry_id = ?').get(req.params.id) as Record<string, unknown> | undefined
   const { is_won: _legacyWon, won_date: _legacyWonDate, ...base } = r
   const totals = fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount })))
-  const feeTotal = feeTotalOf(r)
-  const grand = grandTotals(totals, feeCurrencyOf(r.fee_currency), feeTotal)
+  const feeBuckets = feeTotalsOf(r)
+  const feeTotal = feeUsdOf(r)
+  const grand = grandTotals(totals, feeBuckets)
   ok(res, { ...base, is_won: order ? 1 : 0, status: inquiryStatus(Boolean(order), r.is_lost), won_date: order ? str(order.won_date) : null, orderNo: order ? str(order.order_no) : null, order: order ?? null, items,
     totals, feeTotal, fees: feeBreakdown(r), feeVersions: feeVersionsOf(req.params.id), grandTotals: grand, quoteUsdApprox: Math.round(usdOfTotals(totals)), usdApprox: Math.round(usdOfTotals(grand)) })
 })
@@ -1147,6 +1188,14 @@ app.put('/api/inquiries/:id', (req, res) => {
     feeVals[f.key] = req.body?.[f.key] !== undefined ? feePatch.values[f.key] : (num(old[f.key === 'otherFee' ? 'other_fee' : f.key]) ?? null)
   }
   const feeCurrency = req.body?.feeCurrency !== undefined ? feeCurrencyOf(req.body?.feeCurrency) : feeCurrencyOf(old.fee_currency)
+  // 每项费用各自的币种（未传则沿用原值，原值为空再回退默认费用币种）
+  const feeCurVals: Record<string, string> = {}
+  for (const f of FEE_KEYS) {
+    const posted = req.body?.[`${f.key}Currency`]
+    feeCurVals[f.key] = posted !== undefined && posted !== null && posted !== ''
+      ? normCurrency(posted)
+      : (str(old[f.curCol]) ? normCurrency(str(old[f.curCol])) : feeCurrency)
+  }
   const note = req.body?.note !== undefined ? (text(req.body?.note) || null) : str(old.note) || null
   const keyCust = req.body?.isKeyCustomer !== undefined ? (req.body.isKeyCustomer ? 1 : 0) : (num(old.is_key_customer) ?? 0)
   const keyProj = req.body?.isKeyProject !== undefined ? (req.body.isKeyProject ? 1 : 0) : (num(old.is_key_project) ?? 0)
@@ -1186,9 +1235,11 @@ app.put('/api/inquiries/:id', (req, res) => {
   const t = nowIso()
   d.transaction(() => {
     d.prepare(`UPDATE inquiries SET date = ?, country = ?, use_location = ?, sales = ?, purchaser = ?, source = ?, hand_total = ?, hand_total_currency = ?, note = ?,
+        freight_currency = ?, tax_currency = ?, commission_currency = ?, other_fee_currency = ?,
         is_key_customer = ?, is_key_project = ?, is_won = ?, blockers = ?, action_plan = ?, support_needed = ?, customer_stars = ?,
         is_lost = ?, lost_reason = ?, lost_date = ?, freight = ?, tax = ?, commission = ?, other_fee = ?, fee_currency = ?, updated_at = ? WHERE id = ?`)
-      .run(date, country, useLocation, sales, purchaser, source, handTotal, handTotalCur, note, keyCust, keyProj, isWon, blockers, actionPlan, supportNeeded, customerStars,
+      .run(date, country, useLocation, sales, purchaser, source, handTotal, handTotalCur, note,
+        feeCurVals.freight, feeCurVals.tax, feeCurVals.commission, feeCurVals.otherFee, keyCust, keyProj, isWon, blockers, actionPlan, supportNeeded, customerStars,
         isLost, lostReason, lostDate, feeVals.freight, feeVals.tax, feeVals.commission, feeVals.otherFee, feeCurrency, t, req.params.id)
     if (itemsProvided) {
       d.prepare('DELETE FROM inquiry_items WHERE inquiry_id = ?').run(req.params.id)
@@ -1200,7 +1251,7 @@ app.put('/api/inquiries/:id', (req, res) => {
     // 费用有变化（金额或币种）→ 记一条新的费用版本
     const feeChanged = FEE_KEYS.some((f) => Number(feeVals[f.key] ?? 0) !== Number(num(old[f.key === 'otherFee' ? 'other_fee' : f.key]) ?? 0))
       || feeCurrency !== feeCurrencyOf(old.fee_currency)
-    if (feeChanged) insertFeeVersion(req.params.id, feeVals, feeCurrency, '询报价管理·编辑')
+    if (feeChanged) insertFeeVersion(req.params.id, feeVals, feeCurVals, feeCurrency, '询报价管理·编辑')
     // 客户档案同步：星级/国别/使用地/来源在询报价里改动后要跟着更新
     const custId = text(old.customer_id)
     if (custId) {

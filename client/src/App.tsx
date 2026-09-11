@@ -105,6 +105,8 @@ export default function App() {
   // 费用（运费/税费/佣金/其他）：计入总报价
   const [fees, setFees] = useState({ freight: '', tax: '', commission: '', otherFee: '' })
   const [feeCur, setFeeCur] = useState('USD')
+  // 每项费用各自的币种（默认同上，可分别指定；统计时按各自汇率折算）
+  const [feeCurs, setFeeCurs] = useState<{ freight: string; tax: string; commission: string; otherFee: string }>({ freight: 'USD', tax: 'USD', commission: 'USD', otherFee: 'USD' })
   const [sales, setSales] = useState('')
   const [salesTeam, setSalesTeam] = useState('')   // 销售人员：先选小组再选人
   const [purTeam, setPurTeam] = useState('')       // 采购人员：先选小组再选人
@@ -254,6 +256,7 @@ export default function App() {
         sales, purchaser, source, totalAmount: handTotal ? Number(handTotal) : undefined, totalAmountCurrency: handTotal ? handTotalCur : undefined, note: note.trim() || undefined,
         freight: fees.freight ? Number(fees.freight) : undefined, tax: fees.tax ? Number(fees.tax) : undefined,
         commission: fees.commission ? Number(fees.commission) : undefined, otherFee: fees.otherFee ? Number(fees.otherFee) : undefined, feeCurrency: feeCur,
+        freightCurrency: feeCurs.freight, taxCurrency: feeCurs.tax, commissionCurrency: feeCurs.commission, otherFeeCurrency: feeCurs.otherFee,
         useLocation: useLoc.trim() || undefined, isKeyCustomer: keyCust === '1', isKeyProject: keyProj === '1',
         blockers: blockers.trim() || undefined, actionPlan: actionPlan.trim() || undefined, supportNeeded: supportNeeded.trim() || undefined, customerStars: stars ? Number(stars) : undefined,
       })
@@ -418,15 +421,20 @@ export default function App() {
 
         <div style={{ marginTop: 14, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
           <div className="row" style={{ marginBottom: 6, alignItems: 'flex-end' }}>
-            <div className="col w1"><label>运费</label><input className="sa" type="number" min="0" value={fees.freight} onChange={(e) => setFees({ ...fees, freight: e.target.value })} placeholder="0" /></div>
-            <div className="col w1"><label>税费</label><input className="sa" type="number" min="0" value={fees.tax} onChange={(e) => setFees({ ...fees, tax: e.target.value })} placeholder="0" /></div>
-            <div className="col w1"><label>佣金</label><input className="sa" type="number" min="0" value={fees.commission} onChange={(e) => setFees({ ...fees, commission: e.target.value })} placeholder="0" /></div>
-            <div className="col w1"><label>其他费用</label><input className="sa" type="number" min="0" value={fees.otherFee} onChange={(e) => setFees({ ...fees, otherFee: e.target.value })} placeholder="0" /></div>
-            <div className="col w1"><label>费用币种</label>
-              <select className="sa" value={feeCur} onChange={(e) => setFeeCur(e.target.value)}>{currencyOptions(meta?.currencies, feeCur).map((c) => <option key={c}>{c}</option>)}</select>
-            </div>
+            {([['freight', '运费'], ['tax', '税费'], ['commission', '佣金'], ['otherFee', '其他费用']] as const).map(([k, label]) => (
+              <div className="col" key={k} style={{ minWidth: 150 }}>
+                <label>{label} <span className="hint">（可单独选币种）</span></label>
+                <div style={{ display: 'flex', gap: 5 }}>
+                  <input className="sa" style={{ flex: 1, minWidth: 0 }} type="number" min="0" value={fees[k]} onChange={(e) => setFees({ ...fees, [k]: e.target.value })} placeholder="0" />
+                  <select className="sa" style={{ width: 78, flexShrink: 0 }} title={`${label}的币种（该项按该币种汇率折算）`}
+                    value={feeCurs[k]} onChange={(e) => { const v = e.target.value; setFeeCurs((c) => ({ ...c, [k]: v })); if (k === 'freight') setFeeCur(v) }}>
+                    {currencyOptions(meta?.currencies, feeCurs[k]).map((c) => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+            ))}
           </div>
-          <div className="hint" style={{ display: 'block' }}>费用选填，留空按 0 计算；费用会计入下面的「总报价（含费用）」。</div>
+          <div className="hint" style={{ display: 'block' }}>费用选填，留空按 0 计算；<b>每项费用可各自选择币种</b>，统计时按各自汇率折算成 USD 汇总，并计入下面的「总报价（含费用）」。</div>
           <div className="totals" style={{ marginTop: 8 }}>
             <span className="badge new">总报价（含费用）：</span>
             {grandByCur.map(([c, v]) => <span key={c} className="t">{money(v)} {c}</span>)}

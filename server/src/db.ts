@@ -160,6 +160,12 @@ export function schema(): void {
   try { db.exec('ALTER TABLE orders ADD COLUMN win_reason TEXT') } catch { /* 已存在 */ }
   // 手填总金额的币种（2026-09 增补：手填总金额此前没有金额单位）
   try { db.exec('ALTER TABLE inquiries ADD COLUMN hand_total_currency TEXT') } catch { /* 已存在 */ }
+  // 每项费用各自的币种（2026-09 增补：运费/税费/佣金/其他费用可分别用不同币种录入，各自按对应汇率折算）
+  for (const col of ['freight_currency', 'tax_currency', 'commission_currency', 'other_fee_currency']) {
+    try { db.exec(`ALTER TABLE inquiries ADD COLUMN ${col} TEXT`) } catch { /* 已存在 */ }
+  }
+  // 费用版本记录每项费用的币种明细
+  try { db.exec('ALTER TABLE fee_versions ADD COLUMN fee_detail TEXT') } catch { /* 已存在 */ }
   // 丢单原因下拉自带「其他（手动输入）」，历史字典里的裸「其他」属重复项，清理掉
   try {
     for (const key of ['lostReasons', 'winReasons']) {
