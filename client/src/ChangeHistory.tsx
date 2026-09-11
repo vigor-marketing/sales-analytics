@@ -7,6 +7,8 @@ interface PriceRow {
   prev_amount: number | null; prev_qty: number | null; prev_currency: string | null
   source: string | null; inquiry_no: string | null; customer_name: string | null; sales: string | null
   biz_date: string | null; created_at: string; version?: number; is_latest?: boolean
+  /** 换产品时记录的原行信息 */
+  from_product?: string | null; from_qty?: number | null; from_amount?: number | null; from_currency?: string | null
 }
 /** 费用变动记录（/api/inquiries/:id/fee-history 返回） */
 export interface FeeVersion {
@@ -75,7 +77,21 @@ export default function ChangeHistoryModal({ inquiryId, inquiryNo, productNames,
         const qtyChanged = Number(r.prev_qty ?? -1) !== Number(r.qty ?? -1)
         const curChanged = !!r.prev_amount && prevCur !== r.currency
         const changes: Row['changes'] = []
-        if (swappedFrom) changes.push({ label: '产品', from: swappedFrom, to: r.product_name, note: '本行原来是另一个产品' })
+        if (swappedFrom) {
+          // 产品变更：把原行的「产品名称 / 数量 / 金额 / 币种」一起列出，看清具体变的是哪一行
+          const fromQty = r.from_qty ?? null; const fromAmt = r.from_amount ?? null; const fromCur = r.from_currency ?? prevCur
+          changes.push({
+            label: '产品名称', from: swappedFrom, to: r.product_name,
+            note: '本行原来是另一个产品',
+          })
+          if (fromQty != null || fromAmt != null) {
+            changes.push({
+              label: '原行内容', from: null,
+              to: `${fromQty != null ? `${fromQty} 件 × ` : ''}${fromAmt != null ? `${money(fromAmt)} ${fromCur}` : '—'}（合计 ${fromQty != null && fromAmt != null ? `${money(Math.round(fromQty * fromAmt * 100) / 100)} ${fromCur}` : '—'}）`,
+              note: `原产品 ${swappedFrom} 的数量与金额`,
+            })
+          }
+        }
         changes.push({
           label: '单价',
           from: r.prev_amount == null ? null : `${money(r.prev_amount)} ${prevCur}`,

@@ -55,7 +55,11 @@ const NAME_MAX = 120
 function upsertProducts(
   items: { productName: string; qty: number | null; amount: number; currency: string }[],
   date: string, t: string,
-  src: { inquiryId?: string; inquiryNo?: string; customerName?: string; sales?: string; source?: string; oneOf?: string[]; prevNames?: (string | null | undefined)[] } = {},
+  src: {
+    inquiryId?: string; inquiryNo?: string; customerName?: string; sales?: string; source?: string; oneOf?: string[]
+    /** 本次保存前的旧明细（按行顺序）：换产品时把「原产品 / 原数量 / 原金额 / 原币种」一并记入变更记录 */
+    prevLines?: { product_name: string; qty: number | null; amount: number; currency: string }[]
+  } = {},
 ): void {
   const d = getDb()
   const up = d.prepare(`INSERT INTO products (id, name, currency, last_amount, last_qty, use_count, last_used_at, created_at, updated_at)
@@ -64,13 +68,14 @@ function upsertProducts(
       use_count=products.use_count+1, last_used_at=excluded.last_used_at, updated_at=excluded.updated_at`)
   const find = d.prepare('SELECT * FROM products WHERE name = ? COLLATE NOCASE')
   const insHist = d.prepare(`INSERT INTO product_prices (id, product_name, currency, amount, qty, prev_amount, prev_qty, prev_currency,
-      source, inquiry_id, inquiry_no, customer_name, sales, biz_date, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      source, inquiry_id, inquiry_no, customer_name, sales, biz_date, created_at, from_product, from_qty, from_amount, from_currency)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
   items.forEach((it, i) => {
     const before = find.get(it.productName) as { last_amount: number | null; last_qty: number | null; currency: string } | undefined
     // 该行原来是另一个产品 → 属于「产品变更」，即使单价/数量/币种恰好相同，也要留下一条版本与价格记录
-    const prevName = src.prevNames?.[i] == null ? null : String(src.prevNames[i]).trim()
-    const allPrev = (src.prevNames ?? []).map((x) => String(x ?? '').trim().toLowerCase())
+    const prevLine = src.prevLines?.[i] ?? null
+    const prevName = prevLine ? String(prevLine.product_name ?? '').trim() : null
+    const allPrev = (src.prevLines ?? []).map((x) => String(x?.product_name ?? '').trim().toLowerCase())
     // 只有「这一行换了名字，且新名字原本不在本询价里」才算产品变更；单纯删行/换序不会误判
     const swapped = !!prevName && prevName.toLowerCase() !== it.productName.trim().toLowerCase() && !allPrev.includes(it.productName.trim().toLowerCase())
     const changed = !before
@@ -84,7 +89,8 @@ function upsertProducts(
       insHist.run(newId(), it.productName, it.currency, it.amount, it.qty ?? null,
         before ? (before.last_amount ?? null) : null, before ? (before.last_qty ?? null) : null, before ? before.currency : null,
         swapped ? `${src.source ?? '询报价录入'}·产品变更（原 ${prevName}）` : (src.source ?? '询报价录入'),
-        src.inquiryId ?? null, src.inquiryNo ?? null, src.customerName ?? null, src.sales ?? null, date, t)
+        src.inquiryId ?? null, src.inquiryNo ?? null, src.customerName ?? null, src.sales ?? null, date, t,
+        swapped ? prevName : null, swapped ? (prevLine?.qty ?? null) : null, swapped ? (prevLine?.amount ?? null) : null, swapped ? (prevLine?.currency ?? null) : null)
     }
   })
 }
@@ -1482,12 +1488,12 @@ app.put('/api/inquiries/:id', (req, res) => {
         isLost, lostReason, lostDate, feeVals.freight, feeVals.tax, feeVals.commission, feeVals.otherFee, feeCurrency, t, req.params.id)
     if (itemsProvided) {
       // 先取旧明细（按行顺序）：用于识别「这一行换了产品」
-      const prevNames = (d.prepare('SELECT product_name FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(req.params.id) as { product_name: string }[]).map((x) => x.product_name)
+      const prevLines = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(req.params.id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
       d.prepare('DELETE FROM inquiry_items WHERE inquiry_id = ?').run(req.params.id)
       const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
       clean.forEach((it) => ins.run(newId(), req.params.id, it.productName, it.qty, it.amount, it.currency, it.sort))
       const custForName = text(old.customer_id) ? d.prepare('SELECT name FROM customers WHERE id = ?').get(text(old.customer_id)) as { name: string } | undefined : undefined
-      upsertProducts(clean, date, t, { inquiryId: req.params.id, inquiryNo: str(old.inquiry_no), customerName: custForName?.name, sales, source: '询报价管理·编辑', prevNames })
+      upsertProducts(clean, date, t, { inquiryId: req.params.id, inquiryNo: str(old.inquiry_no), customerName: custForName?.name, sales, source: '询报价管理·编辑', prevLines })
     }
     // 费用有变化（金额或币种）→ 记一条新的费用版本
     const feeChanged = FEE_KEYS.some((f) => Number(feeVals[f.key] ?? 0) !== Number(num(old[f.key === 'otherFee' ? 'other_fee' : f.key]) ?? 0))

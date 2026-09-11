@@ -168,6 +168,18 @@ export function schema(): void {
   try { db.exec('ALTER TABLE fee_versions ADD COLUMN fee_detail TEXT') } catch { /* 已存在 */ }
   // 询价上可覆盖的汇率（录入非美元时按实际汇率计算，存 {币种: 汇率}）
   try { db.exec('ALTER TABLE inquiries ADD COLUMN fx_overrides TEXT') } catch { /* 已存在 */ }
+  // 产品变更记录：这一行「原来是哪个产品、数量、金额、币种」（换产品时留痕，便于看清产品名称/数量/金额的变化）
+  for (const col of ['from_product', 'from_currency']) {
+    try { db.exec(`ALTER TABLE product_prices ADD COLUMN ${col} TEXT`) } catch { /* 已存在 */ }
+  }
+  for (const col of ['from_qty', 'from_amount']) {
+    try { db.exec(`ALTER TABLE product_prices ADD COLUMN ${col} REAL`) } catch { /* 已存在 */ }
+  }
+  // 老记录回填：来源里写着「产品变更（原 X）」的，把原产品名补进 from_product
+  try {
+    db.exec(`UPDATE product_prices SET from_product = substr(source, instr(source, '产品变更（原 ') + length('产品变更（原 '), length(source) - instr(source, '产品变更（原 ') - length('产品变更（原 ') )
+      WHERE from_product IS NULL AND source LIKE '%产品变更（原 %）%'`)
+  } catch { /* 忽略 */ }
   // 丢单原因下拉自带「其他（手动输入）」，历史字典里的裸「其他」属重复项，清理掉
   try {
     for (const key of ['lostReasons', 'winReasons']) {
