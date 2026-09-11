@@ -50,9 +50,12 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
           <tbody>
             {rows.map((r) => (
               <tr key={r.id}>
-                <td style={{ fontWeight: 600 }} title={r.name}>{r.name}</td>
+                <td title={r.name}>
+                  <div className="cust-name">{r.name}</div>
+                  {Number(r.keyCustomer) === 1 && <span className="tag kc" style={{ marginTop: 2, display: 'inline-block' }}>重点客户</span>}
+                </td>
                 <td title={r.country || '—'}>{r.country || '—'}</td>
-                <td style={{ color: '#e3a008', fontWeight: 700 }} title={r.stars ? `${r.stars} 星` : '未评级'}>{r.stars ? '★'.repeat(Number(r.stars)) : '—'}</td>
+                <td title={r.stars ? `${r.stars} 星` : '未评级'}>{r.stars ? <span className="cust-stars sm">{'★'.repeat(Number(r.stars))}</span> : <span className="hint">—</span>}</td>
                 {/* 客户级别只标「是否重点客户」；询价级别的重点询价/是否成交在「查看」里看 */}
                 <td title={Number(r.keyCustomer) === 1 ? '重点客户' : '非重点客户'}><Tags kc={r.keyCustomer} /></td>
                 <td className="mono">{r.inquiryCount}</td>
@@ -75,6 +78,16 @@ export default function CustomerArchive({ initialQuery }: { initialQuery?: strin
   )
 }
 
+/** 只读键值行：标签固定宽度在左，值加粗在右（便于快速扫读） */
+function Kv({ k, v, mono, strong }: { k: string; v: string; mono?: boolean; strong?: boolean }) {
+  return (
+    <div className="kv-row">
+      <span className="kv-k">{k}</span>
+      <span className={'kv-v' + (mono ? ' mono' : '')} style={strong ? { fontWeight: 700 } : undefined}>{v}</span>
+    </div>
+  )
+}
+
 function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   const [d, setD] = useState<CustDetail | null>(null)
   const [err, setErr] = useState('')
@@ -83,24 +96,67 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   return (
     <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal cust-modal" style={{ maxHeight: '90vh', overflowY: 'auto' }} role="dialog" aria-modal="true" aria-label="客户档案">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>客户档案 · {d?.name ?? '加载中…'}</h3>
-          <div className="actions" style={{ margin: 0 }}>
-            <button className="btn sm" onClick={onClose}>关闭</button>
+        {/* 头部：客户名 + 关键标签（重点客户 / 星级）一眼可见 */}
+        <div className="ov-head">
+          <div>
+            <h3 style={{ margin: 0 }}>客户档案 · {d?.name ?? '加载中…'}</h3>
+            {d && (
+              <div className="hint" style={{ marginTop: 2 }}>
+                {d.country || '国别未填'} · 使用地 {d.use_location || '—'} · 来源 {d.source || '—'} · 建档 {(((d as unknown as { created_at?: string }).created_at ?? '').slice(0, 16) || '—')}
+              </div>
+            )}
           </div>
+          <span style={{ flex: 1 }} />
+          {d && (Number(d.stars) > 0 ? <span className="cust-stars" title={`客户星级 ${d.stars} 星`}>{'★'.repeat(Number(d.stars))}<i>{d.stars} 星</i></span> : <span className="hint">未评级</span>)}
+          {d && <Tags kc={d.keyCustomer} />}
+          <button className="btn sm" onClick={onClose}>关闭</button>
         </div>
         {err && <div className="msg err">{err}</div>}
         {d && (
           <>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', margin: '10px 0', fontSize: 13 }}>
-              <span>国别 <b>{d.country || '—'}</b></span><span>使用地 <b>{d.use_location || '—'}</b></span><span>来源 <b>{d.source || '—'}</b></span>
-              <span>是否重点客户 <b><Tags kc={d.keyCustomer} /></b></span>
-              <span>重点询价 <b style={{ color: '#0052d9' }}>{d.summary?.keyProjectCount ?? 0}</b> 条</span>
-              <span>询价 <b>{d.summary?.inquiryCount ?? 0}</b> 条</span><span>累计金额 <b>≈USD {money(d.summary?.usdTotal)}</b></span>
-              <span>已成单 <b>{d.summary?.wonCount ?? 0}</b> 条（{money(d.summary?.wonUsd)} USD）</span><span>未成单 <b style={{ color: '#dc2626' }}>{d.summary?.lostCount ?? 0}</b> 条</span><span>成交率 <b style={{ color: '#059669' }}>{d.summary?.winRate ?? 0}%</b>（成交÷已成单+未成单）</span>
-              <span>建档时间 <b className="mono">{((d as unknown as { created_at?: string }).created_at ?? '').slice(0, 16)}</b></span>
+            {/* 关键数据一眼可见 */}
+            <div className="ov-kpis">
+              <div className="ov-kpi">
+                <span className="ov-kpi-label">累计金额（折 USD）</span>
+                <b className="ov-kpi-value">≈USD {money(d.summary?.usdTotal)}</b>
+                <span className="ov-kpi-note">共 {d.summary?.inquiryCount ?? 0} 条询价{d.summary?.keyProjectCount ? ` · 其中重点询价 ${d.summary.keyProjectCount} 条` : ''}</span>
+              </div>
+              <div className="ov-kpi">
+                <span className="ov-kpi-label">已成单</span>
+                <b className="ov-kpi-value" style={{ color: '#059669' }}>{d.summary?.wonCount ?? 0} <small style={{ fontSize: 12, fontWeight: 600 }}>单</small></b>
+                <span className="ov-kpi-note">成交金额 {money(d.summary?.wonUsd)} USD</span>
+              </div>
+              <div className="ov-kpi">
+                <span className="ov-kpi-label">未成单</span>
+                <b className="ov-kpi-value" style={{ color: (d.summary?.lostCount ?? 0) > 0 ? 'var(--danger)' : 'var(--sub)' }}>{d.summary?.lostCount ?? 0} <small style={{ fontSize: 12, fontWeight: 600 }}>单</small></b>
+                <span className="ov-kpi-note">{d.summary?.lostCount ? '丢单原因见下方询价列表' : '暂无丢单'}</span>
+              </div>
+              <div className="ov-kpi">
+                <span className="ov-kpi-label">成交率</span>
+                <b className="ov-kpi-value" style={{ color: (d.summary?.winRate ?? 0) >= 50 ? '#059669' : (d.summary?.winRate ?? 0) > 0 ? '#a35c00' : 'var(--sub)' }}>{d.summary?.winRate ?? 0}%</b>
+                <span className="ov-kpi-note">成交 ÷（成交＋未成单）</span>
+              </div>
             </div>
+
+            {/* 基础信息：左标签固定宽度、右值加粗，逐行对齐 */}
+            <section className="ov-sec">
+              <h4 className="ov-sec-title">基础信息</h4>
+              <div className="kv">
+                <Kv k="客户名称" v={d.name} strong />
+                <Kv k="是否重点客户" v={Number(d.keyCustomer) === 1 ? '重点客户' : '非重点客户'} strong={Number(d.keyCustomer) === 1} />
+                <Kv k="客户星级" v={Number(d.stars) > 0 ? `${'★'.repeat(Number(d.stars))}（${d.stars} 星）` : '未评级'} />
+                <Kv k="国别" v={d.country || '—'} />
+                <Kv k="使用地" v={d.use_location || '—'} />
+                <Kv k="询价来源" v={d.source || '—'} />
+                <Kv k="询价条数" v={`${d.summary?.inquiryCount ?? 0} 条`} />
+                <Kv k="重点询价" v={`${d.summary?.keyProjectCount ?? 0} 条`} />
+                <Kv k="最近询价日期" v={(d as unknown as { lastDate?: string | null }).lastDate || d.inquiries?.[0]?.date || '—'} mono />
+                <Kv k="建档时间" v={(((d as unknown as { created_at?: string }).created_at ?? '').slice(0, 19).replace('T', ' ') || '—')} mono />
+              </div>
+            </section>
             {/* 询价列表：窄窗口时在弹窗内横向滚动，列宽始终够用（不再截断） */}
+            <section className="ov-sec">
+            <h4 className="ov-sec-title">该客户的询价<span className="hint">（{d.inquiries?.length ?? 0} 条；点询价号看详情）</span></h4>
             <div className="tablewrap" style={{ maxHeight: '52vh' }}>
             <table className="grid data-table fixed-table fit-table" style={{ fontSize: 12.5 }}>
               <colgroup>
@@ -130,6 +186,7 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               </tbody>
             </table>
             </div>
+            </section>
           </>
         )}
         <div className="modal-foot"><button className="btn" onClick={onClose}>关闭</button></div>
