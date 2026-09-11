@@ -116,7 +116,7 @@ function computeAggregate(rows: OrderRow[], ctx: { fx: Record<string, number>; t
     cell.total.usd += r.usdApprox || 0; cell.total.n += 1
     mm.set(month, cell)
   })
-  const monthTeams = Array.from(mm.values()).sort((a, b) => b.month.localeCompare(a.month)).slice(0, 12)
+  const monthTeams = Array.from(mm.values()).sort((a, b) => b.month.localeCompare(a.month)).slice(0, 5)  // 与表格统一高度匹配：正好 5 行
   const names = new Set<string>()
   monthTeams.forEach((mo) => mo.teams.forEach((_v, k) => names.add(k)))
   const ordered = salesMeta.map((x) => x.team || '未分组').filter((t, i, a) => a.indexOf(t) === i)
@@ -230,12 +230,12 @@ const niceMax = (v: number) => {
 const compact = (v: number) => (v >= 10000 ? `${Math.round(v / 1000)}k` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)))
 
 /** 每个分析板块统一外壳：标题 + 说明 + 图示 + 明细 */
-function Panel({ title, hint, children, extra, style }: { title: string; hint?: string; children: React.ReactNode; extra?: React.ReactNode; style?: React.CSSProperties }) {
+function Panel({ title, hint, hintTitle, children, extra, style }: { title: string; hint?: string; hintTitle?: string; children: React.ReactNode; extra?: React.ReactNode; style?: React.CSSProperties }) {
   return (
     <section className="card panel-tight" style={style}>
       <div className="panel-head">
-        <h4 className="panel-title">{title}</h4>
-        {hint && <span className="hint panel-hint">{hint}</span>}
+        <h4 className="panel-title" title={hintTitle}>{title}</h4>
+        {hint && <span className="hint panel-hint" title={hintTitle} style={hintTitle ? { cursor: 'help' } : undefined}>{hint}</span>}
         <span style={{ flex: 1 }} />
         {extra}
       </div>
@@ -259,7 +259,7 @@ function Section({ title, note }: { title: string; note?: string }) {
 /** 纯数据表格：这些分析板块只保留数字，不做条形/色块图 */
 function DataTable({ cols, rows, empty = '暂无数据', widths, topCol, topLabel }: { cols: string[]; rows: React.ReactNode[][]; empty?: string; widths?: string[]; topCol?: number; topLabel?: string }) {
   return (
-    <div className="tablewrap h240">
+    <div className="tablewrap tbl-fit">
       <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
         {widths && <colgroup>{widths.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>}
         <thead><tr>{cols.map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
@@ -504,12 +504,12 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
   )
 
   return (
-    <div className="page-fit scroll">
+    <div className="page-fit scroll ana-page">
       {/* 页头：不再有全局筛选（每张表各自筛选），只保留标题与刷新 */}
       <section className="card panel-tight auto">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <h3 style={{ margin: 0, fontSize: 16 }}>销售订单分析</h3>
-          <span className="hint" style={{ flex: 1, minWidth: 220 }}>每张表都有自己的筛选条（时间范围 + 产品/小组/个人视表而定），互不影响；金额均取订单上填写的成交金额折 USD</span>
+          <span className="hint" title="每张表都有自己的筛选条（时间范围 + 产品/小组/个人，视表而定），互不影响；金额均取订单上填写的成交金额折 USD" style={{ flex: 1, minWidth: 220, cursor: 'help' }}>每张表可单独筛选，互不影响；金额＝订单成交金额折 USD</span>
           <button className="btn sm" onClick={() => void load()}>刷新</button>
         </div>
         {msg && <div className="msg err">{msg}</div>}
@@ -559,6 +559,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
       </div>
 
       <div className="dash-grid" style={{ marginTop: 10 }}>
+        {tab === 'all' && <Section title="概览" />}
+
         {tab === 'all' && (<>
         <div className="dash-span2 kpi-grid">
           {stats && (<>
@@ -593,8 +595,12 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
 
         </>)}
 
+        {tab === 'all' && <Section title="产品与维度" />}
+
         {tab === 'all' && (
-        <Panel title="按产品" hint={`${fProduct.product ? `已筛「${fProduct.product}」· ` : ''}${PD.productRows.length} 个产品 · 合计 ${PD.productRows.reduce((a, b) => a + b.count, 0)} 次 · ${money(PD.sumUsd)} USD`}
+        <Panel title="按产品"
+          hint={`${fProduct.product ? `已筛「${fProduct.product}」· ` : ''}${PD.productRows.length} 个产品 · ${money(PD.sumUsd)} USD`}
+          hintTitle="口径：只统计成单日期落在本表筛选范围内的销售订单；金额＝订单上填写的成交金额折 USD；平均周期＝该产品所在订单的平均成单周期（天）"
           extra={rangeSelect(fProduct, setFProduct)}>
           <DataTable
             cols={['产品', '成单次数', '金额（折USD）', '金额占比', '平均周期']}
@@ -606,14 +612,15 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
               p.avgCycle == null ? '—' : `${p.avgCycle} 天`,
             ])}
           />
-          {PD.productRows.length > 15 && <div className="hint" style={{ fontSize: 11 }}>仅显示前 15 个产品</div>}
+          {PD.productRows.length > 15 && <div className="hint" style={{ fontSize: 11 }}>仅显示前 15 个</div>}
         </Panel>
         )}
 
         {/* 按其他维度：与「按产品」并列，维度可切换（来源/采购方/国别/币种/使用地点/客户/销售） */}
         {tab === 'all' && (
         <Panel title={`按${activeDim.label}`}
-          hint={`${dimList.length} 个取值 · 合计 ${money(dimSum)} USD`}
+          hint={`${dimList.length} 个取值 · ${money(dimSum)} USD`}
+          hintTitle={`口径与「按产品」一致：只统计成单日期落在本表筛选范围内的销售订单（金额＝订单上填写的成交金额折 USD）；下拉可切换维度（${DIMS.map((d) => d.label).join(' / ')}），未填写的取值计入「${UNKNOWN}」`}
           extra={<span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <select className="sa" style={{ width: 116 }} value={activeDim.key} title="选择分析维度（仅影响这张表）"
               onChange={(e) => setDimKey(e.target.value)}>
@@ -634,15 +641,15 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
               d.avgCycle == null ? '—' : `${d.avgCycle} 天`,
             ])}
           />
-          <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
-            与「按产品」同一口径：只统计成单日期落在本表筛选范围内的销售订单（金额＝订单上填写的成交金额折 USD），下拉可切换维度（{DIMS.map((d) => d.label).join(' / ')}）；未填写的取值计入「{UNKNOWN}」。{dimList.length > 15 ? ' 仅显示前 15 个取值。' : ''}
-          </div>
         </Panel>
         )}
 
+        {tab === 'all' && <Section title="团队" />}
+
         {tab === 'all' && (
         <Panel title="小组业绩分析对比"
-          hint={`${TM.teamRows.filter((t) => t.n > 0).length} 个有成单小组 · 合计 ${money(TM.sumUsd)} USD${TM.teamRows[0] ? ` · 第一 ${TM.teamRows[0].name}` : ''}`}
+          hint={`${TM.teamRows.filter((t) => t.n > 0).length} 个小组 · ${money(TM.sumUsd)} USD${TM.teamRows[0] ? ` · 第一 ${TM.teamRows[0].name}` : ''}`}
+          hintTitle="口径：人数＝该组销售（按人员档案归属，未匹配归「未分组」）；人均＝金额÷人数、单均价＝金额÷订单数、客单价＝金额÷客户数、周期＝平均成单周期（天）；占比＝本组金额÷全部小组金额；金额取订单上填写的成交金额折 USD"
           style={{ gridColumn: '1 / -1' }}
           extra={<span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
             {rangeSelect(fTeam, setFTeam)}
@@ -667,11 +674,6 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
               t.avgCycle == null || t.n === 0 ? '—' : `${t.avgCycle} 天`,
             ])}
           />
-          <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
-            口径：人数＝该组销售（按人员档案归属，未匹配归「未分组」）；<b>人均＝金额÷人数</b>、<b>单均价＝金额÷订单数</b>、<b>客单价＝金额÷客户数</b>、<b>周期＝平均成单周期（天）</b>；
-            「占比」＝本组金额÷全部小组金额；金额取订单上填写的成交金额折 USD，随上方筛选联动。
-            月度趋势见「月度小组分析」，组内成员排名见「组内分析」标签页。
-          </div>
         </Panel>
         )}
 
@@ -701,7 +703,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                 <span className="ana-sum-i">组内单均价 <b>{t.n ? money(Math.round(t.usd / t.n)) : '—'}</b></span>
                 <span className="ana-sum-i">小组客户单价 <b>{customers ? money(Math.round(t.usd / customers)) : '—'}</b></span>
               </div>
-              <div className="tablewrap">
+              <div className="tablewrap tbl-fit">
                 <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
                   <colgroup><col style={{ width: '18%' }} /><col style={{ width: '9%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '9%' }} /><col style={{ width: '9%' }} /><col style={{ width: '9%' }} /><col style={{ width: '9%' }} /><col style={{ width: '8%' }} /></colgroup>
                   <thead><tr>{['成员', '组内排名', '订单数', '客户数', '金额（折USD）', '组内占比', '单均价', '客户单价', '平均周期', '与第一'].map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }} title={h === '客户单价' ? '客户单价＝金额÷客户数' : h === '单均价' ? '单均价＝金额÷订单数' : h === '与第一' ? '本成员金额÷组内第一名金额' : undefined}>{h}</th>)}</tr></thead>
@@ -732,9 +734,12 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         })}
 
         {/* 个人分析（独立标签页）：销售汇总 + 该销售名下每个客户的平均订单金额 */}
+        {tab === 'person' && <Section title="销售排名" />}
+
         {tab === 'person' && (
         <Panel title="个人分析"
-          hint={`${personRows.length} 名销售 · 合计 ${money(personRows.reduce((a, b) => a + b.usd, 0))} USD · 含该销售名下所有客户的订单`}
+          hint={`${personRows.length} 名销售 · ${money(personRows.reduce((a, b) => a + b.usd, 0))} USD`}
+          hintTitle="含该销售名下所有客户的订单；客户单价＝金额÷客户数、单均价＝金额÷订单数；本期无成单的销售也会列出（金额 0），便于横向对比"
           style={{ gridColumn: '1 / -1' }}
           extra={<span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
             {rangeSelect(fPerson, setFPerson)}
@@ -748,7 +753,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
               <option value="">全部销售（{personRows.length} 名）</option>
               {personRows.map((p) => <option key={p.name} value={p.name}>{p.name}（{p.team}）</option>)}
             </select>
-            <span className="hint" style={{ fontSize: 11 }}>客户单价＝金额÷客户数 · 单均价＝金额÷订单数</span>
+            <span className="hint" title="客户单价＝金额÷客户数；单均价＝金额÷订单数" style={{ fontSize: 11, cursor: 'help' }}>客户单价 / 单均价 口径</span>
           </span>}>
           <DataTable
             cols={['销售', '小组', '客户数', '订单数', '金额（折USD）', '金额占比', '客户单价', '单均价', '平均周期']}
@@ -767,11 +772,10 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
               p.avgCycle == null ? '—' : `${p.avgCycle} 天`,
             ])}
           />
-          <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
-            口径：只统计「成单日期」落在当前筛选范围内的销售订单（金额＝订单上填写的成交金额折 USD）；本期无成单的销售也会列出（金额 0），便于横向对比。
-          </div>
         </Panel>
         )}
+
+        {tab === 'person' && <Section title="客户明细" />}
 
         {tab === 'person' && (() => {
           const pick = custPerson || (personRows[0]?.name ?? '')
@@ -785,6 +789,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
           return (<>
             <Panel title={`客户分析 · ${cur.name}（${cur.team}）`}
               hint={`名下 ${cur.customerCount} 个客户 · ${cur.n} 单 · ${money(totalUsd)} USD`}
+              hintTitle={`每个客户一行：订单数 / 金额 / 占其总额（该客户金额÷该销售总额）/ 该客户平均订单金额（＝金额÷订单数）/ 占全公司（该客户金额÷同一时间范围内全公司 ${money(CPall.sumUsd)} USD，不叠加产品筛选）；金额均取订单上填写的成交金额折 USD`}
               style={{ gridColumn: '1 / -1' }}
               extra={<span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
                 {rangeSelect(fCust, setFCust)}
@@ -812,10 +817,6 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                   `${CPall.sumUsd ? Math.round((c.usd / CPall.sumUsd) * 1000) / 10 : 0}%`,
                 ])}
               />
-              <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
-                该销售名下每个客户一行：订单数 / 金额（折USD）/ <b>占其总额</b>（该客户金额÷该销售总额）/ <b>该客户平均订单金额</b>（＝该客户金额÷该客户订单数）/ <b>占全公司</b>（该客户金额÷<b>同一时间范围内全公司 {money(CPall.sumUsd)} USD</b>，不叠加产品筛选，便于横向比较）。
-                上方「客户单价」＝该销售总额÷名下客户数，「单均价」＝该销售总额÷全部订单数；金额均取订单上填写的成交金额折 USD。
-              </div>
             </Panel>
           </>)
         })()}
@@ -826,13 +827,14 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         {/* 月度小组分析：每月各组订单数与金额（跟随筛选） */}
         <Panel
           title="月度小组分析"
-          hint={MO.monthTeams.length ? `近 ${MO.monthTeams.length} 个月 · 每月按小组拆解金额与单数（括号内为订单数）` : '按成单月份 × 销售人员所属小组'}
+          hint={MO.monthTeams.length ? `近 ${MO.monthTeams.length} 个月 · 括号内为订单数` : '按成单月份 × 小组'}
+          hintTitle={`每月按小组拆解金额与单数（括号内为订单数）；小组：${MO.activeTeams.join(' · ') || '—'}（未匹配到小组的销售归入「未分组」）`}
           style={{ gridColumn: '1 / -1' }}
           extra={rangeSelect(fMonth, setFMonth)}
         >
           {MO.monthTeams.length === 0 ? <div className="hint" style={{ fontSize: 12 }}>暂无成单数据</div> : (
             <>
-              <div className="tablewrap h240">
+              <div className="tablewrap tbl-fit">
                 <table className="grid data-table fixed-table" style={{ fontSize: 12.5 }}>
                   <colgroup><col style={{ width: '14%' }} />{[...MO.activeTeams, '合计'].map((t) => <col key={t} style={{ width: `${Math.round(86 / (MO.activeTeams.length + 1))}%` }} />)}</colgroup>
                   <thead><tr>{['月份', ...MO.activeTeams, '合计'].map((h, j) => <th key={h} style={{ textAlign: j === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
@@ -870,7 +872,7 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
                   </tbody>
                 </table>
               </div>
-              <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>小组：{MO.activeTeams.join(' · ')}（未匹配到小组的销售归入「未分组」）</div>
+              <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>列＝小组；单元格＝金额（订单数）</div>
             </>
           )}
         </Panel>
@@ -878,6 +880,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         </>)}
 
         {tab === 'all' && (<>
+        {tab === 'all' && <Section title="原因" />}
+
         <Panel title="成交原因分析" hint={`${winSum?.total ?? 0} 单 · ${money(winSum?.usdTotal ?? 0)} USD`}
           extra={<span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
             {rangeSelect(fReason, setFReason)}
@@ -904,6 +908,8 @@ export default function ContractsAnalysis({ meta }: { meta: MetaLite }) {
         </Panel>
 
         </>)}
+
+        {tab === 'all' && <Section title="客户" />}
 
         {tab === 'all' && (
         <Panel title="客户 Top10" hint={`合计 ${money(CU.sumUsd)} USD`} style={{ gridColumn: '1 / -1' }} extra={rangeSelect(fCustomer, setFCustomer)}>

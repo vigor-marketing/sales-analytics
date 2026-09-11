@@ -282,6 +282,24 @@ table.grid > tbody > tr > td.cell-status .lost-line { margin-left: 0 }
 /* 表格容器：固定高度版本（用于一页内多块表格的场景） */
 .tablewrap.h180{height:180px;overflow:auto}
 .tablewrap.h240{height:240px;overflow:auto}
+/* 销售订单分析：全页表格统一尺寸 —— 表头 + 5 行 = 228px，行高 38、字号 12.5、内边距 0 10 全部一致 */
+.ana-page .tablewrap.tbl-fit{height:266px;overflow-y:auto}
+.ana-page .data-table th,.ana-page .data-table td{height:38px !important;padding:0 10px !important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ana-page .data-table th{font-size:12.5px}
+.ana-page .data-table tbody tr>td{font-size:12.5px}
+.ana-page .data-table tbody tr>td .top-badge{vertical-align:middle}
+.ana-page .panel-tight{padding:12px 14px !important}
+.ana-page .panel-hint{font-size:11.5px;color:var(--sub)}
+.ana-page .hint[title]{cursor:help}
+.ana-page .dash-grid{gap:14px}
+/* KPI 卡片等高，四张卡看起来一样大 */
+.ana-page .kpi-grid .kpi-chip{height:100%;display:flex;flex-direction:column;justify-content:center}
+/* 板块表头等高：右侧的胶囊徽标/下拉统一 34px，表头不再一高一矮 */
+.ana-page .panel-head{min-height:34px}
+.ana-page .panel-head .team-badge{height:34px;display:inline-flex;align-items:center;padding:0 14px;font-size:12px}
+.ana-page .dash-sec{margin-top:4px}
+.ana-page .dash-sec-t{font-size:12.5px;color:var(--sub);letter-spacing:.6px}
+.ana-page .ana-sum{gap:14px 18px}
 .tablewrap.h300{height:300px;overflow:auto}
 
 .fixed-table td.ellip{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
