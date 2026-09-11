@@ -107,6 +107,8 @@ export default function App() {
   const [feeCur, setFeeCur] = useState('USD')
   // 每项费用各自的币种（默认同上，可分别指定；统计时按各自汇率折算）
   const [feeCurs, setFeeCurs] = useState<{ freight: string; tax: string; commission: string; otherFee: string }>({ freight: 'USD', tax: 'USD', commission: 'USD', otherFee: 'USD' })
+  // 本单实际使用的汇率：非美元时默认取「字段与选项设置 → 币种」里的汇率，可在此按实际汇率修改（同一币种所有行共用）
+  const [rateOv, setRateOv] = useState<Record<string, string>>({})
   const [sales, setSales] = useState('')
   const [salesTeam, setSalesTeam] = useState('')   // 销售人员：先选小组再选人
   const [purTeam, setPurTeam] = useState('')       // 采购人员：先选小组再选人
@@ -197,24 +199,37 @@ export default function App() {
     const order = currencyOptions(meta?.currencies, undefined)
     return Array.from(m.entries()).sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
   }, [items])
-  const usdApprox = useMemo(() => {
-    const fx = meta?.fx ?? { USD: 1, CNY: 7.12, EUR: 0.92 }
-    return quoteByCur.reduce((s, [c, v]) => s + v / (fx[c] || 1), 0)
-  }, [quoteByCur, meta])
-  // 费用合计（四项相加，留空按 0）
-  const feeTotal = useMemo(() => ['freight', 'tax', 'commission', 'otherFee']
-    .reduce((sum, k) => sum + (Number((fees as Record<string, string>)[k]) || 0), 0), [fees])
-  // 总报价（含费用）：把费用并到费用币种那一档
+  // 生效汇率：录入时改过的优先，否则用设置里的默认汇率
+  const rateOf = useCallback((c: string) => {
+    if (c === 'USD') return 1
+    const ov = Number(rateOv[c]); if (ov > 0) return ov
+    const dft = Number(meta?.fx?.[c]); return dft > 0 ? dft : 1
+  }, [rateOv, meta])
+  const usdApprox = useMemo(() => quoteByCur.reduce((s, [c, v]) => s + v / rateOf(c), 0), [quoteByCur, rateOf])
+  // 各项费用：金额 + 币种 + 汇率 + 折 USD
+  const feeRows = useMemo(() => ([['freight', '运费'], ['tax', '税费'], ['commission', '佣金'], ['otherFee', '其他费用']] as const).map(([k, label]) => {
+    const value = Number((fees as Record<string, string>)[k]) || 0
+    const currency = feeCurs[k]
+    const rate = rateOf(currency)
+    return { key: k, label, value, currency, rate, usd: value / rate }
+  }), [fees, feeCurs, rateOf])
+  const feeTotal = useMemo(() => feeRows.reduce((s, f) => s + f.value, 0), [feeRows])
+  const feeUsdTotal = useMemo(() => feeRows.reduce((s, f) => s + f.usd, 0), [feeRows])
+  // 总报价（含费用）：各项费用按各自币种并入对应档
   const grandByCur = useMemo(() => {
     const m = new Map<string, number>(quoteByCur)
-    if (feeTotal) m.set(feeCur, (m.get(feeCur) ?? 0) + feeTotal)
+    feeRows.forEach((f) => { if (f.value) m.set(f.currency, (m.get(f.currency) ?? 0) + f.value) })
     const order = currencyOptions(meta?.currencies, undefined)
     return Array.from(m.entries()).filter(([, v]) => v > 0).sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
-  }, [quoteByCur, feeTotal, feeCur])
-  const grandUsd = useMemo(() => {
-    const fx = meta?.fx ?? { USD: 1, CNY: 7.12, EUR: 0.92 }
-    return grandByCur.reduce((s, [c, v]) => s + v / (fx[c] || 1), 0)
-  }, [grandByCur, meta])
+  }, [quoteByCur, feeRows, meta])
+  const grandUsd = useMemo(() => grandByCur.reduce((s, [c, v]) => s + v / rateOf(c), 0), [grandByCur, rateOf])
+  // 本单用到的非美元币种（明细或费用里出现），用于展示可修改的汇率
+  const usedNonUsd = useMemo(() => {
+    const set = new Set<string>()
+    quoteByCur.forEach(([c, v]) => { if (c !== 'USD' && v > 0) set.add(c) })
+    feeRows.forEach((f) => { if (f.currency !== 'USD' && f.value) set.add(f.currency) })
+    return Array.from(set)
+  }, [quoteByCur, feeRows])
 
 
   // 采购人员（含所属小组）：用于「采购小组 → 采购人员」逐级筛选
@@ -257,12 +272,13 @@ export default function App() {
         freight: fees.freight ? Number(fees.freight) : undefined, tax: fees.tax ? Number(fees.tax) : undefined,
         commission: fees.commission ? Number(fees.commission) : undefined, otherFee: fees.otherFee ? Number(fees.otherFee) : undefined, feeCurrency: feeCur,
         freightCurrency: feeCurs.freight, taxCurrency: feeCurs.tax, commissionCurrency: feeCurs.commission, otherFeeCurrency: feeCurs.otherFee,
+        fxRates: Object.fromEntries(Object.entries(rateOv).map(([c, v]) => [c, Number(v)]).filter(([, v]) => Number(v) > 0)),
         useLocation: useLoc.trim() || undefined, isKeyCustomer: keyCust === '1', isKeyProject: keyProj === '1',
         blockers: blockers.trim() || undefined, actionPlan: actionPlan.trim() || undefined, supportNeeded: supportNeeded.trim() || undefined, customerStars: stars ? Number(stars) : undefined,
       })
       setMsg({ t: 'ok', text: `已保存询价 ${res.inquiryNo}` })
       if (again) {
-        setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setHandTotalCur('USD'); setFees({ freight: '', tax: '', commission: '', otherFee: '' }); setNote(''); setBlockers(''); setActionPlan(''); setSupportNeeded(''); setStars(''); setKeyCust(''); setKeyProj(''); setCustId(''); setCustomer(''); noT.current?.focus()
+        setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setHandTotalCur('USD'); setFees({ freight: '', tax: '', commission: '', otherFee: '' }); setRateOv({}); setNote(''); setBlockers(''); setActionPlan(''); setSupportNeeded(''); setStars(''); setKeyCust(''); setKeyProj(''); setCustId(''); setCustomer(''); noT.current?.focus()
       } else { setNo(''); setNoTaken(false); setItems([emptyRow()]); setHandTotal(''); setHandTotalCur('USD'); setNote(''); setBlockers(''); setActionPlan(''); setSupportNeeded(''); setStars(''); setKeyCust(''); setKeyProj(''); setCustId(''); setCustomer(''); setCountry(''); setUseLoc(''); setLocTouched(false); setSource('') }
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) } finally { setBusy(false) }
   }
@@ -420,21 +436,62 @@ export default function App() {
         </button>
 
         <div style={{ marginTop: 14, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
-          <div className="row" style={{ marginBottom: 6, alignItems: 'flex-end' }}>
-            {([['freight', '运费'], ['tax', '税费'], ['commission', '佣金'], ['otherFee', '其他费用']] as const).map(([k, label]) => (
-              <div className="col" key={k} style={{ minWidth: 150 }}>
-                <label>{label} <span className="hint">（可单独选币种）</span></label>
-                <div style={{ display: 'flex', gap: 5 }}>
-                  <input className="sa" style={{ flex: 1, minWidth: 0 }} type="number" min="0" value={fees[k]} onChange={(e) => setFees({ ...fees, [k]: e.target.value })} placeholder="0" />
-                  <select className="sa" style={{ width: 78, flexShrink: 0 }} title={`${label}的币种（该项按该币种汇率折算）`}
-                    value={feeCurs[k]} onChange={(e) => { const v = e.target.value; setFeeCurs((c) => ({ ...c, [k]: v })); if (k === 'freight') setFeeCur(v) }}>
-                    {currencyOptions(meta?.currencies, feeCurs[k]).map((c) => <option key={c}>{c}</option>)}
+          {/* 每一项费用单独一行：金额 + 币种 + （非美元时）可修改的实际汇率 + 该项折 USD */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {feeRows.map((f) => (
+              <div className="row" key={f.key} style={{ marginBottom: 0, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div className="col" style={{ minWidth: 96, maxWidth: 120 }}>
+                  <label>{f.label}</label>
+                  <input className="sa" style={{ width: '100%' }} type="number" min="0" value={(fees as Record<string, string>)[f.key]}
+                    onChange={(e) => setFees({ ...fees, [f.key]: e.target.value })} placeholder="0" />
+                </div>
+                <div className="col" style={{ minWidth: 96, maxWidth: 120 }}>
+                  <label>币种</label>
+                  <select className="sa" style={{ width: '100%' }} title={`${f.label}的币种`}
+                    value={f.currency} onChange={(e) => { const v = e.target.value; setFeeCurs((c) => ({ ...c, [f.key]: v })); if (f.key === 'freight') setFeeCur(v) }}>
+                    {currencyOptions(meta?.currencies, f.currency).map((c) => <option key={c}>{c}</option>)}
                   </select>
                 </div>
+                {f.currency !== 'USD' ? (
+                  <div className="col" style={{ minWidth: 190 }}>
+                    <label>汇率 <span className="hint">1 USD = ? {f.currency}（可改）</span></label>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <input className="sa" style={{ width: 100 }} type="number" min="0" step="0.0001"
+                        title={`本单 ${f.currency} 的实际汇率（默认取设置里的 ${meta?.fx?.[f.currency] ?? '—'}，改动后本单所有 ${f.currency} 金额都按此折算）`}
+                        value={rateOv[f.currency] ?? String(meta?.fx?.[f.currency] ?? '')}
+                        onChange={(e) => setRateOv((m) => ({ ...m, [f.currency]: e.target.value }))} />
+                      <span className="hint">≈ USD {money(Math.round(f.usd * 100) / 100)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="col" style={{ minWidth: 190 }}>
+                    <label>&nbsp;</label>
+                    <span className="hint" style={{ lineHeight: '34px' }}>美元无需汇率 · 计入合计</span>
+                  </div>
+                )}
               </div>
             ))}
           </div>
-          <div className="hint" style={{ display: 'block' }}>费用选填，留空按 0 计算；<b>每项费用可各自选择币种</b>，统计时按各自汇率折算成 USD 汇总，并计入下面的「总报价（含费用）」。</div>
+          {/* 明细里用到的非美元币种，也允许改汇率（同一币种共用） */}
+          {usedNonUsd.filter((c) => !feeRows.some((f) => f.currency === c && f.value)).length > 0 && (
+            <div className="row" style={{ marginTop: 6, marginBottom: 0, alignItems: 'flex-end' }}>
+              {usedNonUsd.filter((c) => !feeRows.some((f) => f.currency === c && f.value)).map((c) => (
+                <div className="col" key={c} style={{ minWidth: 190 }}>
+                  <label>{c} 汇率 <span className="hint">1 USD = ? {c}（可改）</span></label>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input className="sa" style={{ width: 100 }} type="number" min="0" step="0.0001"
+                      title={`本单 ${c} 的实际汇率（默认 ${meta?.fx?.[c] ?? '—'}）`}
+                      value={rateOv[c] ?? String(meta?.fx?.[c] ?? '')} onChange={(e) => setRateOv((m) => ({ ...m, [c]: e.target.value }))} />
+                    <span className="hint">用于产品明细折算</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="hint" style={{ display: 'block', marginTop: 6 }}>
+            费用选填，留空按 0 计算；每项费用可各自选择币种，<b>非美元时按上面填写的实际汇率折算</b>（默认取「字段与选项设置 → 币种」里的汇率），结果以实际计算为准，并计入下面的「总报价（含费用）」。
+            每次修改费用（金额/币种/汇率）都会留一条<b>费用版本记录</b>，可在「询报价管理 → 查看 → 费用版本」里追溯。
+          </div>
           <div className="totals" style={{ marginTop: 8 }}>
             <span className="badge new">总报价（含费用）：</span>
             {grandByCur.map(([c, v]) => <span key={c} className="t">{money(v)} {c}</span>)}
@@ -443,8 +500,11 @@ export default function App() {
           </div>
           <div className="hint" style={{ display: 'block', marginTop: 4 }}>
             产品合计 {quoteByCur.length ? quoteByCur.map(([c, v]) => `${money(v)} ${c}`).join(' + ') : '—'}
-            {feeTotal > 0 ? ` ＋ 费用 ${money(feeTotal)} ${feeCur}` : ' ＋ 费用 —'}
-            （折 USD 约 {money(Math.round(grandUsd))}）
+            {feeRows.filter((f) => f.value).length
+              ? feeRows.filter((f) => f.value).map((f) => ` ＋${f.label} ${money(f.value)} ${f.currency}（≈USD ${money(Math.round(f.usd))}）`).join('')
+              : ' ＋ 费用 —'}
+            {feeUsdTotal > 0 ? ` ｜ 费用折 USD 约 ${money(Math.round(feeUsdTotal))}` : ''}
+            （总报价折 USD 约 {money(Math.round(grandUsd))}）
           </div>
           <div className="row" style={{ marginTop: 8, marginBottom: 0 }}>
             <div className="col w2"><label>总金额（手填 · 选填）</label>

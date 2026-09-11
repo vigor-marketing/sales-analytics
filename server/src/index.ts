@@ -122,9 +122,10 @@ function feeTotalsOf(r: Record<string, unknown>): { currency: string; total: num
   feeItemsOf(r).forEach((f) => { if (f.value) m.set(f.currency, (m.get(f.currency) ?? 0) + f.value) })
   return Array.from(m.entries()).map(([currency, total]) => ({ currency, total: Math.round(total * 100) / 100 }))
 }
-/** 费用折 USD 合计（每项按各自币种汇率折算） */
-function feeUsdOf(r: Record<string, unknown>): number {
-  return Math.round(feeItemsOf(r).reduce((s, f) => s + f.value / fxRateOf(f.currency), 0))
+/** 费用折 USD 合计（每项按各自币种汇率折算；优先用该询价上覆盖的汇率） */
+function feeUsdOf(r: Record<string, unknown>, rates?: Record<string, number>): number {
+  const rs = rates ?? ratesOf(r)
+  return Math.round(feeItemsOf(r).reduce((s, f) => s + f.value / rateIn(rs, f.currency), 0))
 }
 /** 读取四项费用（非数字/负数视为 0），并校验范围 */
 function readFees(body: Record<string, unknown> | undefined): { values: Record<string, number | null>; currencies: Record<string, string | null>; total: number; err?: string } {
@@ -148,7 +149,37 @@ function grandTotals(items: { currency: string; total: number }[], feeBuckets: {
   feeBuckets.forEach((b) => { if (b.total) merged.push({ currency: b.currency, amount: b.total }) })
   return fmtTotals(merged)
 }
-const usdOfTotals = (totals: { currency: string; total: number }[]) => totals.reduce((s, x) => s + x.total / fxRateOf(x.currency), 0)
+/** 解析询价上的汇率覆盖（录入时按实际汇率算，未覆盖的用设置里的默认汇率） */
+function ratesOf(r: Record<string, unknown> | null | undefined): Record<string, number> {
+  const base = fxRates()
+  const raw = r ? str(r.fx_overrides) : ''
+  if (!raw) return base
+  try {
+    const obj = JSON.parse(raw) as Record<string, unknown>
+    Object.keys(obj).forEach((k) => {
+      const v = Number(obj[k])
+      const code = k.trim().toUpperCase()
+      if (code && Number.isFinite(v) && v > 0) base[code] = v
+    })
+  } catch { /* 忽略坏数据 */ }
+  return base
+}
+/** 读取前端传入的汇率覆盖 {币种: 汇率}，只保留合法项；无有效项时返回 null */
+function readFxOverrides(v: unknown): string | null {
+  if (!v || typeof v !== 'object') return null
+  const codes = currencyCodes()
+  const out: Record<string, number> = {}
+  Object.keys(v as Record<string, unknown>).forEach((k) => {
+    const code = k.trim().toUpperCase()
+    const rate = Number((v as Record<string, unknown>)[k])
+    if (code === 'USD' || !codes.includes(code)) return
+    if (Number.isFinite(rate) && rate > 0 && rate <= 1e6) out[code] = rate
+  })
+  return Object.keys(out).length ? JSON.stringify(out) : null
+}
+const rateIn = (rates: Record<string, number>, currency: string) => (rates[str(currency).trim().toUpperCase()] || 1)
+const usdOfTotals = (totals: { currency: string; total: number }[], rates?: Record<string, number>) =>
+  totals.reduce((s, x) => s + x.total / ((rates ? rateIn(rates, x.currency) : fxRateOf(x.currency)) || 1), 0)
 const feeCurrencyOf = (v: unknown) => normCurrency(v)
 /** 询价行上的费用合计 */
 function feeTotalOf(r: Record<string, unknown>): number {
@@ -161,20 +192,22 @@ function inquiryUsdTotal(d: ReturnType<typeof getDb>, inquiryId: string, row?: R
   const r = row ?? (d.prepare('SELECT * FROM inquiries WHERE id = ?').get(inquiryId) as Record<string, unknown> | undefined)
   const totals = fmtTotals(items.map((x) => ({ currency: x.currency, amount: Number(x.amount) || 0 })))
   // 费用按各自币种折算后并入（每项费用可有独立汇率）
-  const feeUsd = r ? feeUsdOf(r) : 0
-  return usdOfTotals(totals) + feeUsd
+  const rates = ratesOf(r)
+  const feeUsd = r ? feeUsdOf(r, rates) : 0
+  return usdOfTotals(totals, rates) + feeUsd
 }
 
 /** 写一条费用版本（费用发生变化时调用，与产品价格版本并列，便于追溯） */
-function insertFeeVersion(inquiryId: string, vals: Record<string, number | null>, curs: Record<string, string | null>, feeCurrency: string, source: string): void {
+function insertFeeVersion(inquiryId: string, vals: Record<string, number | null>, curs: Record<string, string | null>, feeCurrency: string, source: string, rateOverride?: Record<string, number>): void {
   const total = FEE_KEYS.reduce((s, f) => s + (vals[f.key] ?? 0), 0)
   if (!total) return
   // 每项费用的币种（未指定则用默认费用币种）；全部同币种时沿用原语义，混币种时 total 记折算 USD
-  const detail = FEE_KEYS.map((f) => ({ key: f.key, label: f.label, value: vals[f.key] ?? 0, currency: curs[f.key] ?? feeCurrency }))
+  const rs = rateOverride ?? ratesOf(null)
+  const detail = FEE_KEYS.map((f) => ({ key: f.key, label: f.label, value: vals[f.key] ?? 0, currency: curs[f.key] ?? feeCurrency, rate: rateIn(rs, curs[f.key] ?? feeCurrency) }))
     .filter((x) => x.value)
   const used = Array.from(new Set(detail.map((x) => x.currency)))
   const sameCur = used.length === 1 ? used[0] : null
-  const totalOut = sameCur ? Math.round(total * 100) / 100 : Math.round(detail.reduce((s2, x) => s2 + x.value / fxRateOf(x.currency), 0) * 100) / 100
+  const totalOut = sameCur ? Math.round(total * 100) / 100 : Math.round(detail.reduce((s2, x) => s2 + x.value / x.rate, 0) * 100) / 100
   getDb().prepare(`INSERT INTO fee_versions (id, inquiry_id, freight, tax, commission, other_fee, fee_currency, total, source, created_at, fee_detail)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(newId(), inquiryId, vals.freight ?? null, vals.tax ?? null, vals.commission ?? null, vals.otherFee ?? null, sameCur ?? 'USD', totalOut, source, nowIso(),
@@ -191,7 +224,8 @@ function feeBreakdown(r: Record<string, unknown>): { key: string; label: string;
   return FEE_KEYS.map((f) => {
     const value = num(r[f.col])
     const currency = feeCurOfRow(r, f.curCol)
-    return { key: f.key, label: f.label, value, currency, usd: Math.round((value ?? 0) / fxRateOf(currency)) }
+    const rates = ratesOf(r)
+    return { key: f.key, label: f.label, value, currency, rate: rateIn(rates, currency), usd: Math.round((value ?? 0) / rateIn(rates, currency)) }
   })
 }
 
@@ -395,7 +429,7 @@ app.get('/api/customers/:id', (req, res) => {
     const feeBuckets = feeTotalsOf(i)
     const feeTotal = feeUsdOf(i)
     const grand = grandTotals(fmtTotals(items), feeBuckets)
-    const usd = usdOfTotals(grand)
+    const usd = usdOfTotals(grand, ratesOf(i))
     const { won_flag, order_won_date, order_no, is_won: _w, won_date: _wd, ...ibase } = i
     return { ...ibase, is_won: Number(won_flag) === 1 ? 1 : 0, status: inquiryStatus(Number(won_flag) === 1, (i as Record<string, unknown>).is_lost), won_date: str(order_won_date) || null, orderNo: str(order_no) || null, itemCount: items.length, totals: fmtTotals(items), feeTotal, grandTotals: grand, usdApprox: Math.round(usd) }
   })
@@ -519,6 +553,8 @@ app.post('/api/inquiries', (req, res) => {
   const newHandTotalCur = str(req.body?.totalAmountCurrency) || 'USD'
   const fees = readFees(req.body as Record<string, unknown>)
   if (fees.err) return fail(res, fees.err)
+  // 录入时按实际汇率计算：允许传入 {币种: 汇率} 覆盖设置里的默认汇率
+  const fxOverrides = readFxOverrides(req.body?.fxRates)
   const feeCurrency = feeCurrencyOf(req.body?.feeCurrency)
   const note = text(req.body?.note) || null
   const keyCust = req.body?.isKeyCustomer ? 1 : 0
@@ -586,15 +622,15 @@ app.post('/api/inquiries', (req, res) => {
       .run(country || null, useLocation || null, source || null, customerStars, t, customerId)
     d.prepare(`INSERT INTO inquiries (id, inquiry_no, date, customer_id, country, use_location, sales, purchaser, source, hand_total, hand_total_currency, note,
         is_key_customer, is_key_project, is_won, blockers, action_plan, support_needed, customer_stars, freight, tax, commission, other_fee, fee_currency,
-        freight_currency, tax_currency, commission_currency, other_fee_currency, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        freight_currency, tax_currency, commission_currency, other_fee_currency, fx_overrides, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(iid, no, date, customerId, country || customerCountry || null, useLocation || country, sales, purchaser, source, handTotal, handTotal == null ? null : normCurrency(newHandTotalCur), note, keyCust, keyProj, isWon, blockers, actionPlan, supportNeeded, customerStars,
         fees.values.freight, fees.values.tax, fees.values.commission, fees.values.otherFee, feeCurrency,
-        fees.currencies.freight ?? feeCurrency, fees.currencies.tax ?? feeCurrency, fees.currencies.commission ?? feeCurrency, fees.currencies.otherFee ?? feeCurrency, t, t)
+        fees.currencies.freight ?? feeCurrency, fees.currencies.tax ?? feeCurrency, fees.currencies.commission ?? feeCurrency, fees.currencies.otherFee ?? feeCurrency, fxOverrides, t, t)
     const ins = d.prepare('INSERT INTO inquiry_items (id, inquiry_id, product_name, qty, amount, currency, sort) VALUES (?, ?, ?, ?, ?, ?, ?)')
     cleanItems.forEach((it) => ins.run(newId(), iid, it.productName, it.qty, it.amount, it.currency, it.sort))
     // 费用版本 V1（有费用时才记录）
-    insertFeeVersion(iid, fees.values, fees.currencies, feeCurrency, '询报价录入')
+    insertFeeVersion(iid, fees.values, fees.currencies, feeCurrency, '询报价录入', ratesOf({ fx_overrides: fxOverrides }))
     upsertProducts(cleanItems, date, t, { inquiryId: iid, inquiryNo: no, customerName: text(customer.name), sales, source: '询报价录入' })
   })()
   ok(res, { id: iid, inquiryNo: no, customerId: customerId, createdCustomer, team: teamName || null }, 201)
@@ -761,10 +797,11 @@ app.get('/api/orders', (req, res) => {
     const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(r.inquiry_id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
     const totals = fmtTotals(items)
     const feeBuckets = feeTotalsOf(r)
-    const feeTotal = Math.round(feeBuckets.reduce((a, b) => a + b.total / fxRateOf(b.currency), 0))
+    const rates = ratesOf(r)
+    const feeTotal = Math.round(feeBuckets.reduce((a, b) => a + b.total / rateIn(rates, b.currency), 0))
     const grand = grandTotals(totals, feeBuckets)
     const cycle = (r.won_date && r.date) ? Math.round((Date.parse(String(r.won_date)) - Date.parse(String(r.date))) / 86400000) : null
-    return { ...r, items, itemCount: items.length, totals, feeTotal, grandTotals: grand, usdApprox: Math.round(usdOfTotals(grand)), quoteUsdApprox: Math.round(usdOfTotals(totals)), cycleDays: cycle, productNames: items.map((x) => x.product_name).join(' / ') }
+    return { ...r, items, itemCount: items.length, totals, feeTotal, grandTotals: grand, usdApprox: Math.round(usdOfTotals(grand, rates)), quoteUsdApprox: Math.round(usdOfTotals(totals, rates)), cycleDays: cycle, productNames: items.map((x) => x.product_name).join(' / ') }
   })
   const cycles = list.map((x) => x.cycleDays).filter((x): x is number => typeof x === 'number' && x >= 0).sort((a, b) => a - b)
   const sum = cycles.reduce((a, b) => a + b, 0)
@@ -864,9 +901,10 @@ app.get('/api/dashboard', (_req, res) => {
   const byProduct = new Map<string, { n: number; usd: number }>()
   wonMonth.forEach((o) => {
     const items = d.prepare('SELECT product_name, amount, currency FROM inquiry_items WHERE inquiry_id = ?').all(text(o.inquiry_id)) as { product_name: string; amount: number; currency: string }[]
+    const rowRates = ratesOf(d.prepare('SELECT * FROM inquiries WHERE id = ?').get(text(o.inquiry_id)) as Record<string, unknown> | undefined)
     items.forEach((it) => {
       const a = byProduct.get(it.product_name) ?? { n: 0, usd: 0 }
-      a.n += 1; a.usd += (Number(it.amount) || 0) / fxRateOf(it.currency)
+      a.n += 1; a.usd += (Number(it.amount) || 0) / rateIn(rowRates, it.currency)
       byProduct.set(it.product_name, a)
     })
   })
@@ -1042,7 +1080,7 @@ app.get('/api/contracts-legacy', (req, res) => {
   const list = rows.map((i) => {
     const items = d.prepare('SELECT product_name, qty, amount, currency FROM inquiry_items WHERE inquiry_id = ? ORDER BY sort').all(i.id) as { product_name: string; qty: number | null; amount: number; currency: string }[]
     const totals = fmtTotals(items)
-    const usd = totals.reduce((s, x) => s + x.total / fxRateOf(x.currency), 0)
+    const usd = totals.reduce((s, x) => s + x.total / rateIn(ratesOf(i), x.currency), 0)
     const cycle = (i.won_date && i.date) ? Math.round((Date.parse(String(i.won_date)) - Date.parse(String(i.date))) / 86400000) : null
     return { ...i, items, itemCount: items.length, totals, usdApprox: Math.round(usd), cycleDays: cycle, productNames: items.map((x) => x.product_name).join(' / ') }
   })
@@ -1102,7 +1140,7 @@ app.get('/api/inquiries', (req, res) => {
   const where = parts.length ? `WHERE ${parts.join(' AND ')}` : ''
   const join = 'FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id'
   const rows = d.prepare(`SELECT i.id, i.inquiry_no, i.date, i.country, i.use_location, i.sales, i.purchaser, i.source, i.hand_total, i.hand_total_currency, i.note, i.blockers, i.action_plan, i.support_needed, i.customer_stars, i.is_key_customer, i.is_key_project, i.is_lost, i.lost_reason, i.lost_date, i.last_followup_at, i.next_followup_at, i.created_at,
-      i.freight, i.tax, i.commission, i.other_fee, i.fee_currency, i.freight_currency, i.tax_currency, i.commission_currency, i.other_fee_currency, c.name AS customer_name,
+      i.freight, i.tax, i.commission, i.other_fee, i.fee_currency, i.freight_currency, i.tax_currency, i.commission_currency, i.other_fee_currency, i.fx_overrides, c.name AS customer_name,
       (SELECT f.summary FROM followups f WHERE f.inquiry_id = i.id ORDER BY f.date DESC, f.created_at DESC, f.rowid DESC LIMIT 1) AS last_followup_summary,
       (SELECT f.detail FROM followups f WHERE f.inquiry_id = i.id ORDER BY f.date DESC, f.created_at DESC, f.rowid DESC LIMIT 1) AS last_followup_detail,
       (SELECT COALESCE(f.by_name, '') FROM followups f WHERE f.inquiry_id = i.id ORDER BY f.date DESC, f.created_at DESC, f.rowid DESC LIMIT 1) AS last_followup_by,
@@ -1121,15 +1159,17 @@ app.get('/api/inquiries', (req, res) => {
   const out = rows.map((r) => {
     const t = fmtTotals(totalsOf.get(str(r.id)) ?? [])
     const feeBuckets = feeTotalsOf(r)
-    const feeTotal = Math.round(feeBuckets.reduce((a, b) => a + b.total / fxRateOf(b.currency), 0))
+    const rates = ratesOf(r)
+    const feeTotal = Math.round(feeBuckets.reduce((a, b) => a + b.total / rateIn(rates, b.currency), 0))
     const grand = grandTotals(t, feeBuckets)
     const { _won, _won_date, _order_no, _order_id, ...rest } = r
     return { ...rest, is_won: Number(_won) === 1 ? 1 : 0, status: inquiryStatus(Number(_won) === 1, r.is_lost), won_date: (str(_won_date) || null), orderNo: str(_order_no) || null, orderId: str(_order_id) || null,
       itemCount: (totalsOf.get(str(r.id)) ?? []).length, totals: t, feeTotal, feeBuckets, fees: feeBreakdown(r), grandTotals: grand,
-      quoteUsdApprox: Math.round(usdOfTotals(t)), usdApprox: Math.round(usdOfTotals(grand)),
+      quoteUsdApprox: Math.round(usdOfTotals(t, rates)), usdApprox: Math.round(usdOfTotals(grand, rates)),
+      fxUsed: rates,
       // 手填总金额（若有）：按手填币种折算 USD，供列表「报价合计」以手填为准
-      handTotalUsd: num(r.hand_total) == null ? null : Math.round(Number(num(r.hand_total)) / fxRateOf(str(r.hand_total_currency) || 'USD')),
-      quoteUsd: Math.round(num(r.hand_total) == null ? usdOfTotals(grand) : Number(num(r.hand_total)) / fxRateOf(str(r.hand_total_currency) || 'USD')) }
+      handTotalUsd: num(r.hand_total) == null ? null : Math.round(Number(num(r.hand_total)) / rateIn(rates, str(r.hand_total_currency) || 'USD')),
+      quoteUsd: Math.round(num(r.hand_total) == null ? usdOfTotals(grand, rates) : Number(num(r.hand_total)) / rateIn(rates, str(r.hand_total_currency) || 'USD')) }
   })
   const totalN = (d.prepare(`SELECT COUNT(*) AS n FROM inquiries i LEFT JOIN customers c ON c.id = i.customer_id LEFT JOIN orders o ON o.inquiry_id = i.id ${where}`).get(...args) as { n: number }).n
   // 全量（当前筛选）累计金额 / 成单统计
@@ -1153,10 +1193,11 @@ app.get('/api/inquiries/:id', (req, res) => {
   const { is_won: _legacyWon, won_date: _legacyWonDate, ...base } = r
   const totals = fmtTotals(items.map((x) => ({ currency: x.currency, amount: x.amount })))
   const feeBuckets = feeTotalsOf(r)
-  const feeTotal = feeUsdOf(r)
+  const rates = ratesOf(r)
+  const feeTotal = feeUsdOf(r, rates)
   const grand = grandTotals(totals, feeBuckets)
   ok(res, { ...base, is_won: order ? 1 : 0, status: inquiryStatus(Boolean(order), r.is_lost), won_date: order ? str(order.won_date) : null, orderNo: order ? str(order.order_no) : null, order: order ?? null, items,
-    totals, feeTotal, fees: feeBreakdown(r), feeVersions: feeVersionsOf(req.params.id), grandTotals: grand, quoteUsdApprox: Math.round(usdOfTotals(totals)), usdApprox: Math.round(usdOfTotals(grand)) })
+    totals, feeTotal, fees: feeBreakdown(r), feeVersions: feeVersionsOf(req.params.id), grandTotals: grand, fxUsed: rates, quoteUsdApprox: Math.round(usdOfTotals(totals, rates)), usdApprox: Math.round(usdOfTotals(grand, rates)) })
 })
 // 费用版本记录（与产品价格记录并列，便于追溯每次运费/税费/佣金/其他费用的变化）
 app.get('/api/inquiries/:id/fee-history', (req, res) => {
@@ -1183,6 +1224,7 @@ app.put('/api/inquiries/:id', (req, res) => {
   // 费用：只有显式传入才覆盖（与其它字段一致）
   const feePatch = readFees(req.body as Record<string, unknown>)
   if (feePatch.err) return fail(res, feePatch.err)
+  const fxOverrides = req.body?.fxRates !== undefined ? readFxOverrides(req.body?.fxRates) : (str(old.fx_overrides) || null)
   const feeVals: Record<string, number | null> = {}
   for (const f of FEE_KEYS) {
     feeVals[f.key] = req.body?.[f.key] !== undefined ? feePatch.values[f.key] : (num(old[f.key === 'otherFee' ? 'other_fee' : f.key]) ?? null)
@@ -1235,11 +1277,11 @@ app.put('/api/inquiries/:id', (req, res) => {
   const t = nowIso()
   d.transaction(() => {
     d.prepare(`UPDATE inquiries SET date = ?, country = ?, use_location = ?, sales = ?, purchaser = ?, source = ?, hand_total = ?, hand_total_currency = ?, note = ?,
-        freight_currency = ?, tax_currency = ?, commission_currency = ?, other_fee_currency = ?,
+        freight_currency = ?, tax_currency = ?, commission_currency = ?, other_fee_currency = ?, fx_overrides = ?,
         is_key_customer = ?, is_key_project = ?, is_won = ?, blockers = ?, action_plan = ?, support_needed = ?, customer_stars = ?,
         is_lost = ?, lost_reason = ?, lost_date = ?, freight = ?, tax = ?, commission = ?, other_fee = ?, fee_currency = ?, updated_at = ? WHERE id = ?`)
       .run(date, country, useLocation, sales, purchaser, source, handTotal, handTotalCur, note,
-        feeCurVals.freight, feeCurVals.tax, feeCurVals.commission, feeCurVals.otherFee, keyCust, keyProj, isWon, blockers, actionPlan, supportNeeded, customerStars,
+        feeCurVals.freight, feeCurVals.tax, feeCurVals.commission, feeCurVals.otherFee, fxOverrides, keyCust, keyProj, isWon, blockers, actionPlan, supportNeeded, customerStars,
         isLost, lostReason, lostDate, feeVals.freight, feeVals.tax, feeVals.commission, feeVals.otherFee, feeCurrency, t, req.params.id)
     if (itemsProvided) {
       d.prepare('DELETE FROM inquiry_items WHERE inquiry_id = ?').run(req.params.id)
@@ -1251,7 +1293,7 @@ app.put('/api/inquiries/:id', (req, res) => {
     // 费用有变化（金额或币种）→ 记一条新的费用版本
     const feeChanged = FEE_KEYS.some((f) => Number(feeVals[f.key] ?? 0) !== Number(num(old[f.key === 'otherFee' ? 'other_fee' : f.key]) ?? 0))
       || feeCurrency !== feeCurrencyOf(old.fee_currency)
-    if (feeChanged) insertFeeVersion(req.params.id, feeVals, feeCurVals, feeCurrency, '询报价管理·编辑')
+    if (feeChanged || fxOverrides !== (str(old.fx_overrides) || null)) insertFeeVersion(req.params.id, feeVals, feeCurVals, feeCurrency, '询报价管理·编辑', ratesOf({ fx_overrides: fxOverrides }))
     // 客户档案同步：星级/国别/使用地/来源在询报价里改动后要跟着更新
     const custId = text(old.customer_id)
     if (custId) {

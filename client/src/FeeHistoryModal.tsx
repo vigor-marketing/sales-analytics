@@ -9,12 +9,12 @@ export interface FeeVersion {
   fee_detail?: string | null
 }
 /** 解析费用明细：返回每项费用的金额与币种 */
-function detailOf(v: FeeVersion): { label: string; value: number; currency: string }[] | null {
+function detailOf(v: FeeVersion): { label: string; value: number; currency: string; rate?: number }[] | null {
   if (!v.fee_detail) return null
   try {
     const arr = JSON.parse(v.fee_detail)
     if (!Array.isArray(arr)) return null
-    const list = arr.filter((x) => x && Number(x.value)).map((x) => ({ label: String(x.label ?? ''), value: Number(x.value), currency: String(x.currency ?? '') }))
+    const list = arr.filter((x) => x && Number(x.value)).map((x) => ({ label: String(x.label ?? ''), value: Number(x.value), currency: String(x.currency ?? ''), rate: x.rate == null ? undefined : Number(x.rate) }))
     return list.length ? list : null
   } catch { return null }
 }
@@ -64,8 +64,8 @@ export default function FeeHistoryModal({ inquiryId, inquiryNo, onClose }: { inq
                       <td className="mono" style={{ fontWeight: 700 }} title={det ? '各项费用按各自币种汇率折算后的 USD 合计' : `${money(v.total)} ${v.fee_currency}`}>
                         {money(v.total)} {det && new Set(det.map((x) => x.currency)).size > 1 ? 'USD(折)' : v.fee_currency}
                       </td>
-                      <td className="hint" style={{ whiteSpace: 'normal' }} title={det ? det.map((x) => `${x.label} ${money(x.value)} ${x.currency}`).join(' · ') : '旧记录：四项费用使用同一币种'}>
-                        {det ? det.map((x) => `${x.label} ${money(x.value)} ${x.currency}`).join(' · ') : `${v.fee_currency}（统一币种）`}
+                      <td className="hint" style={{ whiteSpace: 'normal' }} title={det ? det.map((x) => `${x.label} ${money(x.value)} ${x.currency}${x.rate && x.rate !== 1 ? `（当时汇率 1 USD = ${x.rate}）` : ''}`).join(' · ') : '旧记录：四项费用使用同一币种'}>
+                        {det ? det.map((x) => `${x.label} ${money(x.value)} ${x.currency}${x.rate && x.rate !== 1 ? `（汇率 ${x.rate}）` : ''}`).join(' · ') : `${v.fee_currency}（统一币种）`}
                       </td>
                       <td title={v.source || '—'}>{v.source || '—'}</td>
                     </>) })()}

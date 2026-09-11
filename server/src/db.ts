@@ -166,6 +166,8 @@ export function schema(): void {
   }
   // 费用版本记录每项费用的币种明细
   try { db.exec('ALTER TABLE fee_versions ADD COLUMN fee_detail TEXT') } catch { /* 已存在 */ }
+  // 询价上可覆盖的汇率（录入非美元时按实际汇率计算，存 {币种: 汇率}）
+  try { db.exec('ALTER TABLE inquiries ADD COLUMN fx_overrides TEXT') } catch { /* 已存在 */ }
   // 丢单原因下拉自带「其他（手动输入）」，历史字典里的裸「其他」属重复项，清理掉
   try {
     for (const key of ['lostReasons', 'winReasons']) {

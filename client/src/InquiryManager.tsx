@@ -14,7 +14,7 @@ import { currencyOptions } from './currencies'
 
 interface TotalItem { currency: string; total: number }
 interface Row { id: string; inquiry_no: string; date: string; country: string | null; use_location: string | null; customer_name: string; sales: string; purchaser: string; source: string; hand_total: number | null; hand_total_currency?: string | null; note: string | null; created_at: string; itemCount: number; totals: TotalItem[]; usdApprox: number; is_key_customer: number; is_key_project: number; is_won: number; customer_stars?: number | null; won_date?: string | null; orderNo?: string | null; orderId?: string | null; last_followup_at?: string | null; next_followup_at?: string | null; is_lost?: number; lost_reason?: string | null; lost_date?: string | null; status?: Status; blockers?: string | null; action_plan?: string | null; support_needed?: string | null; last_followup_summary?: string | null; last_followup_detail?: string | null; last_followup_by?: string | null; followup_count?: number; last_followup_photos?: number; last_followup_files?: number; freight?: number | null; tax?: number | null; commission?: number | null; other_fee?: number | null; fee_currency?: string | null; feeTotal?: number; feeBuckets?: TotalItem[]; fees?: { key: string; label: string; value: number | null; currency: string; usd: number }[]; grandTotals?: TotalItem[]; quoteUsdApprox?: number; handTotalUsd?: number | null; quoteUsd?: number }
-interface Detail extends Row { hand_total_currency?: string | null; freight_currency?: string | null; tax_currency?: string | null; commission_currency?: string | null; other_fee_currency?: string | null; feeVersions?: { id: string; version: number; is_latest?: boolean; total: number; fee_currency: string; created_at: string }[]; items: { product_name: string; qty: number | null; amount: number; currency: string }[]; order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null }
+interface Detail extends Row { hand_total_currency?: string | null; fx_overrides?: string | null; freight_currency?: string | null; tax_currency?: string | null; commission_currency?: string | null; other_fee_currency?: string | null; feeVersions?: { id: string; version: number; is_latest?: boolean; total: number; fee_currency: string; created_at: string }[]; items: { product_name: string; qty: number | null; amount: number; currency: string }[]; order?: { id: string; order_no: string; won_date: string; amount: number | null; currency: string; note: string | null; win_reason?: string | null } | null }
 interface MetaLite { currencies?: string[]; sales: { name: string; team: string }[]; purchasers: string[]; sources: string[]; lostReasons?: string[]; winReasons?: string[]; fx?: Record<string, number> }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
@@ -208,7 +208,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
   const [detail, setDetail] = useState<Detail | null>(null)
   const [feeHist, setFeeHist] = useState(false)
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
-  const [form, setForm] = useState<{ freight: string; tax: string; commission: string; otherFee: string; feeCurrency: string; feeCurFreight: string; feeCurTax: string; feeCurCommission: string; feeCurOther: string; inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; handTotalCur: string; note: string; blockers: string; actionPlan: string; supportNeeded: string; stars: string; keyCust: boolean; keyProj: boolean; isLost: boolean; lostReason: string; lostDate: string; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
+  const [form, setForm] = useState<{ freight: string; tax: string; commission: string; otherFee: string; feeCurrency: string; feeCurFreight: string; feeCurTax: string; feeCurCommission: string; feeCurOther: string; fxRates: Record<string, string>; inquiryNo: string; customerName: string; date: string; country: string; useLoc: string; sales: string; purchaser: string; source: string; handTotal: string; handTotalCur: string; note: string; blockers: string; actionPlan: string; supportNeeded: string; stars: string; keyCust: boolean; keyProj: boolean; isLost: boolean; lostReason: string; lostDate: string; items: { productName: string; qty: string; amount: string; currency: string }[] } | null>(null)
   const set = (patch: Partial<typeof form>) => setForm((f) => (f ? { ...f, ...patch } : f))
   useEffect(() => {
     get<Detail>(`/inquiries/${id}`).then((d) => {
@@ -237,7 +237,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
     try { await del(`/orders/${order.id}`); onSaved() }
     catch (e) { setOrdErr((e as Error).message) } finally { setOrdBusy(false) }
   }
-  useEffect(() => { get<Detail>(`/inquiries/${id}`).then((d) => setForm({ freight: d.freight == null ? '' : String(d.freight), tax: d.tax == null ? '' : String(d.tax), commission: d.commission == null ? '' : String(d.commission), otherFee: d.other_fee == null ? '' : String(d.other_fee), feeCurrency: d.fee_currency || 'USD', feeCurFreight: d.freight_currency || d.fee_currency || 'USD', feeCurTax: d.tax_currency || d.fee_currency || 'USD', feeCurCommission: d.commission_currency || d.fee_currency || 'USD', feeCurOther: d.other_fee_currency || d.fee_currency || 'USD', inquiryNo: d.inquiry_no, customerName: d.customer_name, date: d.date, country: d.country || '', useLoc: d.use_location || '', sales: d.sales, purchaser: d.purchaser, source: d.source, handTotal: d.hand_total == null ? '' : String(d.hand_total), handTotalCur: d.hand_total_currency || 'USD', note: d.note || '', stars: d.customer_stars == null ? '' : String(d.customer_stars), blockers: d.blockers || '', actionPlan: d.action_plan || '', supportNeeded: d.support_needed || '', keyCust: Number(d.is_key_customer) === 1, keyProj: Number(d.is_key_project) === 1, isLost: Number(d.is_lost) === 1, lostReason: d.lost_reason || '', lostDate: d.lost_date || new Date().toISOString().slice(0, 10),  items: (d.items || []).map((it) => ({ productName: it.product_name, qty: it.qty == null ? '' : String(it.qty), amount: String(it.amount), currency: it.currency })) })).catch((e) => setErr((e as Error).message)) }, [id])
+  useEffect(() => { get<Detail>(`/inquiries/${id}`).then((d) => setForm({ freight: d.freight == null ? '' : String(d.freight), tax: d.tax == null ? '' : String(d.tax), commission: d.commission == null ? '' : String(d.commission), otherFee: d.other_fee == null ? '' : String(d.other_fee), feeCurrency: d.fee_currency || 'USD', feeCurFreight: d.freight_currency || d.fee_currency || 'USD', feeCurTax: d.tax_currency || d.fee_currency || 'USD', feeCurCommission: d.commission_currency || d.fee_currency || 'USD', feeCurOther: d.other_fee_currency || d.fee_currency || 'USD', fxRates: (d.fx_overrides ? (() => { try { const o = JSON.parse(d.fx_overrides) as Record<string, unknown>; return Object.fromEntries(Object.entries(o).map(([k, v]) => [k, String(v)])) } catch { return {} } })() : {}), inquiryNo: d.inquiry_no, customerName: d.customer_name, date: d.date, country: d.country || '', useLoc: d.use_location || '', sales: d.sales, purchaser: d.purchaser, source: d.source, handTotal: d.hand_total == null ? '' : String(d.hand_total), handTotalCur: d.hand_total_currency || 'USD', note: d.note || '', stars: d.customer_stars == null ? '' : String(d.customer_stars), blockers: d.blockers || '', actionPlan: d.action_plan || '', supportNeeded: d.support_needed || '', keyCust: Number(d.is_key_customer) === 1, keyProj: Number(d.is_key_project) === 1, isLost: Number(d.is_lost) === 1, lostReason: d.lost_reason || '', lostDate: d.lost_date || new Date().toISOString().slice(0, 10),  items: (d.items || []).map((it) => ({ productName: it.product_name, qty: it.qty == null ? '' : String(it.qty), amount: String(it.amount), currency: it.currency })) })).catch((e) => setErr((e as Error).message)) }, [id])
   // 实时合计：跟随产品明细的金额与币种变化（与「询报价录入」同一口径）
   const liveTotals = useMemo(() => {
     const m = new Map<string, number>()
@@ -266,6 +266,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
         totalAmount: form.handTotal ? Number(form.handTotal) : undefined, totalAmountCurrency: form.handTotal ? form.handTotalCur : undefined, note: form.note,
         freight: form.freight === '' ? undefined : Number(form.freight), tax: form.tax === '' ? undefined : Number(form.tax),
         commission: form.commission === '' ? undefined : Number(form.commission), otherFee: form.otherFee === '' ? undefined : Number(form.otherFee), feeCurrency: form.feeCurrency, freightCurrency: form.feeCurFreight, taxCurrency: form.feeCurTax, commissionCurrency: form.feeCurCommission, otherFeeCurrency: form.feeCurOther,
+        fxRates: Object.fromEntries(Object.entries(form.fxRates).map(([c, v]) => [c, Number(v)]).filter(([, v]) => Number(v) > 0)),
         blockers: form.blockers, actionPlan: form.actionPlan, supportNeeded: form.supportNeeded, customerStars: form.stars ? Number(form.stars) : undefined,
         isKeyCustomer: form.keyCust, isKeyProject: form.keyProj,
         isLost: order ? undefined : form.isLost, lostReason: order ? undefined : (form.lostReason.trim() || undefined), lostDate: order ? undefined : (form.lostDate || undefined),
@@ -301,14 +302,24 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
             <div style={{ marginTop: 8, borderTop: '1px dashed var(--line)', paddingTop: 8 }}>
               <div className="row" style={{ marginBottom: 6, alignItems: 'flex-end' }}>
                 {([['freight', '运费', 'feeCurFreight'], ['tax', '税费', 'feeCurTax'], ['commission', '佣金', 'feeCurCommission'], ['otherFee', '其他费用', 'feeCurOther']] as const).map(([k, label, ck]) => (
-                  <div className="col" key={k} style={{ minWidth: 150 }}>
-                    <label>{label} <span className="hint">（可单独选币种）</span></label>
+                  <div className="col" key={k} style={{ minWidth: 130 }}>
+                    <label>{label}</label>
+                    <input className="sa" style={{ width: '100%' }} type="number" min="0" value={form[k]} onChange={(e) => set({ [k]: e.target.value })} placeholder="0" />
+                  </div>
+                ))}
+                {([['freight', '运费', 'feeCurFreight'], ['tax', '税费', 'feeCurTax'], ['commission', '佣金', 'feeCurCommission'], ['otherFee', '其他费用', 'feeCurOther']] as const).map(([k, label, ck]) => (
+                  <div className="col" key={`c-${k}`} style={{ minWidth: 160 }}>
+                    <label>{label} · 币种{form[ck] !== 'USD' ? ' 与汇率' : ''}</label>
                     <div style={{ display: 'flex', gap: 5 }}>
-                      <input className="sa" style={{ flex: 1, minWidth: 0 }} type="number" min="0" value={form[k]} onChange={(e) => set({ [k]: e.target.value })} placeholder="0" />
-                      <select className="sa" style={{ width: 78, flexShrink: 0 }} title={`${label}的币种（按该币种汇率折算）`}
-                        value={form[ck]} onChange={(e) => set({ [ck]: e.target.value })}>
+                      <select className="sa" style={{ width: 76, flexShrink: 0 }} value={form[ck]} onChange={(e) => set({ [ck]: e.target.value })}>
                         {currencyOptions(meta.currencies, form[ck]).map((c) => <option key={c}>{c}</option>)}
                       </select>
+                      {form[ck] !== 'USD' && (
+                        <input className="sa" style={{ flex: 1, minWidth: 0 }} type="number" min="0" step="0.0001"
+                          title={`本单 ${form[ck]} 的实际汇率（1 USD = ? ${form[ck]}），默认 ${meta.fx?.[form[ck]] ?? '—'}`}
+                          value={form.fxRates[form[ck]] ?? String(meta.fx?.[form[ck]] ?? '')}
+                          onChange={(e) => set({ fxRates: { ...form.fxRates, [form[ck]]: e.target.value } })} />
+                      )}
                     </div>
                   </div>
                 ))}
