@@ -368,30 +368,33 @@ export default function App() {
             <select className="sa" style={{ width: 140 }} value={salesTeam} disabled={!!actor && actor.scope !== 'all'}
               title={actor && actor.scope !== 'all' ? '你的数据范围不含他人，销售固定为本人' : undefined}
               onChange={(e) => { const v = e.target.value; setSalesTeam(v); if (sales && !(salesTeams.find(([t]) => t === v)?.[1] ?? []).some((x) => x.name === sales)) setSales('') }}>
-              <option value="">全部小组</option>
+              <option value="">— 请选择小组 —</option>
               {salesTeams.map(([team]) => <option key={team} value={team}>{team}</option>)}
             </select>
           </div>
           <div className="col w2"><label>销售人员 *</label>
-            <select className="sa" style={{ width: 180 }} value={sales} disabled={!!actor && actor.scope !== 'all'}
-              title={actor && actor.scope !== 'all' ? '只能录入自己名下的询价' : undefined}
+            <select className="sa" style={{ width: 180 }} value={sales}
+              disabled={!salesTeam || (!!actor && actor.scope !== 'all')}
+              title={!salesTeam ? '请先选择销售小组' : (actor && actor.scope !== 'all' ? '只能录入自己名下的询价' : undefined)}
               onChange={(e) => setSales(e.target.value)}>
-              <option value="">{salesTeam ? `— 请选择${salesTeam}成员 —` : '— 请选择 —'}</option>
-              {salesTeams.filter(([team]) => !salesTeam || team === salesTeam).map(([team, list]) => (
+              <option value="">{salesTeam ? `— 请选择${salesTeam}成员 —` : '— 请先选择销售小组 —'}</option>
+              {salesTeams.filter(([team]) => team === salesTeam).map(([team, list]) => (
                 <optgroup key={team} label={team}>{list.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}</optgroup>
               ))}
             </select>
           </div>
           <div className="col w1"><label>采购小组 <span className="hint">（先选组）</span></label>
-            <select className="sa" style={{ width: 140 }} value={purTeam} onChange={(e) => { const v = e.target.value; setPurTeam(v); if (purchaser && !(purchaserList.filter((x) => !v || x.team === v)).some((x) => x.name === purchaser)) setPurchaser('') }}>
-              <option value="">全部小组</option>
+            <select className="sa" style={{ width: 140 }} value={purTeam} onChange={(e) => { const v = e.target.value; setPurTeam(v); if (purchaser && !(purchaserList.filter((x) => x.team === v)).some((x) => x.name === purchaser)) setPurchaser('') }}>
+              <option value="">— 请选择小组 —</option>
               {purchaserTeamList.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div className="col w2"><label>采购人员 *</label>
-            <select className="sa" style={{ width: 180 }} value={purchaser} onChange={(e) => setPurchaser(e.target.value)}>
-              <option value="">{purTeam ? `— 请选择${purTeam}成员 —` : '— 请选择 —'}</option>
-              {purchaserList.filter((x) => !purTeam || x.team === purTeam).map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+            <select className="sa" style={{ width: 180 }} value={purchaser} disabled={!purTeam}
+              title={!purTeam ? '请先选择采购小组' : undefined}
+              onChange={(e) => setPurchaser(e.target.value)}>
+              <option value="">{purTeam ? `— 请选择${purTeam}成员 —` : '— 请先选择采购小组 —'}</option>
+              {purchaserList.filter((x) => x.team === purTeam).map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
             </select>
           </div>
           <div className="col w2"><label>询价来源 *</label>
