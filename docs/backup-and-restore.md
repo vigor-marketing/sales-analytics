@@ -23,9 +23,23 @@ sudo bash /opt/sales-analytics/scripts/restore-db.sh /opt/sales-analytics/server
 
 恢复脚本会：解密 → `integrity_check` 校验并打印关键表行数 → 停服 → 另存当前库 → 覆盖 → 启动服务 → 自检。
 
-## 三、同步到对象存储（OSS / COS，可选）
+## 三、同步到对象存储（腾讯云 COS，已启用）
 
-服务器已安装 `rclone`，配置写在 `/etc/sales-analytics-backup.env`（示例已给出），填好并生效后每次备份会自动上传：
+备份已同步到**腾讯云 COS 桶 `knowledge-base-1459141414`（ap-shanghai）**下的独立前缀 **`sales-analytics/`**
+（同桶下另有 `knowledge-base/`、`sales-commission/` 前缀，互不干扰）；每次备份自动上传，并**同步清理远端 15 天前的备份**，与本地保留策略一致。
+
+配置位置：`/etc/sales-analytics-backup.env`（600，密钥只在本机）：
+
+```
+RCLONE_CONFIG_COS_TYPE=s3
+RCLONE_CONFIG_COS_PROVIDER=TencentCOS
+RCLONE_CONFIG_COS_ACCESS_KEY_ID=…
+RCLONE_CONFIG_COS_SECRET_ACCESS_KEY=…
+RCLONE_CONFIG_COS_ENDPOINT=cos.ap-shanghai.myqcloud.com
+RCLONE_REMOTE=cos:knowledge-base-1459141414/sales-analytics
+```
+
+换桶或换 Key 时改这里，然后 `sudo systemctl start sales-analytics-backup.service` 验证一次即可。参考写法（其它对象存储）：
 
 ```bash
 # 阿里云 OSS 示例（腾讯云 COS 见文件内注释，只需把 provider/endpoint 换掉）
