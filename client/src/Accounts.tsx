@@ -4,6 +4,7 @@ import { SCOPE_LABEL } from './Login'
 
 interface Acc { id: string; username: string; displayName: string; scope: 'all' | 'team' | 'self'; team: string; disabled: boolean; note: string; createdAt: string; updatedAt: string }
 interface Data { users: Acc[]; defaultPassword: string; defaultPasswordFromEnv: boolean; orgPeopleCount: number }
+interface AuditRow { username: string; ip: string; ua: string; ok: number; reason: string; created_at: string }
 
 /** 设置 · 账号与权限：新增/改密码/改范围/停用/删除账号，以及组织架构同事的统一初始密码 */
 export default function Accounts() {
@@ -14,12 +15,14 @@ export default function Accounts() {
   const [pwEdit, setPwEdit] = useState<{ id: string; username: string; password: string } | null>(null)
   const [edit, setEdit] = useState<Acc | null>(null)
   const [defPw, setDefPw] = useState('')
+  const [audit, setAudit] = useState<{ rows: AuditRow[]; failLast10Min: number } | null>(null)
 
   const load = useCallback(async (keepMsg = false) => {
     if (!keepMsg) setMsg(null)
     try {
       const d = await get<Data>('/admin/accounts')
       setData(d); setDefPw(d.defaultPassword)
+      get<{ rows: AuditRow[]; failLast10Min: number }>('/admin/login-audit?limit=30').then(setAudit).catch(() => setAudit(null))
     } catch (e) { setMsg({ t: 'err', text: (e as Error).message }) }
   }, [])
   useEffect(() => { void load() }, [load])
@@ -100,6 +103,35 @@ export default function Accounts() {
             onClick={() => void run(() => post('/admin/login-default', { password: defPw }), defPw ? '已更新统一初始密码' : '已关闭「英文名 + 初始密码」登录')}>保存</button>
         </div>
         {data?.defaultPasswordFromEnv && <div className="hint" style={{ marginTop: 4 }}>当前值来自服务端 .env 的 LOGIN_DEFAULT_PASSWORD（保存后改为以本页为准）。</div>}
+      </section>
+
+      {/* 最近登录记录（发现异常登录用） */}
+      <section className="opt-card" style={{ marginTop: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <b style={{ fontSize: 13.5 }}>最近登录记录</b>
+          <span className="hint">每次登录尝试都会留痕（含失败）；同一 IP 10 分钟内失败 8 次或同账号失败 5 次会被临时拒绝</span>
+          <span style={{ flex: 1 }} />
+          {audit && audit.failLast10Min > 0 && <span className="badge" style={{ background: '#fff4e5', color: '#a35c00' }}>近 10 分钟失败 {audit.failLast10Min} 次</span>}
+          <button className="btn xs" onClick={() => void load()}>刷新</button>
+        </div>
+        <div className="tablewrap" style={{ marginTop: 8, maxHeight: 260 }}>
+          <table className="grid data-table fixed-table fit-table" style={{ fontSize: 12.5 }}>
+            <colgroup><col style={{ width: '16%' }} /><col style={{ width: '16%' }} /><col style={{ width: '10%' }} /><col style={{ width: '30%' }} /><col style={{ width: '28%' }} /></colgroup>
+            <thead><tr>{['时间', '账号', '结果', '来源 IP', '说明'].map((h) => <th key={h} className="cell-left">{h}</th>)}</tr></thead>
+            <tbody>
+              {(audit?.rows ?? []).map((r, i) => (
+                <tr key={i}>
+                  <td className="cell-left mono">{String(r.created_at).slice(0, 19).replace('T', ' ')}</td>
+                  <td className="cell-left">{r.username || '—'}</td>
+                  <td className="cell-left">{Number(r.ok) === 1 ? <span className="badge latest">成功</span> : <span className="badge" style={{ background: '#fee2e2', color: '#b91c1c' }}>失败</span>}</td>
+                  <td className="cell-left mono">{r.ip || '—'}</td>
+                  <td className="cell-left" title={r.ua || ''}>{r.reason || '—'}</td>
+                </tr>
+              ))}
+              {audit && audit.rows.length === 0 && <tr><td colSpan={5} className="hint" style={{ textAlign: 'center' }}>暂无登录记录</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       {/* 改密码弹窗 */}

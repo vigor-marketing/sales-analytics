@@ -616,23 +616,52 @@ function scopeFor(u: { role?: string; department?: string; departmentHead?: bool
   if (u.departmentHead || /manager|head|lead|经理|主管|负责人/i.test(role)) return { scope: 'team', reason: '组长 / 部门负责人' }
   return { scope: 'self', reason: '个人' }
 }
+/** 客户端 IP（经 nginx 反代时取 X-Forwarded-For 第一段） */
+function clientIp(req: express.Request): string {
+  const xf = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim()
+  return xf || req.socket.remoteAddress || 'unknown'
+}
+/** 登录尝试审计（成功与失败都记，便于发现异常登录/撞库） */
+function auditLogin(req: express.Request, username: string, ok: boolean, reason: string): void {
+  try {
+    getDb().prepare('INSERT INTO login_audit (id, username, ip, ua, ok, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(newId(), username.slice(0, 60), clientIp(req), String(req.headers['user-agent'] ?? '').slice(0, 200), ok ? 1 : 0, reason.slice(0, 120), nowIso())
+  } catch { /* 审计失败不影响登录 */ }
+}
+/** 登录失败限流：同一 IP 10 分钟内 ≥8 次，或同一 IP+账号 ≥5 次 → 暂时拒绝（防暴力破解） */
+function loginBlocked(req: express.Request, username: string): boolean {
+  try {
+    const since = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+    const ip = clientIp(req)
+    const byIp = (getDb().prepare('SELECT COUNT(*) n FROM login_audit WHERE ok = 0 AND ip = ? AND created_at >= ?').get(ip, since) as { n: number }).n
+    const byIpUser = (getDb().prepare('SELECT COUNT(*) n FROM login_audit WHERE ok = 0 AND ip = ? AND username = ? COLLATE NOCASE AND created_at >= ?').get(ip, username, since) as { n: number }).n
+    return byIp >= 8 || byIpUser >= 5
+  } catch { return false }
+}
+
 /** 签发会话并写 Cookie（登录成功统一出口） */
-function issueSession(res: express.Response, actor: SaActor, mode: 'local' | 'org' | 'account'): void {
+function issueSession(res: express.Response, actor: SaActor, mode: 'local' | 'org' | 'account', https = false): void {
   const full = { ...actor, ...scopeOf(actor) }
   const token = signSession({ actor: full })
-  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_HOURS * 3600}`)
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${https ? '; Secure' : ''}; Max-Age=${SESSION_HOURS * 3600}`)
   ok(res, { actor: full, sessionHours: SESSION_HOURS, mode })
 }
 
 // —— 登录（本系统自带的简单登录入口：显式账号 + 组织架构人员统一初始密码）——
 app.post('/api/auth/login', (req, res) => {
   const username = str(req.body?.username).trim(); const password = str(req.body?.password)
+  const https = String(req.headers['x-forwarded-proto'] ?? '') === 'https'
   if (!username || !password) return fail(res, '请输入账号和密码')
+  if (loginBlocked(req, username)) {
+    auditLogin(req, username, false, '尝试次数过多被限流')
+    return fail(res, '登录尝试次数过多，请 10 分钟后再试', 429)
+  }
   // ① 账号表（设置 → 账号与权限 里维护，密码为 PBKDF2 哈希）
   const row = getDb().prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(username) as UserRow | undefined
   if (row) {
     if (Number(row.disabled) === 1) return fail(res, '该账号已停用，请联系管理员', 403)
-    if (verifyPassword(password, row.password_hash)) return issueSession(res, actorOfUser(row), 'account')
+    if (verifyPassword(password, row.password_hash)) { auditLogin(req, username, true, '账号表登录'); return issueSession(res, actorOfUser(row), 'account', https) }
+    auditLogin(req, username, false, '密码错误（账号表）')
     return fail(res, '账号或密码不正确', 401)
   }
   // ② .env 里显式配置的账号（LOCAL_LOGIN_USERS，可作为应急入口）
@@ -644,7 +673,8 @@ app.post('/api/auth/login', (req, res) => {
       department: '', team: hit.team, head: hit.scope !== 'self', isAdmin: hit.scope === 'all',
       scope: hit.scope, reason: '本系统账号', readNames: null, writeNames: null,
     }
-    return issueSession(res, actor, 'local')
+    auditLogin(req, username, true, '.env 应急账号')
+    return issueSession(res, actor, 'local', https)
   }
   // ② 组织架构里的同事：账号＝英文名/工号（如 vera、joseph），密码＝统一初始密码 LOGIN_DEFAULT_PASSWORD
   const defPw = defaultLoginPassword()
@@ -660,10 +690,12 @@ app.post('/api/auth/login', (req, res) => {
         department: p2.department, team: p2.team_name, head, isAdmin: false,
         scope, reason, readNames: null, writeNames: null,
       }
-      return issueSession(res, actor, 'org')
+      auditLogin(req, username, true, '组织架构统一初始密码')
+      return issueSession(res, actor, 'org', https)
     }
   }
   if (!users.length && !defPw && !(getDb().prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n) return fail(res, '还没有任何登录账号：请用管理员账号进入「设置 → 账号与权限」新建，或在服务端 .env 配置', 503)
+  auditLogin(req, username, false, '账号或密码不正确')
   return fail(res, '账号或密码不正确', 401)
 })
 app.get('/api/auth/session', (req, res) => {
@@ -772,6 +804,15 @@ app.delete('/api/admin/accounts/:id', (req, res) => {
   d.prepare('DELETE FROM users WHERE id = ?').run(u.id)
   ok(res, { id: u.id })
 })
+/** 最近登录/尝试记录（仅全部数据范围可见，用于发现异常登录） */
+app.get('/api/admin/login-audit', (req, res) => {
+  if (!requireAll(req, res)) return
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit ?? 50) || 50))
+  const rows = getDb().prepare('SELECT username, ip, ua, ok, reason, created_at FROM login_audit ORDER BY created_at DESC LIMIT ?').all(limit) as Record<string, unknown>[]
+  const fail10 = (getDb().prepare("SELECT COUNT(*) n FROM login_audit WHERE ok = 0 AND created_at >= ?").get(new Date(Date.now() - 10 * 60 * 1000).toISOString()) as { n: number }).n
+  ok(res, { rows, failLast10Min: Number(fail10) })
+})
+
 /** 组织架构同事的统一初始密码（留空＝关闭该登录方式） */
 app.post('/api/admin/login-default', (req, res) => {
   if (!requireAll(req, res)) return

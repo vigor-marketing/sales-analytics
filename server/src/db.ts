@@ -149,6 +149,12 @@ export function schema(): void {
       id TEXT PRIMARY KEY, followup_id TEXT NOT NULL, content TEXT NOT NULL,
       by_name TEXT, created_at TEXT NOT NULL)`)
   } catch { /* 已存在 */ }
+  // 登录审计：记录每次登录尝试（账号、来源 IP、UA、成功/失败、时间），用于排查异常登录
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS login_audit (
+      id TEXT PRIMARY KEY, username TEXT, ip TEXT, ua TEXT, ok INTEGER NOT NULL DEFAULT 0, reason TEXT, created_at TEXT NOT NULL)`)
+    db.exec('CREATE INDEX IF NOT EXISTS idx_login_audit_time ON login_audit(created_at)')
+  } catch { /* 已存在 */ }
   // 登录账号表（在「设置 → 账号与权限」里维护：新增/改密码/改范围/停用/删除）
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS users (
