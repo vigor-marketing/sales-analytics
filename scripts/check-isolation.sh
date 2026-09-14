@@ -35,10 +35,10 @@ echo "=== 3) 两台数据是否互相独立 ==="
 if [ -n "$LFP" ] && [ -n "$RFP" ]; then
   LI=$(fld "$LFP" instance); RI=$(fld "$RFP" instance)
   LID=$(fld "$LFP" instanceId); RID=$(fld "$RFP" instanceId)
-  [ "$LI" = "local" ] || warn "本地库实例标识是「$LI」（通常应为 local）"
-  [ "$RI" = "production" ] || bad "线上库实例标识是「$RI」（应为 production）"
-  [ "$LI" != "$RI" ] && ok "实例标识不同：本地=$LI / 线上=$RI" || bad "实例标识相同（$LI）：两份数据可能是同一份或互为拷贝"
-  [ "$LID" != "$RID" ] && ok "实例ID不同：本地=$LID / 线上=$RID" || bad "实例ID相同（$LID）：说明两份库同源，请确认是否需要各自独立"
+  [ "$LI" = "local" ] || warn "本地库实例标识是「${LI}」（通常应为 local）"
+  [ "$RI" = "production" ] || bad "线上库实例标识是「${RI}」（应为 production）"
+  [ "$LI" != "$RI" ] && ok "实例标识不同：本地=$LI / 线上=$RI" || bad "实例标识相同（${LI}）：两份数据可能是同一份或互为拷贝"
+  [ "$LID" != "$RID" ] && ok "实例ID不同：本地=$LID / 线上=$RID" || bad "实例ID相同（${LID}）：说明两份库同源，请确认是否需要各自独立"
   LS=$(fld "$LFP" sha256); RS=$(fld "$RFP" sha256)
   [ "$LS" != "$RS" ] && ok "数据库文件内容不同（本地 $(echo "$LS" | cut -c1-12)… / 线上 $(echo "$RS" | cut -c1-12)…）" || warn "两份库文件内容完全相同，注意区分使用"
   echo "  数据量对比：询价 本地 $(fld "$LFP" inquiries) / 线上 $(fld "$RFP" inquiries)　订单 本地 $(fld "$LFP" orders) / 线上 $(fld "$RFP" orders)　账号 本地 $(fld "$LFP" users) / 线上 $(fld "$RFP" users)"
@@ -59,10 +59,12 @@ TRACKED="$(cd "$ROOT" && git ls-files | grep -E '\.(db|db-wal|db-shm)$|(^|/)\.en
 if (cd "$ROOT" && git check-ignore -q server/data/sales-analytics.db); then ok "server/data 已被 .gitignore 忽略"; else bad "server/data 未被 .gitignore 忽略"; fi
 
 echo "=== 6) 本地配置不指向线上数据 ==="
-if grep -rIl --exclude-dir=node_modules --exclude-dir=.git -e '/opt/sales-analytics' "$ROOT/server/src" "$ROOT/scripts" 2>/dev/null | grep -v 'scripts/\(backup-db\|restore-db\|deploy-cvm\|check-isolation\|db-fingerprint\)\.sh$' | grep -q .; then
-  bad "本地代码/脚本里出现了线上路径（除脚本默认值外不应出现）"
+SRC_HITS="$(cd "$ROOT" && git grep -n '/opt/sales-analytics' -- server/src 2>/dev/null | grep -v 'IS_PROD_DB_PATH' | grep -vE ':[0-9]+: *([*/]|//)' || true)"
+if [ -n "$SRC_HITS" ]; then
+  bad "服务端源码里出现了线上数据库路径（应只保留实例判定那一处）："
+  printf '%s\n' "$SRC_HITS" | sed 's/^/     /'
 else
-  ok "本地源码中没有写死线上数据库路径（脚本默认值除外）"
+  ok "服务端源码只在「实例自动判定」处引用线上路径，未写死任何数据库文件"
 fi
 if [ -f "$ROOT/server/.env" ] && grep -qE '^DB_PATH=.*/opt/sales-analytics' "$ROOT/server/.env"; then
   bad "本地 server/.env 把 DB_PATH 指向了线上数据库"

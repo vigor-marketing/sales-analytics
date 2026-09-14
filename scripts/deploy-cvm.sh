@@ -64,12 +64,12 @@ AFTER="$(fp)"
 for k in instance instanceId inode users inquiries orders people; do
   b="$(field "$BEFORE" "$k")"; a="$(field "$AFTER" "$k")"
   if [ "$b" != "$a" ]; then
-    echo "✖ 线上数据在部署过程中发生了变化（$k：$b → $a），已中止，服务保持原样未重启"
+    echo "✖ 线上数据在部署过程中发生了变化（${k}：$b → ${a}），已中止，服务保持原样未重启"
     exit 1
   fi
 done
 b="$(field "$BEFORE" sha256)"; a="$(field "$AFTER" sha256)"
-[ "$b" = "$a" ] || echo "   提示：数据库文件 sha256 有变化（$b → $a），行数与实例均未变（通常是 WAL 检查点落盘，属正常）"
+[ "$b" = "$a" ] || echo "   提示：数据库文件 sha256 有变化（$b → ${a}），行数与实例均未变（通常是 WAL 检查点落盘，属正常）"
 echo "   线上数据指纹未变 ✓（实例 $(field "$AFTER" instance) / 实例ID $(field "$AFTER" instanceId)）"
 
 echo "== 7/8 保证线上实例标识 = production，并安装依赖 =="
@@ -90,7 +90,7 @@ rsh "curl -s -o /dev/null -w '   本机 /sales/ -> %{http_code}\n' http://127.0.
 FINAL="$(fp)"
 for k in inode users inquiries orders people; do
   a="$(field "$AFTER" "$k")"; f="$(field "$FINAL" "$k")"
-  if [ "$a" != "$f" ]; then echo "✖ 重启后数据又发生变化（$k：$a → $f），请检查"; exit 1; fi
+  if [ "$a" != "$f" ]; then echo "✖ 重启后数据又发生变化（${k}：$a → ${f}），请检查"; exit 1; fi
 done
 echo "   重启后数据仍然一致 ✓"
 echo "完成：http://1.15.91.150/sales/（本地数据未受影响）"

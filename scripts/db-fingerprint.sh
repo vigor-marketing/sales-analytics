@@ -27,8 +27,8 @@ def one(sql, default='-'):
         return r[0] if r else default
     except Exception:
         return default
-print('instance', one("select value from settings where k='instanceName'", '未登记'))
-print('instanceId', one("select value from settings where k='instanceId'", '-'))
+print('instance', one("select v from settings where k='instanceName'", '未登记'))
+print('instanceId', one("select v from settings where k='instanceId'", '-'))
 for t in ('inquiries', 'orders', 'followups', 'inquiry_items', 'users', 'people', 'settings'):
     print(t, one('select count(*) from ' + t))
 PY

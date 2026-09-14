@@ -24,7 +24,7 @@ DB_INSTANCE="$(python3 - "$DB" <<'PY'
 import sqlite3, sys
 try:
     c = sqlite3.connect('file:%s?mode=ro' % sys.argv[1], uri=True)
-    r = c.execute("select value from settings where k='instanceName'").fetchone()
+    r = c.execute("select v from settings where k='instanceName'").fetchone()
     print(r[0] if r else 'unknown')
 except Exception:
     print('unknown')
