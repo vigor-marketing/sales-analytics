@@ -870,8 +870,37 @@ app.get('/api/admin/accounts', (req, res) => {
   const people = d.prepare("SELECT COUNT(*) AS n FROM people WHERE role IN ('sales','support','other')").get() as { n: number }
   // 组织架构里的部门 / 小组（带人数）：给「部门主管 / 组长」下拉用
   const orgs = d.prepare("SELECT department, team_name, COUNT(*) AS n FROM people WHERE role IN ('sales','support') GROUP BY department, team_name ORDER BY department, team_name").all() as { department: string; team_name: string; n: number }[]
+  // 组织架构人员（账号只能从这里选）：按 部门 → 小组 → 人员 组织，并标出谁已经有账号
+  interface OrgRow { name: string; department: string; team_name: string; role: string; role_label: string | null; is_head: number }
+  const orgRows = d.prepare("SELECT name, department, team_name, role, role_label, is_head FROM people ORDER BY department, team_name, name").all() as unknown as OrgRow[]
+  const acctByUser = new Map(users.map((u) => [u.username.toLowerCase(), u]))
+  const orgMap = new Map<string, Map<string, { name: string; roleLabel: string; head: boolean; hasAccount: boolean; accountRole: string }[]>>()
+  orgRows.forEach((row) => {
+    if (!orgMap.has(row.department)) orgMap.set(row.department, new Map())
+    const teams = orgMap.get(row.department) as Map<string, { name: string; roleLabel: string; head: boolean; hasAccount: boolean; accountRole: string }[]>
+    if (!teams.has(row.team_name)) teams.set(row.team_name, [])
+    const acct = acctByUser.get(row.name.toLowerCase())
+    ;(teams.get(row.team_name) as { name: string; roleLabel: string; head: boolean; hasAccount: boolean; accountRole: string }[]).push({
+      name: row.name, roleLabel: String(row.role_label ?? '') || row.role, head: Number(row.is_head) === 1,
+      hasAccount: !!acct, accountRole: acct?.roleLabel ?? '',
+    })
+  })
+  const org = Array.from(orgMap.entries()).map(([department, teams]) => ({
+    department,
+    teams: Array.from(teams.entries()).map(([team, persons]) => ({ team, persons })),
+  }))
+  const personOf = (username: string) => orgRows.find((r) => r.name.toLowerCase() === String(username || '').toLowerCase())
+  const usersWithOrg = users.map((u) => {
+    const per = personOf(u.username)
+    return {
+      ...u,
+      inOrg: !!per,
+      orgDepartment: per?.department ?? '', orgTeam: per?.team_name ?? '', orgRole: String(per?.role_label ?? '') || per?.role || '',
+    }
+  })
   ok(res, {
-    users,
+    users: usersWithOrg,
+    org,
     departments: Array.from(new Set(orgs.map((o) => o.department))),
     teams: orgs.map((o) => ({ department: o.department, team: o.team_name, count: Number(o.n) })),
     /** 职位预设：选职位即定权限，不用去理解 all/team/self */
@@ -891,18 +920,25 @@ app.get('/api/admin/accounts', (req, res) => {
 app.post('/api/admin/accounts', (req, res) => {
   if (!requireAll(req, res)) return
   const d = getDb()
-  const username = str(req.body?.username).trim()
+  // 账号必须来自组织架构：前端传 orgName（组织架构里的姓名），账号名由姓名派生
+  const orgName = str(req.body?.orgName).trim() || str(req.body?.username).trim()
   const password = str(req.body?.password)
-  const displayName = str(req.body?.displayName).trim() || username
+  const person = d.prepare('SELECT name, department, team_name, role, role_label, is_head FROM people WHERE name = ? COLLATE NOCASE').get(orgName) as
+    { name: string; department: string; team_name: string; role: string; role_label: string | null; is_head: number } | undefined
+  if (!person) return fail(res, orgName ? `组织架构里没有「${orgName}」：账号必须从组织架构里选人（可先到「组织架构」同步工作台）` : '请从组织架构里选择人员（账号必须来自组织架构）')
+  const username = person.name.toLowerCase().replace(/[^a-z0-9._-]/g, '')
+  const displayName = person.name
+  if (username.length < 2) return fail(res, `组织架构里「${person.name}」的姓名无法生成登录账号，请先在组织架构里改成英文名`)
   const scopeRaw = str(req.body?.scope) || 'self'
   const scope: SaScope = scopeRaw === 'all' || scopeRaw === 'team' ? scopeRaw : 'self'
-  const team = str(req.body?.team).trim() || null
-  const department = str(req.body?.department).trim() || null
-  const roleLabel = str(req.body?.roleLabel).trim() || null
-  if (!/^[A-Za-z0-9._-]{2,32}$/.test(username)) return fail(res, '账号需为 2–32 位字母/数字/._-')
+  const team = str(req.body?.team).trim() || person.team_name || null
+  const department = str(req.body?.department).trim() || person.department || null
+  const roleLabel = str(req.body?.roleLabel).trim() || String(person.role_label ?? '') || null
   if (password.length < 6) return fail(res, '密码至少 6 位')
   const dup = d.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(username)
-  if (dup) return fail(res, '该账号已存在')
+  if (dup) return fail(res, `「${person.name}」已经有账号了（${username}），可在下面列表里改密码或调整职位`)
+  if (department && !d.prepare('SELECT 1 FROM people WHERE department = ?').get(department)) return fail(res, `组织架构里没有部门「${department}」`)
+  if (team && !d.prepare('SELECT 1 FROM people WHERE team_name = ?').get(team)) return fail(res, `组织架构里没有小组「${team}」`)
   if (scope === 'team' && !department && !team) return fail(res, '「部门主管 / 组长」需要选择部门（组长还需选择小组）')
   if (scope === 'team' && roleLabel === '组长' && !team) return fail(res, '「组长」需要选择具体小组')
   const t = nowIso()
@@ -924,6 +960,8 @@ app.put('/api/admin/accounts/:id', (req, res) => {
   const department = req.body?.department === undefined ? (u.department ?? null) : (str(req.body?.department).trim() || null)
   const roleLabel = req.body?.roleLabel === undefined ? (u.role_label ?? null) : (str(req.body?.roleLabel).trim() || null)
   const disabled = req.body?.disabled === undefined ? Number(u.disabled) : (req.body?.disabled ? 1 : 0)
+  if (department && !d.prepare('SELECT 1 FROM people WHERE department = ?').get(department)) return fail(res, `组织架构里没有部门「${department}」`)
+  if (team && !d.prepare('SELECT 1 FROM people WHERE team_name = ?').get(team)) return fail(res, `组织架构里没有小组「${team}」`)
   if (scope === 'team' && !department && !team) return fail(res, '「部门主管 / 组长」需要选择部门（组长还需选择小组）')
   if (scope === 'team' && roleLabel === '组长' && !team) return fail(res, '「组长」需要选择具体小组')
   d.prepare('UPDATE users SET display_name = ?, scope = ?, team = ?, department = ?, role_label = ?, disabled = ?, password_hash = ?, note = ?, updated_at = ? WHERE id = ?')

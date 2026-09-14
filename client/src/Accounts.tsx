@@ -7,11 +7,16 @@ interface Acc {
   id: string; username: string; displayName: string; scope: Scope
   team: string; department: string; roleLabel: string
   disabled: boolean; note: string; createdAt: string; updatedAt: string
+  /** 是否能在组织架构里找到这个人（账号必须来自组织架构；admin 属系统账号例外） */
+  inOrg?: boolean; orgDepartment?: string; orgTeam?: string; orgRole?: string
 }
 interface TeamOpt { department: string; team: string; count: number }
 interface Preset { key: string; label: string; roleLabel: string; scope: Scope; needDept: boolean; needTeam: boolean; desc: string }
+interface OrgPerson { name: string; roleLabel: string; head: boolean; hasAccount: boolean; accountRole: string }
+interface OrgTeam { team: string; persons: OrgPerson[] }
+interface OrgDept { department: string; teams: OrgTeam[] }
 interface Data {
-  users: Acc[]; departments: string[]; teams: TeamOpt[]; presets: Preset[]
+  users: Acc[]; departments: string[]; teams: TeamOpt[]; presets: Preset[]; org: OrgDept[]
   defaultPassword: string; defaultPasswordFromEnv: boolean; orgPeopleCount: number
   scopeHelp: Record<Scope, string>
 }
@@ -32,10 +37,15 @@ function visibleText(u: Pick<Acc, 'scope' | 'department' | 'team'>, teams: TeamO
   }
   return '本组（未指定部门，实际等同只看自己）'
 }
+/** 组织角色 → 默认职位（可再手动改） */
+const presetKeyOf = (roleLabel: string): string => {
+  if (/总经理|副总/.test(roleLabel)) return 'gm'
+  if (/经理|主管|负责人|组长|总监/.test(roleLabel)) return 'team'
+  return 'staff'
+}
+const EMPTY_ADD = { dept: '', team: '', person: '', presetKey: 'staff', password: '' }
 
-const EMPTY_ADD = { username: '', displayName: '', password: '', presetKey: 'staff', department: '', team: '' }
-
-/** 设置 · 账号与权限：按职位分配数据范围（总经理/副总＝全部、部门主管＝本部门、组长＝本组、成员＝只看自己） */
+/** 设置 · 账号与权限：账号必须从组织架构里选人，再按职位定数据范围 */
 export default function Accounts() {
   const [data, setData] = useState<Data | null>(null)
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; text: string } | null>(null)
@@ -65,33 +75,29 @@ export default function Accounts() {
 
   const presets = data?.presets ?? []
   const teams = data?.teams ?? []
-  const departments = data?.departments ?? []
+  const org = data?.org ?? []
   const presetOf = (key: string) => presets.find((p) => p.key === key) ?? presets[presets.length - 1]
   const addPreset = presetOf(add.presetKey)
-  const teamsOfDept = useMemo(() => teams.filter((t) => t.department === add.department), [teams, add.department])
+  const addDept = org.find((d) => d.department === add.dept)
+  const addTeam = addDept?.teams.find((t) => t.team === add.team)
+  const addPerson = addTeam?.persons.find((p) => p.name === add.person)
+  const loginName = (addPerson?.name ?? '').toLowerCase()
 
-  const pickPreset = (key: string) => {
-    const p = presetOf(key)
-    setAdd((s) => ({
-      ...s, presetKey: p.key,
-      department: p.needDept ? (s.department || '') : '',
-      team: p.needTeam ? s.team : '',
-    }))
+  /** 选人后：自动带出部门/小组与建议职位（可再改） */
+  const pickPerson = (name: string) => {
+    const team = addTeam
+    const per = team?.persons.find((p) => p.name === name)
+    setAdd((s) => ({ ...s, person: name, presetKey: per ? presetKeyOf(per.roleLabel) : s.presetKey }))
   }
-  const addPayload = () => ({
-    username: add.username.trim(), displayName: add.displayName.trim() || add.username.trim(), password: add.password,
-    scope: addPreset?.scope ?? 'self', roleLabel: addPreset?.roleLabel ?? '普通成员',
-    department: addPreset?.needDept ? add.department : '', team: addPreset?.needTeam ? add.team : '',
-  })
-  const addBlocked = !add.username.trim() || add.password.length < 6
-    || (!!addPreset?.needDept && !add.department) || (!!addPreset?.needTeam && !add.team)
+  const addBlocked = !addPerson || addPerson.hasAccount || add.password.length < 6
+    || (!!addPreset?.needDept && !add.dept) || (!!addPreset?.needTeam && !add.team)
 
   return (
     <div style={{ marginTop: 8 }}>
       <section className="opt-card">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <b style={{ fontSize: 14 }}>账号与权限</b>
-          <span className="hint">给账号选「职位」即可定权限：总经理 / 副总看全部，部门主管看本部门，组长看本组，成员只看自己</span>
+          <span className="hint">账号只能从<b>组织架构</b>里选人（部门 → 小组 → 人员），再按职位决定能看到多少数据</span>
           <span style={{ flex: 1 }} />
           <button className="btn sm" disabled={busy} onClick={() => void load()}>{busy ? '刷新中…' : '刷新'}</button>
         </div>
@@ -99,7 +105,7 @@ export default function Accounts() {
 
         {/* 权限级别说明 */}
         <div className="opt-grid" style={{ marginTop: 10 }}>
-          {(presets.length ? presets : []).map((p) => (
+          {presets.map((p) => (
             <div key={p.key} className="opt-card" style={{ margin: 0 }}>
               <b style={{ fontSize: 13 }}>{p.label}</b>
               <div className="hint" style={{ marginTop: 4 }}>{p.desc}</div>
@@ -107,55 +113,72 @@ export default function Accounts() {
           ))}
         </div>
 
-        {/* 新增账号 */}
+        {/* 新增账号：组织架构选人 */}
         <div className="row" style={{ marginTop: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div className="col w1"><label>账号 *</label><input className="sa" value={add.username} placeholder="如 lisa" onChange={(e) => setAdd({ ...add, username: e.target.value })} /></div>
-          <div className="col w1"><label>显示名（须与询价里的销售名一致）</label><input className="sa" value={add.displayName} placeholder="如 Vera" onChange={(e) => setAdd({ ...add, displayName: e.target.value })} /></div>
-          <div className="col w1"><label>初始密码 *</label><input className="sa" value={add.password} placeholder="至少 6 位" onChange={(e) => setAdd({ ...add, password: e.target.value })} /></div>
+          <div className="col w1"><label>部门 *（来自组织架构）</label>
+            <select className="sa" value={add.dept} onChange={(e) => setAdd({ ...add, dept: e.target.value, team: '', person: '' })}>
+              <option value="">— 请选择部门 —</option>
+              {org.map((d) => <option key={d.department} value={d.department}>{d.department}（{d.teams.reduce((a, t) => a + t.persons.length, 0)} 人）</option>)}
+            </select>
+          </div>
+          <div className="col w1"><label>小组 *（来自组织架构）</label>
+            <select className="sa" value={add.team} disabled={!add.dept} title={!add.dept ? '请先选择部门' : undefined}
+              onChange={(e) => setAdd({ ...add, team: e.target.value, person: '' })}>
+              <option value="">— 请选择小组 —</option>
+              {(addDept?.teams ?? []).map((t) => <option key={t.team} value={t.team}>{t.team}（{t.persons.length} 人）</option>)}
+            </select>
+          </div>
+          <div className="col w1"><label>人员 *（组织架构里的人）</label>
+            <select className="sa" value={add.person} disabled={!add.team} title={!add.team ? '请先选择小组' : undefined}
+              onChange={(e) => pickPerson(e.target.value)}>
+              <option value="">— 请选择人员 —</option>
+              {(addTeam?.persons ?? []).map((p) => (
+                <option key={p.name} value={p.name} disabled={p.hasAccount}>
+                  {p.name}（{p.roleLabel}）{p.hasAccount ? ` · 已有账号${p.accountRole ? `（${p.accountRole}）` : ''}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="col w1"><label>职位（权限）</label>
-            <select className="sa" value={add.presetKey} onChange={(e) => pickPreset(e.target.value)}>
+            <select className="sa" value={add.presetKey} disabled={!addPerson} onChange={(e) => setAdd({ ...add, presetKey: e.target.value })}>
               {presets.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
             </select>
           </div>
-          {addPreset?.needDept && (
-            <div className="col w1"><label>部门 *</label>
-              <select className="sa" value={add.department} onChange={(e) => setAdd({ ...add, department: e.target.value, team: '' })}>
-                <option value="">— 请选择部门 —</option>
-                {departments.map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
-          )}
-          {addPreset?.needTeam && (
-            <div className="col w1"><label>小组 *</label>
-              <select className="sa" value={add.team} disabled={!add.department} title={!add.department ? '请先选择部门' : undefined} onChange={(e) => setAdd({ ...add, team: e.target.value })}>
-                <option value="">— 请选择小组 —</option>
-                {teamsOfDept.map((t) => <option key={t.team} value={t.team}>{t.team}（{t.count} 人）</option>)}
-              </select>
-            </div>
-          )}
+          <div className="col w1"><label>初始密码 *</label>
+            <input className="sa" value={add.password} placeholder="至少 6 位" onChange={(e) => setAdd({ ...add, password: e.target.value })} /></div>
           <button className="btn pri" disabled={busy || addBlocked}
-            onClick={() => void run(async () => { await post('/admin/accounts', addPayload()); setAdd({ ...EMPTY_ADD }) }, `已新增账号：${add.username}（${addPreset?.label}）`)}>新增账号</button>
+            onClick={() => void run(async () => {
+              await post('/admin/accounts', {
+                orgName: add.person, password: add.password,
+                scope: addPreset?.scope ?? 'self', roleLabel: addPreset?.roleLabel ?? '普通成员',
+                department: addPreset?.needDept ? add.dept : '', team: addPreset?.needTeam ? add.team : '',
+              })
+              setAdd({ ...EMPTY_ADD })
+            }, `已为「${add.person}」新建账号（登录名 ${loginName}）`)}>新增账号</button>
         </div>
         <div className="hint" style={{ marginTop: 6 }}>
-          该账号可见范围：<b>{visibleText({ scope: addPreset?.scope ?? 'self', department: add.department, team: add.team }, teams)}</b>
-          {addPreset?.needDept ? '（主管/组长可看全组数据，但只能修改自己名下的记录）' : ''}
+          {addPerson
+            ? <>登录名：<b className="mono">{loginName}</b>（由组织架构里的姓名生成，小写）· 显示名：<b>{addPerson.name}</b> ·
+                组织角色：{addPerson.roleLabel} · 可见范围：<b>{visibleText({ scope: addPreset?.scope ?? 'self', department: add.dept, team: add.team }, teams)}</b>
+                {addPreset?.needDept ? '（主管/组长可看全组数据，但只能修改自己名下的记录）' : ''}</>
+            : '先在组织架构里选到人；组织架构数据来自工作台，可在「组织架构」页同步最新。'}
         </div>
 
         <div className="tablewrap" style={{ marginTop: 10 }}>
           <table className="grid data-table fixed-table fit-table" style={{ fontSize: 12.5 }}>
-            <colgroup><col style={{ width: '12%' }} /><col style={{ width: '14%' }} /><col style={{ width: '12%' }} /><col style={{ width: '26%' }} /><col style={{ width: '9%' }} /><col style={{ width: '12%' }} /><col style={{ width: '15%' }} /></colgroup>
-            <thead><tr>{['账号', '显示名', '职位', '可见范围', '状态', '最近修改', '操作'].map((h) => <th key={h} className="cell-left">{h}</th>)}</tr></thead>
+            <colgroup><col style={{ width: '16%' }} /><col style={{ width: '10%' }} /><col style={{ width: '20%' }} /><col style={{ width: '22%' }} /><col style={{ width: '9%' }} /><col style={{ width: '11%' }} /><col style={{ width: '12%' }} /></colgroup>
+            <thead><tr>{['账号（登录名 / 显示名）', '职位', '组织架构', '可见范围', '状态', '最近修改', '操作'].map((h) => <th key={h} className="cell-left">{h}</th>)}</tr></thead>
             <tbody>
               {(data?.users ?? []).map((u) => (
                 <tr key={u.id}>
-                  <td className="cell-left mono">{u.username}</td>
-                  <td className="cell-left">{u.displayName}</td>
-                  <td className="cell-left">
-                    <span className={u.scope === 'all' ? 'badge latest' : 'badge'}>{u.roleLabel}</span>
+                  <td className="cell-left"><span className="mono">{u.username}</span><div className="hint">{u.displayName}</div></td>
+                  <td className="cell-left"><span className={u.scope === 'all' ? 'badge latest' : 'badge'}>{u.roleLabel}</span></td>
+                  <td className="cell-left" title={u.inOrg ? `${u.orgDepartment} / ${u.orgTeam} · ${u.orgRole}` : '该账号不在组织架构里'}>
+                    {u.inOrg
+                      ? <>{u.orgDepartment} / {u.orgTeam}<div className="hint">{u.orgRole}</div></>
+                      : <span className="badge" style={{ background: '#fff4e5', color: '#a35c00' }}>系统账号（不在组织架构）</span>}
                   </td>
-                  <td className="cell-left" title={visibleText(u, teams)}>
-                    <span className="cell-note" style={{ marginLeft: 0 }}>{visibleText(u, teams)}</span>
-                  </td>
+                  <td className="cell-left"><span className="cell-note" style={{ marginLeft: 0 }}>{visibleText(u, teams)}</span></td>
                   <td className="cell-left">{u.disabled ? <span className="badge" style={{ background: '#fee2e2', color: '#b91c1c' }}>已停用</span> : <span className="badge latest">启用</span>}</td>
                   <td className="cell-left mono hint" title={fmtDateTime(u.updatedAt)}>{fmtMinute(u.updatedAt)}</td>
                   <td className="cell-left">
@@ -168,7 +191,7 @@ export default function Accounts() {
                   </td>
                 </tr>
               ))}
-              {data && data.users.length === 0 && <tr><td colSpan={7} className="hint" style={{ textAlign: 'center' }}>还没有账号（上面的表单可新增）</td></tr>}
+              {data && data.users.length === 0 && <tr><td colSpan={7} className="hint" style={{ textAlign: 'center' }}>还没有账号（上面的表单可从组织架构选人新建）</td></tr>}
             </tbody>
           </table>
         </div>
@@ -188,7 +211,7 @@ export default function Accounts() {
             onClick={() => void run(() => post('/admin/login-default', { password: defPw }), defPw ? '已更新统一初始密码' : '已关闭「英文名 + 初始密码」登录')}>保存</button>
         </div>
         <div className="hint" style={{ marginTop: 4 }}>
-          想让某人用固定权限登录，就在上面新增一个同名的账号（账号表优先于组织架构自动判定）。
+          在上面按组织架构建号的人，会以「账号表」的职位为准（优先于组织角色自动判定）。
           {data?.defaultPasswordFromEnv ? ' 当前初始密码来自服务端 .env 的 LOGIN_DEFAULT_PASSWORD（保存后以本页为准）。' : ''}
         </div>
       </section>
@@ -197,15 +220,15 @@ export default function Accounts() {
       <section className="opt-card" style={{ marginTop: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <b style={{ fontSize: 13.5 }}>最近登录记录</b>
-          <span className="hint">每次登录（含失败）都会留痕；同 IP 10 分钟失败 8 次或同账号 5 次会被临时拒绝</span>
+          <span className="hint">每次登录（含失败）都会留痕，按本机时间显示；同 IP 10 分钟失败 8 次或同账号 5 次会被临时拒绝</span>
           <span style={{ flex: 1 }} />
           {audit && audit.failLast10Min > 0 && <span className="badge" style={{ background: '#fff4e5', color: '#a35c00' }}>近 10 分钟失败 {audit.failLast10Min} 次</span>}
           <button className="btn xs" onClick={() => void load()}>刷新</button>
         </div>
         <div className="tablewrap" style={{ marginTop: 8, maxHeight: 260 }}>
           <table className="grid data-table fixed-table fit-table" style={{ fontSize: 12.5 }}>
-            <colgroup><col style={{ width: '16%' }} /><col style={{ width: '16%' }} /><col style={{ width: '10%' }} /><col style={{ width: '30%' }} /><col style={{ width: '28%' }} /></colgroup>
-            <thead><tr>{['时间', '账号', '结果', '来源 IP', '说明'].map((h) => <th key={h} className="cell-left">{h}</th>)}</tr></thead>
+            <colgroup><col style={{ width: '18%' }} /><col style={{ width: '16%' }} /><col style={{ width: '10%' }} /><col style={{ width: '28%' }} /><col style={{ width: '28%' }} /></colgroup>
+            <thead><tr>{['时间（本机）', '账号', '结果', '来源 IP', '说明'].map((h) => <th key={h} className="cell-left">{h}</th>)}</tr></thead>
             <tbody>
               {(audit?.rows ?? []).map((r, i) => (
                 <tr key={i}>
@@ -244,8 +267,10 @@ export default function Accounts() {
         <div className="modal-mask" onClick={(e) => { if (e.target === e.currentTarget) setEdit(null) }}>
           <div className="modal" style={{ width: 'min(520px, 94vw)' }} role="dialog" aria-modal="true">
             <h3 style={{ margin: 0 }}>编辑账号 · {edit.username}</h3>
+            <div className="hint" style={{ marginTop: 4 }}>
+              登录名与显示名来自组织架构（{edit.inOrg ? `${edit.orgDepartment} / ${edit.orgTeam} · ${edit.orgRole}` : '该账号不在组织架构里，属系统账号'}），此处只调整职位与数据范围
+            </div>
             <div className="row" style={{ marginTop: 10 }}>
-              <div className="col w2"><label>显示名（须与询价里的销售名一致）</label><input className="sa" style={{ width: '100%' }} value={edit.displayName} onChange={(e) => setEdit({ ...edit, displayName: e.target.value })} /></div>
               <div className="col w1"><label>职位（权限）</label>
                 <select className="sa" value={edit.roleLabel} onChange={(e) => {
                   const label = e.target.value
@@ -259,16 +284,18 @@ export default function Accounts() {
             </div>
             {edit.scope === 'team' && (
               <div className="row">
-                <div className="col w1"><label>部门 *</label>
+                <div className="col w1"><label>部门 *（组织架构）</label>
                   <select className="sa" value={edit.department} onChange={(e) => setEdit({ ...edit, department: e.target.value, team: '' })}>
                     <option value="">— 请选择部门 —</option>
-                    {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+                    {org.map((d) => <option key={d.department} value={d.department}>{d.department}</option>)}
                   </select>
                 </div>
                 <div className="col w1"><label>小组（组长必选；部门主管可留空＝整个部门）</label>
                   <select className="sa" value={edit.team} disabled={!edit.department} onChange={(e) => setEdit({ ...edit, team: e.target.value })}>
                     <option value="">— 整个部门 —</option>
-                    {teams.filter((t) => t.department === edit.department).map((t) => <option key={t.team} value={t.team}>{t.team}（{t.count} 人）</option>)}
+                    {(org.find((d) => d.department === edit.department)?.teams ?? []).map((t) => (
+                      <option key={t.team} value={t.team}>{t.team}（{t.persons.length} 人）</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -281,8 +308,8 @@ export default function Accounts() {
               <button className="btn" onClick={() => setEdit(null)}>取消</button>
               <button className="btn pri" disabled={busy} onClick={() => void run(async () => {
                 await put(`/admin/accounts/${edit.id}`, {
-                  displayName: edit.displayName, scope: edit.scope, roleLabel: edit.roleLabel,
-                  department: edit.department, team: edit.scope === 'team' ? edit.team : '',
+                  scope: edit.scope, roleLabel: edit.roleLabel,
+                  department: edit.scope === 'team' ? edit.department : '', team: edit.scope === 'team' ? edit.team : '',
                 }); setEdit(null)
               }, `已保存 ${edit.username}`)}>保存</button>
             </div>
