@@ -678,3 +678,8 @@ table.grid > tbody > tr > td.cell-tags .tag { margin: 0 2px; display: inline-blo
   .modal-mask { padding: 12px 10px; align-items: flex-start; }
   .tablewrap.h180, .tablewrap.h240, .tablewrap.h300, .ana-page .tablewrap.tbl-fit { height: auto !important; min-height: 150px; max-height: 60vh; }
 }
+
+/* ===== 实例标识徽标（本地开发 / 线上生产）：默认与末尾样式均由本段统一覆盖 ===== */
+.badge.prod { background: #dcfce7; color: #15803d }
+.badge.local { background: #fff3e0; color: #b45309 }
+.sa-foot .badge { font-size: 11px; padding: 1px 8px; margin-right: 4px }

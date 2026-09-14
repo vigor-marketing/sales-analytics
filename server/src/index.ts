@@ -1,7 +1,7 @@
 /** sales-analytics v3 起步：询报价录入页 API */
 import cors from 'cors'
 import express from 'express'
-import { schema, ensurePeople, backfillProducts, migrateWonToOrders, syncWonFlags, getDb, getSources, getCountries, saveSources, getFollowMethods, saveFollowMethods, getLostReasons, saveLostReasons, getWinReasons, saveWinReasons, getSetting, setSetting, newId, nowIso, todayStr, text, num, getCurrencies, saveCurrencies, currencyCodes, fxRates, fxRateOf, renameCurrencyInData, currencyUsage } from './db.js'
+import { schema, ensurePeople, backfillProducts, migrateWonToOrders, syncWonFlags, getDb, getSources, getCountries, saveSources, getFollowMethods, saveFollowMethods, getLostReasons, saveLostReasons, getWinReasons, saveWinReasons, getSetting, setSetting, newId, nowIso, todayStr, text, num, getCurrencies, saveCurrencies, currencyCodes, fxRates, fxRateOf, renameCurrencyInData, currencyUsage, DB_FILE } from './db.js'
 import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
 import { createHmac, pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto'
 import path from 'node:path'
@@ -28,6 +28,53 @@ function readFileSyncSafe(file: string): string {
 }
 loadEnvFile(path.join(__dirname, '..', '.env'))
 loadEnvFile(path.join(__dirname, '..', '..', '.env'))
+
+/* ============================ 实例标识（本地开发 / 线上生产 互不干扰） ============================
+ * 背景：本项目的本地开发库与线上生产库是两份完全独立的数据，绝不能互相顶替。
+ *   · SA_INSTANCE：显式声明本进程服务的实例（线上固定 production，本地 local，副本库自定义名字）
+ *   · 数据库内部同时登记首次启动时的实例名与实例 ID；两者不一致时直接拒绝启动
+ *   · /api/health 与「设置 → 系统信息」都会显示实例名，便于任何时候确认自己在看哪份数据
+ * 详见 docs/数据隔离.md
+ */
+const DB_ABS = path.resolve(DB_FILE)
+/** 线上部署目录（/opt/sales-analytics）下的数据库一律视为生产库 */
+const IS_PROD_DB_PATH = /^\/opt\/sales-analytics\//.test(DB_ABS)
+const INSTANCE_ENV = String(process.env.SA_INSTANCE ?? '').trim().toLowerCase()
+const INSTANCE_NAME = INSTANCE_ENV || (IS_PROD_DB_PATH ? 'production' : 'local')
+const INSTANCE_LABEL = INSTANCE_NAME === 'production' ? '线上生产' : INSTANCE_NAME === 'local' ? '本地开发' : INSTANCE_NAME
+const INSTANCE_OVERRIDE = String(process.env.SA_ALLOW_INSTANCE_MISMATCH ?? '') === '1'
+if (INSTANCE_ENV && IS_PROD_DB_PATH && INSTANCE_ENV !== 'production' && !INSTANCE_OVERRIDE) {
+  console.error(`[实例守卫] 数据库位于线上目录（${DB_ABS}），但 SA_INSTANCE=${INSTANCE_ENV}；已拒绝启动。若确有特殊用途，请设置 SA_ALLOW_INSTANCE_MISMATCH=1。`)
+  process.exit(1)
+}
+let instanceId = ''
+let instanceSince = ''
+/** 启动时校验「本进程实例」与「数据库内登记的实例」是否一致（防止本地库/线上库被互换使用） */
+function assertInstanceIdentity(): void {
+  const storedName = getSetting('instanceName')
+  if (!storedName) {
+    instanceId = randomBytes(8).toString('hex')
+    instanceSince = nowIso()
+    setSetting('instanceName', INSTANCE_NAME)
+    setSetting('instanceId', instanceId)
+    setSetting('instanceSince', instanceSince)
+    console.log(`[实例] 首次登记：${INSTANCE_LABEL}（${INSTANCE_NAME} / ${instanceId}）数据库=${DB_ABS}`)
+    return
+  }
+  instanceId = getSetting('instanceId') || ''
+  instanceSince = getSetting('instanceSince') || ''
+  if (storedName !== INSTANCE_NAME) {
+    const msg = `数据库内登记的实例是「${storedName}」，而当前进程声明的是「${INSTANCE_NAME}」（数据库文件：${DB_ABS}）。`
+      + '这通常意味着把本地开发库当成线上库启动了（或反之），两者数据会互相覆盖，已拒绝启动；'
+      + '确需临时跳过请设置环境变量 SA_ALLOW_INSTANCE_MISMATCH=1。'
+    if (!INSTANCE_OVERRIDE) { console.error('[实例守卫] ' + msg); process.exit(1) }
+    console.warn('[实例守卫] 已按 SA_ALLOW_INSTANCE_MISMATCH=1 跳过实例一致性检查：' + msg)
+  }
+  console.log(`[实例] ${INSTANCE_LABEL}（${INSTANCE_NAME} / ${instanceId}）数据库=${DB_ABS}`)
+}
+/** 对外的实例信息（不含服务器路径细节） */
+const instancePublic = () => ({ name: INSTANCE_NAME, label: INSTANCE_LABEL, id: instanceId })
+const STARTED_AT = nowIso()
 
 /** 工作台（vigor-workbench-platform）组织架构对接配置 */
 const WORKBENCH_BASE = (process.env.WORKBENCH_BASE ?? 'http://1.15.91.150').replace(/\/+$/, '')
@@ -171,8 +218,13 @@ const isDate = (v: string) => {
 }
 const fail = (res: express.Response, msg: string, st = 400) => res.status(st).json({ ok: false, error: msg })
 
+/** 健康检查：给部署脚本/监控用，只暴露是否健康与实例名（不含任何路径与业务数据） */
+app.get('/api/health', (_req, res) => {
+  ok(res, { app: 'sales-analytics', instance: INSTANCE_NAME, instanceLabel: INSTANCE_LABEL, startedAt: STARTED_AT, time: nowIso() })
+})
+
 /** /api/* 统一鉴权（注册在所有路由之前）：除登录接口外都必须带工作台会话 */
-const AUTH_OPEN = ['/auth/login']
+const AUTH_OPEN = ['/auth/login', '/health']
 app.use('/api', (req, res, next) => {
   if (AUTH_OPEN.includes(req.path)) return next()
   const actor = actorOf(req)
@@ -336,7 +388,7 @@ app.get('/api/meta/bootstrap', (_req, res) => {
   // 采购人员按小组（部门/组别）分组，供录入时逐级筛选
   const purchaserTeams = people.filter((p) => ['采购部', '销售支持组'].includes(p.department))
     .map((p) => ({ name: p.name, team: p.team_name || p.department }))
-  ok(res, { sales, purchasers, purchaserTeams, sources: getSources(), methods: getFollowMethods(), lostReasons: getLostReasons(), winReasons: getWinReasons(), countries: getCountries(), currencies: currencyCodes(), fx: fxRates(), month: todayStr().slice(0, 7) })
+  ok(res, { sales, purchasers, purchaserTeams, sources: getSources(), methods: getFollowMethods(), lostReasons: getLostReasons(), winReasons: getWinReasons(), countries: getCountries(), currencies: currencyCodes(), fx: fxRates(), month: todayStr().slice(0, 7), instance: instancePublic() })
 })
 
 // ============================ 组织架构（对接工作台，保持同步） ============================
@@ -747,6 +799,42 @@ const accountView = (u: UserRow) => ({
   createdAt: u.created_at, updatedAt: u.updated_at,
 })
 /** 账号列表 + 统一初始密码状态 + 组织架构同事数量（可凭英文名 + 初始密码登录） */
+/** 系统信息：实例标识 / 数据库文件与数据量 / 备份情况（仅「全部数据」权限可见，用于随时确认本地与线上是两份数据） */
+app.get('/api/admin/system', (req, res) => {
+  if (!requireAll(req, res)) return
+  const st = (() => { try { return statSync(DB_ABS) } catch { return null } })()
+  const cnt = (sql: string) => { try { return Number((getDb().prepare(sql).get() as { n: number }).n) } catch { return -1 } }
+  const backupDir = process.env.BACKUP_DIR || path.join(path.dirname(DB_ABS), 'backup')
+  let backups: { name: string; size: number; mtime: string }[] = []
+  try {
+    backups = readdirSync(backupDir)
+      .filter((f) => /^sales-analytics-.*\.db(\.gz|\.enc|\.gz\.enc)?$/.test(f))
+      .map((f) => { const b = statSync(path.join(backupDir, f)); return { name: f, size: b.size, mtime: b.mtime.toISOString() } })
+      .sort((a, b) => (a.name < b.name ? 1 : -1))
+  } catch { backups = [] }
+  let uploadFiles = 0
+  let uploadSize = 0
+  try {
+    for (const f of readdirSync(UPLOAD_DIR)) { uploadFiles += 1; try { uploadSize += statSync(path.join(UPLOAD_DIR, f)).size } catch { /* 忽略单个文件 */ } }
+  } catch { uploadFiles = 0 }
+  ok(res, {
+    instance: { ...instancePublic(), since: instanceSince, envLabel: INSTANCE_ENV, byPath: IS_PROD_DB_PATH, startedAt: STARTED_AT },
+    db: {
+      path: DB_ABS,
+      size: st?.size ?? 0,
+      mtime: st?.mtime.toISOString() ?? '',
+      counts: {
+        inquiries: cnt('SELECT COUNT(*) AS n FROM inquiries'),
+        orders: cnt('SELECT COUNT(*) AS n FROM orders'),
+        followups: cnt('SELECT COUNT(*) AS n FROM followups'),
+        users: cnt('SELECT COUNT(*) AS n FROM users'),
+        people: cnt('SELECT COUNT(*) AS n FROM people'),
+      },
+    },
+    backups: { dir: backupDir, keep: Number(process.env.BACKUP_KEEP ?? 14), count: backups.length, latest: backups[0] ?? null, items: backups.slice(0, 5) },
+    uploads: { dir: UPLOAD_DIR, files: uploadFiles, size: uploadSize },
+  })
+})
 app.get('/api/admin/accounts', (req, res) => {
   if (!requireAll(req, res)) return
   const d = getDb()
@@ -1940,7 +2028,7 @@ app.put('/api/inquiries/:id', (req, res) => {
 // 询报价不允许删除（如需作废请在编辑中处理；成交以订单为准）
 app.delete('/api/inquiries/:id', (_req, res) => fail(res, '询报价不允许删除', 403))
 
-schema(); ensurePeople(); backfillProducts(); syncWonFlags(); seedUsersFromEnv(); bootstrapLocalAdmin()
+schema(); assertInstanceIdentity(); ensurePeople(); backfillProducts(); syncWonFlags(); seedUsersFromEnv(); bootstrapLocalAdmin()
 // 注：历史成交迁移 migrateWonToOrders() 已不再随启动自动执行（避免废弃列 is_won 反向物化订单）；
 // 如需迁移旧库，可手动调用一次。
 cleanupOrphans()
@@ -1974,7 +2062,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 const BASE_PATH = String(process.env.BASE_PATH ?? '').replace(/\/+$/, '')
 const PORT = Number(process.env.PORT ?? 3218)
 const server = app.listen(PORT, process.env.HOST ?? '127.0.0.1', () => {
-  console.log(`[sales-analytics v3] http://127.0.0.1:${PORT}/api/meta/bootstrap`)
+  console.log(`[sales-analytics v3] [${INSTANCE_LABEL}] http://127.0.0.1:${PORT}/api/meta/bootstrap（数据库：${DB_ABS}）`)
   // 启动后台把工作台组织架构同步一次（保持同步更新）；失败不影响服务，仅记日志
   if (WORKBENCH_TOKEN) {
     setTimeout(() => {

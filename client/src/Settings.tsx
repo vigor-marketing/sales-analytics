@@ -2,12 +2,13 @@ import { useState } from 'react'
 import Accounts from './Accounts'
 import OrgSettings from './OrgSettings'
 import SettingsView from './SettingsView'
+import SystemInfo from './SystemInfo'
 
 /** 设置：组织架构（对接工作台）＋ 字段与选项（币种、来源、原因、跟进方式等） */
 export default function Settings() {
-  type Tab = 'org' | 'accounts' | 'fields'
+  type Tab = 'org' | 'accounts' | 'fields' | 'sys'
   const saved = (localStorage.getItem('sa:setTab') ?? '') as Tab
-  const [tab, setTab] = useState<Tab>(() => (['org', 'accounts', 'fields'].includes(saved) ? saved : 'org'))
+  const [tab, setTab] = useState<Tab>(() => (['org', 'accounts', 'fields', 'sys'].includes(saved) ? saved : 'org'))
   const go = (t: Tab) => { setTab(t); try { localStorage.setItem('sa:setTab', t) } catch { /* */ } }
   return (
     <div className="page-fit scroll">
@@ -21,13 +22,15 @@ export default function Settings() {
             <button className={tab === 'org' ? 'on' : ''} onClick={() => go('org')}>组织架构</button>
             <button className={tab === 'accounts' ? 'on' : ''} onClick={() => go('accounts')}>账号与权限</button>
             <button className={tab === 'fields' ? 'on' : ''} onClick={() => go('fields')}>字段与选项</button>
+            <button className={tab === 'sys' ? 'on' : ''} onClick={() => go('sys')}>系统信息</button>
           </div>
-          <span className="ana-note hint">{tab === 'org' ? '部门 / 小组 / 人员，来自工作台并可全量同步到本系统' : tab === 'accounts' ? '登录账号、密码与数据范围（仅全部数据权限可见）' : '来源、成交原因、丢单原因、跟进方式、国别、币种（含汇率）'}</span>
+          <span className="ana-note hint">{tab === 'org' ? '部门 / 小组 / 人员，来自工作台并可全量同步到本系统' : tab === 'accounts' ? '登录账号、密码与数据范围（仅全部数据权限可见）' : tab === 'fields' ? '来源、成交原因、丢单原因、跟进方式、国别、币种（含汇率）' : '当前实例（本地/线上）、数据库文件、数据量、自动备份状态'}</span>
         </div>
       </section>
       {tab === 'org' && <OrgSettings />}
       {tab === 'accounts' && <Accounts />}
       {tab === 'fields' && <SettingsView />}
+      {tab === 'sys' && <SystemInfo />}
     </div>
   )
 }

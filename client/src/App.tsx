@@ -21,8 +21,11 @@ const emptyRow = (): ItemD => ({ productName: '', qty: '', amount: '', currency:
 const CURRENCIES = ['USD', 'CNY', 'EUR']   // 兜底顺序；实际以后端配置的币种清单为准
 const money = (n: number) => n.toLocaleString('zh-CN', { maximumFractionDigits: 2 })
 
-interface Bootstrap { currencies?: string[]; sales: { name: string; team: string }[]; purchasers: string[]; purchaserTeams?: { name: string; team: string }[]; sources: string[]; methods?: string[]; lostReasons?: string[]; winReasons?: string[]; countries: string[]; fx: Record<string, number>; month: string }
+interface Bootstrap { currencies?: string[]; sales: { name: string; team: string }[]; purchasers: string[]; purchaserTeams?: { name: string; team: string }[]; sources: string[]; methods?: string[]; lostReasons?: string[]; winReasons?: string[]; countries: string[]; fx: Record<string, number>; month: string; instance?: SaInstance }
 interface Saved { id: string; inquiryNo: string }
+/** 实例标识：本地开发 / 线上生产（防止看错数据的那份库） */
+interface SaInstance { name: string; label: string; id: string }
+const INSTANCE_TIP: Record<string, string> = { production: '这是线上生产数据（同事日常使用的正式数据）', local: '这是本地开发数据（只在本机测试用，与线上互不影响）' }
 const DEFAULTS: Bootstrap = {
   sales: [['Joey', '销售一组'], ['Vera', '销售一组'], ['Yolanda', '销售二组'], ['Jerric', '销售二组'], ['Loria', '销售三组']].map(([name, team]) => ({ name, team })),
   purchasers: ['Rita', 'Sunny'],
@@ -58,9 +61,9 @@ function initialPage(): PageKey {
   return 'entry'
 }
 const TITLES: Record<PageKey, string> = { dashboard: '仪表盘', entry: '询报价录入', manage: '询报价管理', followups: '询报价跟进', contracts: '销售订单管理', contractsAnalysis: '销售订单分析', customers: '客户档案', products: '产品档案', settings: '设置' }
-function Shell({ page, onNav, children, headRight, actor, onLogout }: {
+function Shell({ page, onNav, children, headRight, actor, onLogout, instance }: {
   page: PageKey; onNav: (p: PageKey) => void; children: React.ReactNode; headRight?: React.ReactNode
-  actor?: SaActor | null; onLogout?: () => void
+  actor?: SaActor | null; onLogout?: () => void; instance?: SaInstance | null
 }) {
   const nav = actor ? NAV.filter((n) => n.key !== 'settings' || actor.scope === 'all') : NAV
   return (
@@ -93,11 +96,19 @@ function Shell({ page, onNav, children, headRight, actor, onLogout }: {
             <button className="btn xs" style={{ marginTop: 6 }} onClick={onLogout}>退出登录</button>
           </div>
         )}
-        <div className="sa-foot">v{__BUILD_ID__}</div>
+        <div className="sa-foot">
+          {instance && <span className={'badge ' + (instance.name === 'production' ? 'prod' : 'local')} title={`${INSTANCE_TIP[instance.name] ?? instance.label} · 实例ID ${instance.id || '—'}`}>{instance.label}</span>}
+          {' '}v{__BUILD_ID__}
+        </div>
       </aside>
       <main className="sa-main">
         <div className="sa-page-head">
           <h1>{TITLES[page]}</h1>
+          {instance && (
+            <span className={'badge ' + (instance.name === 'production' ? 'prod' : 'local')} title={`${INSTANCE_TIP[instance.name] ?? instance.label} · 实例ID ${instance.id || '—'}`}>
+              {instance.label}
+            </span>
+          )}
           <span className="badge new" title="页面构建版本">v{__BUILD_ID__}</span>
           <span style={{ flex: 1 }} />
           {headRight}
@@ -333,7 +344,7 @@ export default function App() {
   if (!actor) return <Login onDone={(a) => { setActor(a); setCurrentActor(a); setAuthReady(true) }} />
 
   if (page !== 'entry') return (
-    <Shell page={page} onNav={navTo} actor={actor} onLogout={logout}>
+    <Shell page={page} onNav={navTo} actor={actor} onLogout={logout} instance={meta.instance}>
       {page === 'manage' && <InquiryManager meta={meta} onGoFollow={(t) => { setFollowTarget({ ...t, openForm: true }); navTo('followups') }} />}
       {page === 'dashboard' && <Dashboard people={meta.sales.map((x) => x.name)} onGoFollow={(t) => { setFollowTarget(t); navTo('followups') }} />}
       {page === 'followups' && (
@@ -347,7 +358,7 @@ export default function App() {
     </Shell>
   )
   return (
-    <Shell page={page} onNav={navTo} actor={actor} onLogout={logout}>
+    <Shell page={page} onNav={navTo} actor={actor} onLogout={logout} instance={meta.instance}>
       {msg && <div className={`msg ${msg.t}`} role="status">{msg.t === 'ok' ? '✔' : '✖'} {msg.text}</div>}
 
       {/* 基本信息（含归属与来源） */}
