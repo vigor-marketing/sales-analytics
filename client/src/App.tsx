@@ -4,6 +4,7 @@ import { StatusChip } from './StatusChip'
 import ProductPicker, { type ProductLite } from './ProductPicker'
 import Dashboard from './Dashboard'
 import { COUNTRIES } from './countries'
+import { initMobileTables } from './mobileTables'
 import { ArticleIcon, CartIcon, ChartBarIcon, ChartColumnIcon, ChatBubbleHistoryIcon, DashboardIcon, EditIcon, SettingIcon, UserIcon } from 'tdesign-icons-react'
 import CustomerArchive from './CustomerArchive'
 import ProductArchive from './ProductArchive'
@@ -142,6 +143,8 @@ function Shell({ page, onNav, children, headRight, actor, onLogout, instance }: 
   )
 }
 export default function App() {
+  // 手机端：把宽表格自动转成「标签 + 值」卡片，保证每个字段都完整可见（见 mobileTables.ts）
+  useEffect(() => initMobileTables(), [])
   const [actor, setActor] = useState<SaActor | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [meta, setMeta] = useState<Bootstrap>(DEFAULTS)

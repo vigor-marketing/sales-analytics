@@ -770,3 +770,58 @@ table.grid > tbody > tr > td.cell-tags .tag { margin: 0 2px; display: inline-blo
   /* 兜底：任何「内联 flex 行」里的下拉都不要再撑满整行 */
   .col > div[style*="display: flex"] > select.sa, .row > div[style*="display: flex"] > select.sa { width: auto !important; max-width: 46% }
 }
+
+/* ===================== 手机端表格：自动卡片化（标签 + 值，数据不再截断） =====================
+   mobileTables.ts 按表头把列名写到每个单元格的 data-label 上，这里据此把每行渲染成一张卡片：
+   所有字段完整显示、可换行，不需要横向滚动，也不再有看不到内容的省略号。 */
+@media (max-width: 760px) {
+  table.grid[data-cards] {
+    display: block; width: 100% !important; min-width: 0 !important; max-width: 100%;
+    table-layout: auto !important; border-collapse: separate !important; border-spacing: 0 !important; background: transparent;
+  }
+  table.grid[data-cards] > thead { display: none }
+  table.grid[data-cards] > tbody { display: block }
+  table.grid[data-cards] > tbody > tr {
+    display: block; height: auto !important; margin: 0 0 7px; padding: 7px 10px;
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 1px 2px rgba(16,32,64,.04);
+  }
+  table.grid[data-cards] > tbody > tr > td {
+    display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; row-gap: 3px;
+    width: auto !important; height: auto !important; min-height: 0 !important; box-sizing: border-box;
+    padding: 3px 0 !important; border: 0 !important; border-bottom: 1px dashed #f2f5f9 !important;
+    white-space: normal !important; overflow: visible !important; text-overflow: clip !important;
+    text-align: left !important; font-size: 12.8px !important; line-height: 1.45; overflow-wrap: anywhere;
+  }
+  table.grid[data-cards] > tbody > tr > td:last-child { border-bottom: 0 !important }
+  /* 列名（标签）：固定一列，值从同一位置开始，长标签自动换行 */
+  table.grid[data-cards] > tbody > tr > td[data-label]::before {
+    content: attr(data-label); flex: 0 0 5.6em; color: var(--sub); font-size: 12px !important; font-weight: 600; line-height: 1.6;
+  }
+  /* 单元格里的说明性块（如「≈USD … 自动合计 …」「丢单原因：…」）独占一行 */
+  table.grid[data-cards] > tbody > tr > td > div, table.grid[data-cards] > tbody > tr > td > .hint { flex: 1 1 100%; margin: 0 !important; white-space: normal !important }
+  /* 第一列作为卡片标题 */
+  table.grid[data-cards] > tbody > tr > td:first-child { font-weight: 700; font-size: 13.5px !important }
+  /* 空状态 / 合计行（colspan）：整行居中，不加标签 */
+  table.grid[data-cards] > tbody > tr > td[colspan] { justify-content: center; text-align: center !important; border-bottom: 0 !important }
+  /* 操作列：按钮换行排列，手指好点 */
+  table.grid[data-cards] > tbody > tr > td:has(.btn), table.grid[data-cards] > tbody > tr > td:has(.act-btn) { row-gap: 6px; align-items: stretch }
+  table.grid[data-cards] > tbody > tr > td .btn, table.grid[data-cards] > tbody > tr > td .act-btn {
+    flex: 1 1 28%; min-width: 74px; min-height: 34px; display: inline-flex; align-items: center; justify-content: center;
+    padding: 6px 8px; font-size: 12.5px;
+  }
+  table.grid[data-cards] > tbody > tr > td .icon-del { min-width: 34px; min-height: 34px }
+
+  /* 手机端卡片已经完整展示，外层不再需要横向滚动 */
+  .tablewrap:has(> table.grid[data-cards]) { overflow-x: visible !important }
+
+  /* 跟进详情里的键值表（table.proj-table）：一行一个字段，标签在上、值在下，避免标签被压成省略号 */
+  .proj-table { display: block; width: 100% }
+  .proj-table tbody, .proj-table tr { display: block }
+  .proj-table tr { margin-bottom: 6px }
+  .proj-table th, .proj-table td {
+    display: block; width: auto !important; white-space: normal !important;
+    overflow: visible !important; text-overflow: clip !important; padding: 3px 0 !important;
+  }
+  .proj-table th { background: transparent !important; color: var(--sub); font-size: 12px !important; border-bottom: 0 }
+  .proj-table td { border-bottom: 1px dashed #f0f3f8 }
+}
