@@ -44,7 +44,7 @@ export default function Login({ onDone }: { onDone: (a: SaActor) => void }) {
           </div>
           {err && <div className="msg err">{err}</div>}
           <button className="btn pri" disabled={busy} onClick={() => void submit()}>{busy ? '登录中…' : '登录'}</button>
-          <div className="hint">数据范围：总经理 / 分管销售副总 → 全部数据；销售经理 / 部门负责人 → 本组数据；销售员 → 只看自己的（组长只看不改别人的）。</div>
+          <div className="hint">数据范围：总经理 / 副总经理 → 全部数据；主管 → 本组或本部门（只看不改别人的）；普通成员 → 只看自己的。</div>
           <div className="hint" style={{ borderTop: '1px dashed var(--line)', paddingTop: 8 }}>
             账号＝组织架构里的英文名（如 vera、joseph、erica），初始密码由管理员统一发放；忘记密码请联系管理员。后续与工作台合并单点登录后会改为免密登录。
           </div>

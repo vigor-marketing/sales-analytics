@@ -240,7 +240,7 @@ export default function App() {
 
   /**
    * 登录后自动带入账号信息，并**与登录账号保持一致**：
-   *   · 组长 / 普通成员（本组、只看自己）：销售小组 = 本人所属小组，销售人员 = 本人，锁定不可改（与登录名一致）；
+   *   · 主管 / 普通成员（本组、只看自己）：销售小组 = 本人所属小组，销售人员 = 本人，锁定不可改（与登录名一致）；
    *   · 采购 / 支持账号：采购小组 = 本人所属小组，采购人员 = 本人，同样锁定；
    *   · 总经理 / 副总经理 / 管理员（全部数据）：不锁定，可代他人录入（若本人也在销售名单里则默认带出本人）。
    */
@@ -420,7 +420,7 @@ export default function App() {
           <StatusChip status="following" />
           <span className="hint">新录入自动「跟进中」；生成订单后变「已成单」；丢单请在「询报价管理 → 编辑」标记并填原因</span>
           {actor && actor.scope !== 'all' && (
-            <span className="badge" title="按你的账号与职位自动判定：组长看本组、成员只看自己">你的范围：{SCOPE_LABEL[actor.scope]}（录入自动归属 {actor.name}，销售已锁定）</span>
+            <span className="badge" title="按你的账号与职位自动判定：主管看本组 / 本部门、普通成员只看自己">你的范围：{SCOPE_LABEL[actor.scope]}（录入自动归属 {actor.name}，销售已锁定）</span>
           )}
           {actor && actor.scope !== 'all' && (
             <span className="hint">

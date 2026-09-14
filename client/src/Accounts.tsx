@@ -44,7 +44,7 @@ const presetKeyOf = (roleLabel: string): string => {
   if (/经理|主管|负责人|组长|总监/.test(roleLabel)) return 'head'
   return 'staff'
 }
-const EMPTY_ADD = { dept: '', team: '', person: '', presetKey: 'staff', password: '' }
+const EMPTY_ADD = { dept: '', team: '', person: '', presetKey: 'staff' }
 
 /** 设置 · 账号与权限：账号必须从组织架构里选人，再按职位定数据范围 */
 export default function Accounts() {
@@ -95,7 +95,8 @@ export default function Accounts() {
     const per = personGroups.flatMap((t) => t.persons).find((p) => p.name === name)
     setAdd((s) => ({ ...s, person: name, presetKey: per ? presetKeyOf(per.roleLabel) : s.presetKey }))
   }
-  const addBlocked = !addPerson || addPerson.hasAccount || add.password.length < 6
+  const defaultPw = data?.defaultPassword ?? ''
+  const addBlocked = !addPerson || addPerson.hasAccount || defaultPw.length < 6
     || (!!addPreset?.needDept && !add.dept) || (!!addPreset?.needTeam && !add.team)
 
   return (
@@ -162,24 +163,24 @@ export default function Accounts() {
               {presets.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
             </select>
           </div>
-          <div className="col w1"><label>初始密码 *</label>
-            <input className="sa" value={add.password} placeholder="至少 6 位" onChange={(e) => setAdd({ ...add, password: e.target.value })} /></div>
           <button className="btn pri" disabled={busy || addBlocked}
             onClick={() => void run(async () => {
               await post('/admin/accounts', {
-                orgName: add.person, password: add.password,
+                orgName: add.person,
                 scope: addPreset?.scope ?? 'self', roleLabel: addPreset?.roleLabel ?? '普通成员',
                 department: addPreset?.needDept ? add.dept : '', team: (addPreset?.needTeam || addPreset?.teamOptional) ? add.team : '',
               })
               setAdd({ ...EMPTY_ADD })
-            }, `已为「${add.person}」新建账号（登录名 ${loginName}）`)}>新增账号</button>
+            }, `已为「${add.person}」新建账号（登录名 ${loginName}，初始密码＝统一初始密码）`)}>新增账号</button>
         </div>
         <div className="hint" style={{ marginTop: 6 }}>
           {addPerson
-            ? <>登录名：<b className="mono">{loginName}</b>（由组织架构里的姓名生成，小写）· 显示名：<b>{addPerson.name}</b> ·
+            ? <>登录名：<b className="mono">{loginName}</b>（由组织架构里的姓名生成，小写）· 初始密码：<b className="mono">{defaultPw || '未设置'}</b>（统一初始密码，同事登录后可自行修改）· 显示名：<b>{addPerson.name}</b> ·
                 组织角色：{addPerson.roleLabel} · 可见范围：<b>{visibleText({ scope: addPreset?.scope ?? 'self', department: add.dept, team: showTeamPick ? add.team : '' }, teams)}</b>
-                {addPreset?.needDept ? '（主管/组长可看全组数据，但只能修改自己名下的记录）' : ''}</>
-            : '先在组织架构里选到人；组织架构数据来自工作台，可在「组织架构」页同步最新。'}
+                {addPreset?.needDept ? '（主管可看本组 / 本部门数据，但只能修改自己名下的记录）' : ''}</>
+            : defaultPw.length < 6
+              ? '先在下面的「统一初始密码」里设置初始密码（至少 6 位），新账号会统一使用它。'
+              : '先在组织架构里选到人；组织架构数据来自工作台，可在「组织架构」页同步最新。'}
         </div>
 
         <div className="tablewrap" style={{ marginTop: 10 }}>

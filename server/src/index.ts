@@ -532,7 +532,7 @@ app.get('/api/org/local', (_req, res) => ok(res, { base: WORKBENCH_BASE, tokenCo
 /**
  * 登录：本系统自带的简单登录入口（账号写在 server/.env 的 LOCAL_LOGIN_USERS，登录接口不再调用工作台）。
  * 数据范围（读）：总经理/副总/管理员＝全部；部门负责人或经理＝本组；其他人＝自己。
- * 写入范围：只有「全部」权限可以改别人的；组长能看到本组，但只能改自己的（需求：组长只看不改别人的）。
+ * 写入范围：只有「全部」权限可以改别人的；主管能看到本组 / 本部门，但只能改自己的（需求：只看不改别人的）。
  */
 type SaScope = 'all' | 'team' | 'self'
 interface SaActor {
@@ -591,7 +591,7 @@ function actorOf(req: express.Request): SaActor | null {
 /**
  * 数据可见范围（读）：
  *   · 全部数据（scope=all）：总经理 / 副总经理 / 管理员 —— 所有组、所有人的数据
- *   · 本部门 / 本组（scope=team）：部门主管看本部门全部小组；组长看本小组全部成员；
+ *   · 本部门 / 本组（scope=team）：主管看本组全部成员；不选小组时看整个部门；
  *     采购侧主管看本组采购人员参与的全部询价（按询价的「采购人员」字段）
  *   · 只看自己（scope=self）：普通成员
  * 写入范围：一律只写自己名下的记录（主管可以看全组，但不改别人的）。
@@ -649,6 +649,8 @@ const defaultLoginPassword = (): string => {
   const d = getDb().prepare("SELECT v FROM settings WHERE k = 'loginDefaultPassword'").get() as { v: string } | undefined
   return d ? String(d.v) : String(process.env.LOGIN_DEFAULT_PASSWORD ?? '')   // 页面保存过就以页面为准（空串＝关闭）
 }
+/** 新建账号实际使用的初始密码：设置页的值优先，其次 .env；页面显示与建号都用它，保证两边一致 */
+const effectiveDefaultPassword = (): string => defaultLoginPassword() || String(process.env.LOGIN_DEFAULT_PASSWORD ?? '')
 /** 账号行 → 登录人 */
 function actorOfUser(u: UserRow): SaActor {
   const department = String(u.department ?? '').trim()
@@ -936,7 +938,7 @@ app.get('/api/admin/accounts', (req, res) => {
       { key: 'head', label: '主管', roleLabel: '主管', scope: 'team', needDept: true, needTeam: false, teamOptional: true, desc: '本组 / 本部门全部数据：选到小组＝该小组全体，不选小组＝整个部门（只看不改别人的）' },
       { key: 'staff', label: '普通成员', roleLabel: '普通成员', scope: 'self', needDept: true, needTeam: false, desc: '只看自己录入 / 参与的数据' },
     ],
-    defaultPassword: defaultLoginPassword(),
+    defaultPassword: effectiveDefaultPassword(),
     defaultPasswordFromEnv: !getDb().prepare("SELECT 1 FROM settings WHERE k = 'loginDefaultPassword'").get(),
     orgPeopleCount: Number(people?.n ?? 0),
     scopeHelp: { all: '全部数据（所有组 / 所有人）', team: '本组 / 本部门全部数据', self: '只看自己' },
@@ -947,7 +949,8 @@ app.post('/api/admin/accounts', (req, res) => {
   const d = getDb()
   // 账号必须来自组织架构：前端传 orgName（组织架构里的姓名），账号名由姓名派生
   const orgName = str(req.body?.orgName).trim() || str(req.body?.username).trim()
-  const password = str(req.body?.password)
+  // 新建账号统一用「统一初始密码」（设置页可改），只有显式传了密码才用传来的
+  const password = str(req.body?.password) || effectiveDefaultPassword()
   const person = d.prepare('SELECT name, department, team_name, role, role_label, is_head FROM people WHERE name = ? COLLATE NOCASE').get(orgName) as
     { name: string; department: string; team_name: string; role: string; role_label: string | null; is_head: number } | undefined
   if (!person) return fail(res, orgName ? `组织架构里没有「${orgName}」：账号必须从组织架构里选人（可先到「组织架构」同步工作台）` : '请从组织架构里选择人员（账号必须来自组织架构）')
@@ -960,7 +963,7 @@ app.post('/api/admin/accounts', (req, res) => {
   const team = req.body?.team === undefined ? (person.team_name || null) : (str(req.body?.team).trim() || null)
   const department = req.body?.department === undefined ? (person.department || null) : (str(req.body?.department).trim() || null)
   const roleLabel = str(req.body?.roleLabel).trim() || String(person.role_label ?? '') || null
-  if (password.length < 6) return fail(res, '密码至少 6 位')
+  if (password.length < 6) return fail(res, '请先在设置里配置「统一初始密码」（至少 6 位），新建账号会统一使用它')
   const dup = d.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(username)
   if (dup) return fail(res, `「${person.name}」已经有账号了（${username}），可在下面列表里改密码或调整职位`)
   if (department && !d.prepare('SELECT 1 FROM people WHERE department = ?').get(department)) return fail(res, `组织架构里没有部门「${department}」`)
