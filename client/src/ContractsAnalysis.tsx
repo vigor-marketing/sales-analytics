@@ -303,7 +303,8 @@ function Kpi({ label, value, tone, note }: { label: string; value: string; tone?
 /** 金额趋势：平滑折线 + 刻度网格 + 数据点标注 + 悬浮提示 */
 function TrendChart({ data }: { data: { key: string; label: string; usd: number; n: number }[] }) {
   const wrap = useRef<HTMLDivElement>(null)
-  const [w, setW] = useState(760)
+  // 初始宽度必须小：之前默认 760 会让所在卡片的最小宽度变成 760+，手机上就出现横向拖动
+  const [w, setW] = useState(300)
   const [hover, setHover] = useState<number | null>(null)
   useEffect(() => {
     const el = wrap.current
@@ -333,7 +334,7 @@ function TrendChart({ data }: { data: { key: string; label: string; usd: number;
   const hv = hover != null ? data[hover] : null
   return (
     <div ref={wrap} className="trend-wrap">
-      <svg width={w} height={H} style={{ display: 'block' }} role="img" aria-label="订单金额趋势">
+      <svg width={w} height={H} viewBox={`0 0 ${w} ${H}`} preserveAspectRatio="none" style={{ display: 'block', maxWidth: '100%' }} role="img" aria-label="订单金额趋势">
         <defs>
           <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#0052d9" stopOpacity="0.16" />
