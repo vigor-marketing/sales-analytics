@@ -8,6 +8,7 @@ KEY=${KEY:-/Users/monk/Downloads/cbs069791292101.pem}
 REMOTE=/opt/sales-analytics
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STAGE=$(mktemp -d)
+TARBALL=$(mktemp -d)/app.tgz
 
 echo "== 1/6 构建前端（base=/sales/） =="
 ( cd "$ROOT/client" && VITE_BASE=/sales/ "$ROOT/node_modules/.bin/vite" build --outDir "$STAGE/client/dist" --emptyOutDir )
@@ -17,10 +18,10 @@ mkdir -p "$STAGE/server"
 cp -R "$ROOT/server/src" "$STAGE/server/"
 cp "$ROOT/server/package.json" "$ROOT/server/tsconfig.json" "$STAGE/server/"
 [ -f "$ROOT/server/.env" ] && cp "$ROOT/server/.env" "$STAGE/server/.env"
-tar czf "$STAGE/app.tgz" -C "$STAGE" .
+tar czf "$TARBALL" -C "$STAGE" .   # 打包到 STAGE 之外，避免把压缩包自己打进去
 
 echo "== 3/6 上传 =="
-scp -q -i "$KEY" "$STAGE/app.tgz" "$HOST:/tmp/app.tgz"
+scp -q -i "$KEY" "$TARBALL" "$HOST:/tmp/app.tgz"
 
 echo "== 4/6 解包（保留服务器上的 data/ 数据库与 .env） =="
 ssh -i "$KEY" "$HOST" "cd $REMOTE && tar xzf /tmp/app.tgz --exclude='./server/data' --exclude='./server/.env' && chmod 600 server/.env 2>/dev/null || true"

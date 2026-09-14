@@ -82,7 +82,7 @@ function Shell({ page, onNav, children, headRight, actor, onLogout }: {
           ))}
         </nav>
         {actor && (
-          <div style={{ marginTop: 'auto', padding: '10px 12px', borderTop: '1px solid #eef0f5' }}>
+          <div className="sa-user" style={{ marginTop: 'auto', padding: '10px 12px', borderTop: '1px solid #eef0f5' }}>
             <div style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${actor.cnName ? `${actor.cnName} / ` : ''}${actor.name} · ${actor.department}${actor.team ? ` / ${actor.team}` : ''} · ${actor.roleLabel || actor.role} · ${SCOPE_LABEL[actor.scope]}`}>
               {actor.name}
               <span className="hint" style={{ marginLeft: 4 }}>{SCOPE_LABEL[actor.scope]}</span>

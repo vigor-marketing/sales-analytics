@@ -612,3 +612,69 @@ table.grid > tbody > tr > td.cell-tags .tag { margin: 0 2px; display: inline-blo
 
 /* 组内对比：每组卡片右侧徽标（人数·单数·金额） */
 .team-badge { display: inline-block; color: #fff; font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 3px 10px; white-space: nowrap }
+
+/* ===================== 移动端适配（手机 / 窄屏） =====================
+   注意：必须放在文件末尾 —— 前面的 @media(max-width:1100px) 等规则因为
+   后面的基础规则（如 .dash-grid 的 minmax(620px,1fr)）覆盖而失效。 */
+@media (max-width: 980px) {
+  .dash-grid { grid-template-columns: 1fr !important; }
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .ana-page .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+@media (max-width: 760px) {
+  /* —— 顶部导航：横向滚动、紧凑、可点 —— */
+  .sa-sider { position: sticky; top: 0; z-index: 30; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .sa-brand { padding: 8px 10px; }
+  .sa-logo { width: 30px; height: 30px; font-size: 15px; }
+  .sa-menu { padding: 4px 6px; gap: 2px; }
+  .sa-item { width: auto; margin: 0; padding: 0 9px; height: 40px; font-size: 12.5px; border-radius: 8px; }
+  .sa-item .sa-ic svg { width: 16px; height: 16px; }
+  .sa-item > span:last-child { white-space: nowrap; }
+  .sa-user { margin: 0 !important; padding: 4px 8px !important; border-top: 0 !important; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+  .sa-user > div:nth-child(2) { display: none; }
+  .sa-user .btn { margin-top: 0 !important; padding: 4px 8px; font-size: 11.5px; }
+  .sa-main { padding: 10px 10px 48px; }
+  .sa-page-head { margin-bottom: 10px; gap: 6px; }
+  .sa-page-head h1 { font-size: 17px; }
+
+  /* —— 表单：整行铺满，取消固定像素宽 —— */
+  .row { flex-wrap: wrap; row-gap: 8px; }
+  .row > .col, .row > .col.w1, .row > .col.w2, .row > .col.w-idx, .row > .col.grow1 {
+    flex: 1 1 100%; min-width: 0; max-width: none; width: auto;
+  }
+  .col input.sa, .col select.sa, .col textarea.sa { width: 100% !important; }
+  .col.w1 input, .col.w1 select, .col.w2 input, .col.w2 select { width: 100% !important; }
+  input.sa, select.sa { height: 38px; font-size: 14px; }
+
+  /* —— 询价明细行：产品名整行，数量/单价/币种/小计 两列 —— */
+  .item-row { flex-wrap: wrap; align-items: flex-start; padding: 10px; }
+  .item-row .col.grow1 { flex: 1 1 100% !important; max-width: none !important; }
+  .item-row .col.w1 { flex: 1 1 calc(50% - 5px) !important; min-width: 0; }
+  .item-row .w-idx { flex: 0 0 40px; }
+  .item-row .row-act { position: absolute; right: 8px; top: 8px; }
+  .idx-cell { height: 38px; }
+
+  /* —— 表格：横向滚动更顺滑，字号略小；保留列不裁切 —— */
+  .tablewrap { -webkit-overflow-scrolling: touch; }
+  .data-table th, .data-table td { font-size: 12px !important; }
+  .panel-head { row-gap: 4px; }
+  .panel-head .sa { min-width: 0; }
+  .hint { font-size: 11.5px; }
+
+  /* —— 按钮 / 分段 / 标签：允许多行、点击区域够大 —— */
+  .btn { padding: 8px 12px; font-size: 13px; }
+  .btn.sm, .btn.xs { padding: 6px 10px; }
+  .act-group { flex-wrap: wrap; row-gap: 4px; }
+  .ana-tabs { flex-wrap: wrap; row-gap: 6px; }
+  .ana-tabs button { padding: 6px 12px; }
+  .rem-tabs { flex-wrap: wrap; }
+  .totals { row-gap: 6px; }
+  .grid-eq2, .grid-eq3, .grid-eq4, .two-col, .grid-2 { grid-template-columns: 1fr !important; }
+  .opt-grid { grid-template-columns: 1fr !important; }
+
+  /* —— 弹窗：几乎满宽、可滚动、按钮不挤 —— */
+  .modal { width: min(96vw, 100%) !important; max-height: 92vh !important; border-radius: 12px; }
+  .modal-foot { flex-wrap: wrap; row-gap: 8px; }
+  .modal-mask { padding: 12px 10px; align-items: flex-start; }
+  .tablewrap.h180, .tablewrap.h240, .tablewrap.h300, .ana-page .tablewrap.tbl-fit { height: auto !important; min-height: 150px; max-height: 60vh; }
+}
