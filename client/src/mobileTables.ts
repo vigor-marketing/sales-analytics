@@ -57,17 +57,68 @@ export function stampMobileTables(root: ParentNode = document): number {
  */
 export function initMobileTables(): () => void {
   let raf = 0
-  const run = () => { raf = 0; stampMobileTables(document) }
+  const run = () => { raf = 0; stampMobileTables(document); clampHints(document) }
   const schedule = () => { if (!raf) raf = window.requestAnimationFrame(run) }
   schedule()
   const mo = new MutationObserver(schedule)
   mo.observe(document.body, { childList: true, subtree: true, characterData: true })
+  const unbind = bindHintToggle()
   const mq = window.matchMedia(MOBILE_QUERY)
   const onChange = () => schedule()
   mq.addEventListener?.('change', onChange)
   return () => {
     mo.disconnect()
+    unbind()
     mq.removeEventListener?.('change', onChange)
     if (raf) window.cancelAnimationFrame(raf)
   }
+}
+
+/* ===================== 手机端长提示折叠 =====================
+   手机上很多说明文字一次占 3~6 行，把表单挤得很长。这里把较长的 .hint 折成 2 行，
+   点一下即可展开全文（再点收起）。刻意「不插入任何 DOM 节点」——只用 CSS 伪元素显示
+   「展开/收起」，因此不会和 React 的渲染发生冲突。 */
+const HINT_MIN_CHARS = 40
+const HINT_MIN_LINES = 3
+
+function lineCount(el: HTMLElement): number {
+  const cs = getComputedStyle(el)
+  const lh = parseFloat(cs.lineHeight) || 16
+  return Math.max(1, Math.round(el.getBoundingClientRect().height / lh))
+}
+
+/** 卡片/表格里的 .hint 属于数据内容（如「≈USD 12,346」），不折叠；错误消息也不折叠 */
+function hintFoldable(el: HTMLElement): boolean {
+  if (el.classList.contains('hint-clamp')) return false
+  if (el.closest('.msg')) return false
+  if (el.closest('table.grid tbody')) return false
+  if (el.closest('.rem-empty')) return false
+  return (el.textContent || '').trim().length >= HINT_MIN_CHARS
+}
+
+function clampHints(root: ParentNode): void {
+  if (!isMobile()) return
+  root.querySelectorAll('.hint').forEach((node) => {
+    const el = node as HTMLElement
+    if (!hintFoldable(el)) return
+    if (lineCount(el) < HINT_MIN_LINES) return
+    el.classList.add('hint-clamp')
+    el.setAttribute('data-hint-toggle', '1')
+    el.setAttribute('role', 'button')
+    el.setAttribute('tabindex', '0')
+  })
+}
+
+/** 点击/回车切换展开状态（事件委托，只注册一次） */
+function bindHintToggle(): () => void {
+  const toggle = (e: Event) => {
+    const t = e.target as HTMLElement | null
+    const host = t?.closest?.('[data-hint-toggle]') as HTMLElement | null
+    if (!host) return
+    host.classList.toggle('hint-open')
+  }
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') toggle(e) }
+  document.addEventListener('click', toggle)
+  document.addEventListener('keydown', onKey)
+  return () => { document.removeEventListener('click', toggle); document.removeEventListener('keydown', onKey) }
 }

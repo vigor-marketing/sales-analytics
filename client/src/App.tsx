@@ -393,7 +393,7 @@ export default function App() {
         <div className="row" style={{ alignItems: 'center', gap: 10, marginBottom: 4 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>状态</span>
           <StatusChip status="following" />
-          <span className="hint">新录入的询价自动为「跟进中」；生成销售订单后自动变「已成单」，客户丢单时在「询报价管理 → 编辑」里标记「未成单」并填写原因</span>
+          <span className="hint">新录入自动「跟进中」；生成订单后变「已成单」；丢单请在「询报价管理 → 编辑」标记并填原因</span>
           {actor && actor.scope !== 'all' && (
             <span className="badge" title="按工作台岗位自动判定：销售经理看本组、销售员只看自己">你的范围：{SCOPE_LABEL[actor.scope]}（录入自动归属 {actor.name}，销售已锁定）</span>
           )}
@@ -590,8 +590,7 @@ export default function App() {
             </div>
           )}
           <div className="hint" style={{ display: 'block', marginTop: 6 }}>
-            每行「小计＝单价 × 数量」（数量留空按 1 计）；费用选填，留空按 0 计算，每项费用可各自选择币种，<b>非美元时按上面填写的实际汇率折算</b>（默认取「字段与选项设置 → 币种」里的汇率），结果以实际计算为准，并计入下面的「总报价（含费用）」。
-            每次修改费用（金额/币种/汇率）都会留一条<b>费用版本记录</b>，可在「询报价管理 → 查看 → 费用版本」里追溯。
+            小计＝单价 × 数量（数量留空按 1 计）；费用可留空，每项可各自选币种，<b>非美元按上面填的汇率折算</b>。费用每次改动都会留一条<b>费用版本记录</b>（「询报价管理 → 查看 → 费用版本」）。
           </div>
           <div className="totals" style={{ marginTop: 8 }}>
             <span className="badge new">总报价（含费用）：</span>
@@ -618,7 +617,7 @@ export default function App() {
               </div>
             </div>
           </div>
-          <div className="hint" style={{ display: 'block', marginTop: 4 }}>总报价（含费用）= 各行小计（单价×数量）合计 + 运费 + 税费 + 佣金 + 其他费用；总金额可另行手填最终/成交金额（右侧可选金额单位，默认 USD），与报价一致可留空。</div>
+          <div className="hint" style={{ display: 'block', marginTop: 4 }}>总报价＝明细小计＋运费/税费/佣金/其他费用；「总金额」可手填最终成交价（默认 USD），与报价一致可留空。</div>
         </div>
 
         <div style={{ marginTop: 12, borderTop: '1px dashed var(--line)', paddingTop: 10 }}>
@@ -635,7 +634,7 @@ export default function App() {
         <div className="actions" style={{ marginTop: 12 }}>
           <button className="btn pri" disabled={busy || !valid} onClick={() => void save(false)}>保存询价{busy ? '…' : ''}</button>
           <button className="btn" disabled={busy || !valid} onClick={() => void save(true)}>保存并继续录下一条</button>
-          {!valid && <span className="hint">请补齐必填项（询价号唯一 / 销售 / 客户 / 采购 / 来源 / 重点客户 / 重点项目 / ≥1行明细金额大于0）</span>}
+          {!valid && <span className="hint">请补齐必填项：询价号 / 销售 / 客户 / 采购 / 来源 / 标签 / 至少一行明细金额</span>}
         </div>
       </div>
     </Shell>

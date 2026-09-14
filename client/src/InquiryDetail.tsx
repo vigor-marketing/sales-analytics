@@ -234,7 +234,7 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <span style={{ fontWeight: 700 }}>跟进记录</span>
                 <span className="badge">{fuLoaded ? `${fus.length} 条` : '加载中…'}</span>
-                <span className="hint">来自「询报价跟进」页：按销售 + 询价号录入的记录会实时显示在这里；点「查看详情」看具体内容、图片、附件与跟进指导</span>
+                <span className="hint">来自「询报价跟进」页，按销售 + 询价号实时同步；点「查看详情」看内容、图片、附件与跟进指导</span>
               </div>
               {fus.length > 0 ? (
                 <div className="tablewrap" style={{ overflowX: 'auto', marginTop: 8 }}>

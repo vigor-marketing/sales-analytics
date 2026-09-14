@@ -43,7 +43,7 @@ export default function ProductArchive() {
     <div className="card">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0 }}>产品档案</h3>
-        <span className="hint">录入询价时填写的产品会自动沉淀到这里；再次录入若单价/数量发生变化，会记入该产品的「价格记录」</span>
+        <span className="hint">录入询价的产品会自动沉淀到这里；单价/数量变化会记入该产品的「价格记录」</span>
         <span style={{ flex: 1 }} />
         <input className="sa" style={{ width: 200 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索产品名称" />
         <button className="btn" onClick={() => void load()}>查询</button>

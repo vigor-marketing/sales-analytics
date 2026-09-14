@@ -352,7 +352,7 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                   </div>
                 </div>
               </div>
-              <div className="hint" style={{ display: 'block', marginTop: 4 }}>总报价（含费用）= 各行金额自动合计 ＋ 运费/税费/佣金/其他费用；总金额可另行手填最终/成交金额，与报价一致可留空。</div>
+              <div className="hint" style={{ display: 'block', marginTop: 4 }}>总报价＝明细合计＋运费/税费/佣金/其他费用；「总金额」可手填最终成交价，与报价一致可留空。</div>
             </div>
             <div className="row" style={{ alignItems: 'center', gap: 18 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sub)' }}>客户星级</span>

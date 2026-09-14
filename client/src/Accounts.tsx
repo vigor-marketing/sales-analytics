@@ -109,7 +109,7 @@ export default function Accounts() {
       <section className="opt-card" style={{ marginTop: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <b style={{ fontSize: 13.5 }}>最近登录记录</b>
-          <span className="hint">每次登录尝试都会留痕（含失败）；同一 IP 10 分钟内失败 8 次或同账号失败 5 次会被临时拒绝</span>
+          <span className="hint">每次登录（含失败）都会留痕；同 IP 10 分钟失败 8 次或同账号 5 次会被临时拒绝</span>
           <span style={{ flex: 1 }} />
           {audit && audit.failLast10Min > 0 && <span className="badge" style={{ background: '#fff4e5', color: '#a35c00' }}>近 10 分钟失败 {audit.failLast10Min} 次</span>}
           <button className="btn xs" onClick={() => void load()}>刷新</button>

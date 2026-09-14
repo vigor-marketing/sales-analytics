@@ -153,7 +153,7 @@ export default function SettingsView() {
           <button className="btn sm pri" disabled={!curAdd.code.trim() || !(Number(curAdd.rate) > 0)}
             onClick={() => { void curAct({ action: 'add', code: curAdd.code.trim(), rate: Number(curAdd.rate) }, `已添加币种：${curAdd.code.trim()}`); setCurAdd({ code: '', rate: '' }) }}>添加币种</button>
         </div>
-        <div className="hint" style={{ marginTop: 4 }}>汇率用于把各币种金额折算成 USD 汇总（如 CNY 7.12 表示 1 USD = 7.12 CNY）；改完立即生效，新增币种会出现在录入/管理/订单/产品档案的币种下拉里。</div>
+        <div className="hint" style={{ marginTop: 4 }}>汇率用于折算 USD 汇总（CNY 7.12 ＝ 1 USD 兑 7.12 CNY）；改完立即生效，新币种自动出现在各页币种下拉里。</div>
       </section>
 
       {/* 选项组：多列卡片 + 标签式选项（点标签改名、× 删除），大幅压缩页面高度 */}
