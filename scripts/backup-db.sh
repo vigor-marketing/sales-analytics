@@ -23,8 +23,13 @@ log() { echo "[$(date '+%F %T')] $*"; }
 DB_INSTANCE="$(python3 - "$DB" <<'PY'
 import sqlite3, sys
 try:
-    c = sqlite3.connect('file:%s?mode=ro' % sys.argv[1], uri=True)
-    r = c.execute("select v from settings where k='instanceName'").fetchone()
+    try:
+        c = sqlite3.connect('file:%s?mode=ro' % sys.argv[1], uri=True)
+        r = c.execute("select v from settings where k='instanceName'").fetchone()
+    except Exception:
+        c = sqlite3.connect(sys.argv[1])
+        c.execute('pragma query_only = 1')
+        r = c.execute("select v from settings where k='instanceName'").fetchone()
     print(r[0] if r else 'unknown')
 except Exception:
     print('unknown')
@@ -45,7 +50,16 @@ python3 - "$DB" <<'PY' | sed 's/^/   /'
 import sqlite3, sys, hashlib
 src = sys.argv[1]
 print('指纹 sha256=%s' % hashlib.sha256(open(src, 'rb').read()).hexdigest())
-c = sqlite3.connect('file:%s?mode=ro' % src, uri=True)
+def connect(path):
+    try:
+        c = sqlite3.connect('file:%s?mode=ro' % path, uri=True)
+        c.execute('select count(*) from sqlite_master').fetchone()
+        return c
+    except sqlite3.Error:
+        c = sqlite3.connect(path)
+        c.execute('pragma query_only = 1')
+        return c
+c = connect(src)
 g = lambda q: c.execute(q).fetchone()[0]
 print('指纹 询价=%s 订单=%s 跟进=%s 账号=%s 人员=%s' % (
     g('select count(*) from inquiries'), g('select count(*) from orders'), g('select count(*) from followups'),
@@ -61,7 +75,12 @@ import sqlite3, sys, os
 src, dst = sys.argv[1], sys.argv[2]
 if not os.path.exists(src):
     raise SystemExit('数据库不存在：%s' % src)
-s = sqlite3.connect('file:%s?mode=ro' % src, uri=True)
+try:
+    s = sqlite3.connect('file:%s?mode=ro' % src, uri=True)
+    s.execute('select count(*) from sqlite_master').fetchone()
+except sqlite3.Error:
+    s = sqlite3.connect(src)
+    s.execute('pragma query_only = 1')
 d = sqlite3.connect(dst)
 with d:
     s.backup(d)

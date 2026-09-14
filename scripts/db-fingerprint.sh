@@ -20,7 +20,17 @@ python3 - "$DB" <<'PY'
 import sqlite3, sys, hashlib
 src = sys.argv[1]
 print('sha256', hashlib.sha256(open(src, 'rb').read()).hexdigest())
-c = sqlite3.connect('file:%s?mode=ro' % src, uri=True)
+def connect(path):
+    # 先尝试只读打开；若数据库正被其它进程以 WAL 方式占用而读取失败，则回退到 query_only 连接
+    try:
+        c = sqlite3.connect('file:%s?mode=ro' % path, uri=True)
+        c.execute('select count(*) from sqlite_master').fetchone()
+        return c
+    except sqlite3.Error:
+        c = sqlite3.connect(path)
+        c.execute('pragma query_only = 1')
+        return c
+c = connect(src)
 def one(sql, default='-'):
     try:
         r = c.execute(sql).fetchone()
