@@ -888,3 +888,6 @@ table.grid > tbody > tr > td.cell-tags .tag { margin: 0 2px; display: inline-blo
   /* 任何内联 flex 组内的控件都允许收缩 */
   .sa-main [style*="inline-flex"] > select.sa, .sa-main [style*="inline-flex"] > input.sa { min-width: 0 !important }
 }
+
+/* 时间列（如账号「最近修改」）：窄了就让日期与时间换行显示，不要裁掉数字 */
+table.grid.fixed-table > tbody > tr > td.cell-dt { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; line-height: 1.35 !important }

@@ -166,7 +166,7 @@ export default function Accounts() {
 
         <div className="tablewrap" style={{ marginTop: 10 }}>
           <table className="grid data-table fixed-table fit-table" style={{ fontSize: 12.5 }}>
-            <colgroup><col style={{ width: '16%' }} /><col style={{ width: '10%' }} /><col style={{ width: '20%' }} /><col style={{ width: '22%' }} /><col style={{ width: '9%' }} /><col style={{ width: '11%' }} /><col style={{ width: '12%' }} /></colgroup>
+            <colgroup><col style={{ width: '15%' }} /><col style={{ width: '9%' }} /><col style={{ width: '17%' }} /><col style={{ width: '21%' }} /><col style={{ width: '8%' }} /><col style={{ width: '13%' }} /><col style={{ width: '17%' }} /></colgroup>
             <thead><tr>{['账号（登录名 / 显示名）', '职位', '组织架构', '可见范围', '状态', '最近修改', '操作'].map((h) => <th key={h} className="cell-left">{h}</th>)}</tr></thead>
             <tbody>
               {(data?.users ?? []).map((u) => (
@@ -180,7 +180,7 @@ export default function Accounts() {
                   </td>
                   <td className="cell-left"><span className="cell-note" style={{ marginLeft: 0 }}>{visibleText(u, teams)}</span></td>
                   <td className="cell-left">{u.disabled ? <span className="badge" style={{ background: '#fee2e2', color: '#b91c1c' }}>已停用</span> : <span className="badge latest">启用</span>}</td>
-                  <td className="cell-left mono hint" title={fmtDateTime(u.updatedAt)}>{fmtMinute(u.updatedAt)}</td>
+                  <td className="cell-left mono hint cell-dt" title={fmtDateTime(u.updatedAt)}>{fmtMinute(u.updatedAt)}</td>
                   <td className="cell-left">
                     <span className="act-group">
                       <button className="act-btn" onClick={() => setPwEdit({ id: u.id, username: u.username, password: '' })}>改密码</button>
