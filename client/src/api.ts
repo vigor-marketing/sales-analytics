@@ -1,8 +1,11 @@
+/** 部署基路径（Vite base）：本机为 ''，部署到 /sales/ 时为 '/sales' */
+const BASE = String((import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/').replace(/\/$/, '')
+
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), 6000)
   let r: Response
-  const path = url.startsWith('/api') || /^https?:\/\//.test(url) ? url : `/api${url.startsWith('/') ? url : '/' + url}`
+  const path = url.startsWith('/api') || /^https?:\/\//.test(url) ? `${BASE}${url}` : `${BASE}/api${url.startsWith('/') ? url : '/' + url}`
   try {
     r = await fetch(path, { method, signal: ctrl.signal, credentials: 'same-origin', headers: body === undefined ? undefined : { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
   } catch (e) {

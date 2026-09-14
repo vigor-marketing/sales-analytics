@@ -932,7 +932,7 @@ app.post('/api/uploads', (req, res) => {
   const safe = name.replace(/[^\w.\-\u4e00-\u9fa5]/g, '_').slice(-60)
   const file = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safe}`
   writeFileSync(path.join(UPLOAD_DIR, file), buf)
-  ok(res, { url: `/uploads/${file}`, name, size: buf.length, type: m[1] }, 201)
+  ok(res, { url: `${BASE_PATH}/uploads/${file}`, name, size: buf.length, type: m[1] }, 201)
 })
 
 // —— 客户档案：列表（含询价联动聚合） + 详情 ——
@@ -1929,8 +1929,10 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json({ ok: false, error: err.message || 'Internal Error' })
 })
 
+/** 部署基路径（放在 nginx 子路径下时设置，例如 BASE_PATH=/sales），用于拼接上传文件的访问地址 */
+const BASE_PATH = String(process.env.BASE_PATH ?? '').replace(/\/+$/, '')
 const PORT = Number(process.env.PORT ?? 3218)
-const server = app.listen(PORT, '127.0.0.1', () => {
+const server = app.listen(PORT, process.env.HOST ?? '127.0.0.1', () => {
   console.log(`[sales-analytics v3] http://127.0.0.1:${PORT}/api/meta/bootstrap`)
   // 启动后台把工作台组织架构同步一次（保持同步更新）；失败不影响服务，仅记日志
   if (WORKBENCH_TOKEN) {

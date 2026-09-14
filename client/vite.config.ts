@@ -10,6 +10,8 @@ function buildId(): string {
   return `${sha}-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
 }
 export default defineConfig({
+  // 部署到子路径时用 VITE_BASE=/sales/ 构建（本机仍为 /）
+  base: process.env.VITE_BASE || '/',
   plugins: [react()],
   define: { __BUILD_ID__: JSON.stringify(buildId()) },
   server: { host: '127.0.0.1', port: 5178, strictPort: true, proxy: { '/api': { target: 'http://127.0.0.1:3218', changeOrigin: true } } },
