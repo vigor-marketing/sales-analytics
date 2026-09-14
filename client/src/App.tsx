@@ -634,7 +634,7 @@ export default function App() {
         <div className="actions" style={{ marginTop: 12 }}>
           <button className="btn pri" disabled={busy || !valid} onClick={() => void save(false)}>保存询价{busy ? '…' : ''}</button>
           <button className="btn" disabled={busy || !valid} onClick={() => void save(true)}>保存并继续录下一条</button>
-          {!valid && <span className="hint">请补齐必填项：询价号 / 销售 / 客户 / 采购 / 来源 / 标签 / 至少一行明细金额</span>}
+          {!valid && <span className="hint">请补齐带 * 的必填项，并填写至少一行明细金额</span>}
         </div>
       </div>
     </Shell>

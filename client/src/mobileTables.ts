@@ -93,6 +93,8 @@ function hintFoldable(el: HTMLElement): boolean {
   if (el.closest('.msg')) return false
   if (el.closest('table.grid tbody')) return false
   if (el.closest('.rem-empty')) return false
+  if (el.closest('.totals')) return false          // 合计区里的提示含金额，不能折叠
+  if (el.closest('.proj-kpi')) return false
   return (el.textContent || '').trim().length >= HINT_MIN_CHARS
 }
 
@@ -102,7 +104,15 @@ function clampHints(root: ParentNode): void {
     const el = node as HTMLElement
     if (!hintFoldable(el)) return
     if (lineCount(el) < HINT_MIN_LINES) return
+    const before = el.getBoundingClientRect().height
     el.classList.add('hint-clamp')
+    // 加完类立刻量一次：如果高度没变（说明全文本来就只有两行），说明没有内容被藏起来，
+    // 那就把折叠撤掉——不显示没有意义的「展开」。
+    const after = el.getBoundingClientRect().height
+    if (after >= before - 2) {
+      el.classList.remove('hint-clamp')
+      return
+    }
     el.setAttribute('data-hint-toggle', '1')
     el.setAttribute('role', 'button')
     el.setAttribute('tabindex', '0')
