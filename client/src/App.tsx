@@ -66,7 +66,7 @@ function Shell({ page, onNav, children, headRight, actor, onLogout, instance }: 
   page: PageKey; onNav: (p: PageKey) => void; children: React.ReactNode; headRight?: React.ReactNode
   actor?: SaActor | null; onLogout?: () => void; instance?: SaInstance | null
 }) {
-  // 设置页面开放给：总经理 / 副总经理 / 管理员（全部数据）与各部门组长（本组数据）；普通成员不显示
+  // 设置页面开放给：总经理 / 副总经理 / 管理员（全部数据）与各主管（本组 / 本部门）；普通成员不显示
   const nav = actor ? NAV.filter((n) => n.key !== 'settings' || actor.scope !== 'self') : NAV
   // 手机端导航：抽屉式（点「菜单」拉出整列大按钮），避免横向滚动条难点选
   const [menuOpen, setMenuOpen] = useState(false)

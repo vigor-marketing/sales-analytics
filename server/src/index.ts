@@ -237,7 +237,7 @@ const NEED_ALL_SCOPE = ['/org/sync', '/options/save', '/sources', '/currencies',
 app.use('/api', (req, res, next) => {
   const a = (req as express.Request & { actor?: SaActor }).actor
   if (!a || req.method === 'GET') return next()
-  if (NEED_ALL_SCOPE.some((x) => req.path === x || req.path.startsWith(x + '/')) && a.scope !== 'all') return fail(res, '仅总经理 / 副总经理（或管理员）可操作设置', 403)
+  if (NEED_ALL_SCOPE.some((x) => req.path === x || req.path.startsWith(x + '/')) && a.scope === 'self') return fail(res, '普通成员不能修改设置（总经理 / 副总经理 / 管理员 / 主管 可操作）', 403)
   next()
 })
 
@@ -688,7 +688,7 @@ function scopeFor(u: { role?: string; department?: string; departmentHead?: bool
   const role = String(u.role || '')
   if (u.isAdmin) return { scope: 'all', reason: '管理员' }
   if (String(u.department || '') === '总经理办公室' || /general_manager|deputy|gm|副总|总经理/i.test(role)) return { scope: 'all', reason: '总经理 / 副总经理办公室' }
-  if (u.departmentHead || /manager|head|lead|经理|主管|负责人/i.test(role)) return { scope: 'team', reason: '组长 / 部门负责人' }
+  if (u.departmentHead || /manager|head|lead|经理|主管|负责人/i.test(role)) return { scope: 'team', reason: '主管（本组 / 本部门）' }
   return { scope: 'self', reason: '个人' }
 }
 /** 客户端 IP（经 nginx 反代时取 X-Forwarded-For 第一段） */
@@ -788,6 +788,31 @@ function requireAll(req: express.Request, res: express.Response): boolean {
   fail(res, '仅总经理 / 副总经理（或管理员）可操作', 403)
   return false
 }
+/** 设置类操作：除「普通成员（只看自己）」外都可操作（总经理 / 副总经理 / 管理员 / 主管） */
+function requireManager(req: express.Request, res: express.Response): boolean {
+  const a = actorIn(req)
+  if (a && a.scope !== 'self') return true
+  fail(res, '普通成员不能查看或修改设置（主管及以上可操作）', 403)
+  return false
+}
+/**
+ * 越权保护：非「全部数据」权限的账号，不能创建/改动/删除「全部数据」权限的账号，也不能把自己提为全部数据。
+ * 其余（本组 / 本部门的账号）都可以管理。
+ */
+function scopeGuard(actor: SaActor | undefined, targetScope: SaScope, wanted?: SaScope): string | null {
+  if (!actor || actor.scope === 'all') return null
+  if (targetScope === 'all') return '「全部数据」权限的账号只有总经理 / 副总经理 / 管理员可以管理'
+  if (wanted === 'all') return '只有总经理 / 副总经理 / 管理员可以把账号设为「全部数据」'
+  return null
+}
+/** 账号变更审计：写进「登录 / 操作记录」，便于追溯谁改了什么 */
+function auditAccountChange(req: express.Request, action: string, target: string): void {
+  try {
+    const a = actorIn(req)
+    getDb().prepare('INSERT INTO login_audit (id, username, ip, ua, ok, reason, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)')
+      .run(newId(), a?.username ?? '-', clientIp(req), String(req.headers['user-agent'] ?? '').slice(0, 200), `账号变更：${action}（对象 ${target}）`, nowIso())
+  } catch { /* 忽略 */ }
+}
 /** 只读范围条件：返回 ` AND col IN (?,?)`（全部权限时为空串） */
 function scopeSql(actor: SaActor | undefined, alias = 'i'): { sql: string; args: string[] } {
   if (!actor || !actor.readNames) return { sql: '', args: [] }
@@ -824,12 +849,12 @@ const accountView = (u: UserRow) => ({
 })
 /** 账号职位：没显式填过就按数据范围给一个默认名 */
 function accountRoleLabel(u: { scope: SaScope; role_label?: string | null }): string {
-  return String(u.role_label ?? '').trim() || (u.scope === 'all' ? '总经理 / 副总经理' : u.scope === 'team' ? '部门主管 / 组长' : '普通成员')
+  return String(u.role_label ?? '').trim() || (u.scope === 'all' ? '总经理 / 副总经理' : u.scope === 'team' ? '主管' : '普通成员')
 }
 /** 账号列表 + 统一初始密码状态 + 组织架构同事数量（可凭英文名 + 初始密码登录） */
 /** 系统信息：实例标识 / 数据库文件与数据量 / 备份情况（仅「全部数据」权限可见，用于随时确认本地与线上是两份数据） */
 app.get('/api/admin/system', (req, res) => {
-  if (!requireAll(req, res)) return
+  if (!requireManager(req, res)) return
   const st = (() => { try { return statSync(DB_ABS) } catch { return null } })()
   const cnt = (sql: string) => { try { return Number((getDb().prepare(sql).get() as { n: number }).n) } catch { return -1 } }
   const backupDir = process.env.BACKUP_DIR || path.join(path.dirname(DB_ABS), 'backup')
@@ -864,11 +889,11 @@ app.get('/api/admin/system', (req, res) => {
   })
 })
 app.get('/api/admin/accounts', (req, res) => {
-  if (!requireAll(req, res)) return
+  if (!requireManager(req, res)) return
   const d = getDb()
   const users = (d.prepare('SELECT * FROM users ORDER BY scope DESC, username').all() as unknown as UserRow[]).map(accountView)
   const people = d.prepare("SELECT COUNT(*) AS n FROM people WHERE role IN ('sales','support','other')").get() as { n: number }
-  // 组织架构里的部门 / 小组（带人数）：给「部门主管 / 组长」下拉用
+  // 组织架构里的部门 / 小组（带人数）：给「主管」下拉用
   const orgs = d.prepare("SELECT department, team_name, COUNT(*) AS n FROM people WHERE role IN ('sales','support') GROUP BY department, team_name ORDER BY department, team_name").all() as { department: string; team_name: string; n: number }[]
   // 组织架构人员（账号只能从这里选）：按 部门 → 小组 → 人员 组织，并标出谁已经有账号
   interface OrgRow { name: string; department: string; team_name: string; role: string; role_label: string | null; is_head: number }
@@ -907,8 +932,8 @@ app.get('/api/admin/accounts', (req, res) => {
     presets: [
       { key: 'gm', label: '总经理', roleLabel: '总经理', scope: 'all', needDept: false, needTeam: false, desc: '全部数据：所有组、所有人的询价与订单' },
       { key: 'dgm', label: '副总经理', roleLabel: '副总经理', scope: 'all', needDept: false, needTeam: false, desc: '全部数据：所有组、所有人的询价与订单' },
-      { key: 'dept', label: '部门主管', roleLabel: '部门主管', scope: 'team', needDept: true, needTeam: false, desc: '本部门全部数据：该部门下所有小组（只看不改别人的）' },
-      { key: 'team', label: '组长', roleLabel: '组长', scope: 'team', needDept: true, needTeam: true, desc: '本组全部数据：所选小组的全部成员（只看不改别人的）' },
+      // 「组长」与「部门主管」已合并为一个职位：选到小组＝本组，不选小组＝整个部门
+      { key: 'head', label: '主管', roleLabel: '主管', scope: 'team', needDept: true, needTeam: false, teamOptional: true, desc: '本组 / 本部门全部数据：选到小组＝该小组全体，不选小组＝整个部门（只看不改别人的）' },
       { key: 'staff', label: '普通成员', roleLabel: '普通成员', scope: 'self', needDept: true, needTeam: false, desc: '只看自己录入 / 参与的数据' },
     ],
     defaultPassword: defaultLoginPassword(),
@@ -918,7 +943,7 @@ app.get('/api/admin/accounts', (req, res) => {
   })
 })
 app.post('/api/admin/accounts', (req, res) => {
-  if (!requireAll(req, res)) return
+  if (!requireManager(req, res)) return
   const d = getDb()
   // 账号必须来自组织架构：前端传 orgName（组织架构里的姓名），账号名由姓名派生
   const orgName = str(req.body?.orgName).trim() || str(req.body?.username).trim()
@@ -940,15 +965,17 @@ app.post('/api/admin/accounts', (req, res) => {
   if (dup) return fail(res, `「${person.name}」已经有账号了（${username}），可在下面列表里改密码或调整职位`)
   if (department && !d.prepare('SELECT 1 FROM people WHERE department = ?').get(department)) return fail(res, `组织架构里没有部门「${department}」`)
   if (team && !d.prepare('SELECT 1 FROM people WHERE team_name = ?').get(team)) return fail(res, `组织架构里没有小组「${team}」`)
-  if (scope === 'team' && !department && !team) return fail(res, '「部门主管 / 组长」需要选择部门（组长还需选择小组）')
-  if (scope === 'team' && roleLabel === '组长' && !team) return fail(res, '「组长」需要选择具体小组')
+  if (scope === 'team' && !department && !team) return fail(res, '「主管」需要选择部门（小组可不选＝整个部门）')
+  const deniedAdd = scopeGuard(actorIn(req), 'self', scope)
+  if (deniedAdd) return fail(res, deniedAdd, 403)
   const t = nowIso()
   d.prepare('INSERT INTO users (id, username, display_name, password_hash, scope, team, department, role_label, disabled, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)')
     .run(newId(), username, displayName, hashPassword(password), scope, team, department, roleLabel, str(req.body?.note).trim() || null, t, t)
+  auditAccountChange(req, `新建账号 ${username}（${roleLabel || scope}）`, person.name)
   ok(res, { username }, 201)
 })
 app.put('/api/admin/accounts/:id', (req, res) => {
-  if (!requireAll(req, res)) return
+  if (!requireManager(req, res)) return
   const d = getDb()
   const u = d.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id) as UserRow | undefined
   if (!u) return fail(res, '账号不存在', 404)
@@ -961,27 +988,35 @@ app.put('/api/admin/accounts/:id', (req, res) => {
   const department = req.body?.department === undefined ? (u.department ?? null) : (str(req.body?.department).trim() || null)
   const roleLabel = req.body?.roleLabel === undefined ? (u.role_label ?? null) : (str(req.body?.roleLabel).trim() || null)
   const disabled = req.body?.disabled === undefined ? Number(u.disabled) : (req.body?.disabled ? 1 : 0)
+  const deniedEdit = scopeGuard(actorIn(req), u.scope, scope)
+  if (deniedEdit) return fail(res, deniedEdit, 403)
   if (department && !d.prepare('SELECT 1 FROM people WHERE department = ?').get(department)) return fail(res, `组织架构里没有部门「${department}」`)
   if (team && !d.prepare('SELECT 1 FROM people WHERE team_name = ?').get(team)) return fail(res, `组织架构里没有小组「${team}」`)
-  if (scope === 'team' && !department && !team) return fail(res, '「部门主管 / 组长」需要选择部门（组长还需选择小组）')
-  if (scope === 'team' && roleLabel === '组长' && !team) return fail(res, '「组长」需要选择具体小组')
+  if (scope === 'team' && !department && !team) return fail(res, '「主管」需要选择部门（小组可不选＝整个部门）')
   d.prepare('UPDATE users SET display_name = ?, scope = ?, team = ?, department = ?, role_label = ?, disabled = ?, password_hash = ?, note = ?, updated_at = ? WHERE id = ?')
     .run(displayName, scope, team, department, roleLabel, disabled, password ? hashPassword(password) : u.password_hash, str(req.body?.note).trim() || u.note, nowIso(), u.id)
+  auditAccountChange(req, `修改账号 ${u.username}（${[
+    password ? '改密码' : '', roleLabel !== u.role_label ? `职位 ${u.role_label || '—'} → ${roleLabel || '—'}` : '',
+    scope !== u.scope ? `范围 ${u.scope} → ${scope}` : '', disabled !== Number(u.disabled) ? (disabled ? '停用' : '启用') : '',
+  ].filter(Boolean).join('、') || '更新资料'}）`, u.username)
   ok(res, { id: u.id })
 })
 app.delete('/api/admin/accounts/:id', (req, res) => {
-  if (!requireAll(req, res)) return
+  if (!requireManager(req, res)) return
   const d = getDb()
   const u = d.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id) as UserRow | undefined
   if (!u) return fail(res, '账号不存在', 404)
   const me = actorIn(req)
   if (me.username.toLowerCase() === u.username.toLowerCase()) return fail(res, '不能删除当前登录的账号')
+  const deniedDel = scopeGuard(me, u.scope)
+  if (deniedDel) return fail(res, deniedDel, 403)
   d.prepare('DELETE FROM users WHERE id = ?').run(u.id)
+  auditAccountChange(req, `删除账号 ${u.username}`, u.username)
   ok(res, { id: u.id })
 })
 /** 最近登录/尝试记录（仅全部数据范围可见，用于发现异常登录） */
 app.get('/api/admin/login-audit', (req, res) => {
-  if (!requireAll(req, res)) return
+  if (!requireManager(req, res)) return
   const limit = Math.min(200, Math.max(1, Number(req.query.limit ?? 50) || 50))
   const rows = getDb().prepare('SELECT username, ip, ua, ok, reason, created_at FROM login_audit ORDER BY created_at DESC LIMIT ?').all(limit) as Record<string, unknown>[]
   const fail10 = (getDb().prepare("SELECT COUNT(*) n FROM login_audit WHERE ok = 0 AND created_at >= ?").get(new Date(Date.now() - 10 * 60 * 1000).toISOString()) as { n: number }).n
@@ -990,7 +1025,7 @@ app.get('/api/admin/login-audit', (req, res) => {
 
 /** 组织架构同事的统一初始密码（留空＝关闭该登录方式） */
 app.post('/api/admin/login-default', (req, res) => {
-  if (!requireAll(req, res)) return
+  if (!requireManager(req, res)) return
   const pw = str(req.body?.password)
   if (pw && pw.length < 6) return fail(res, '初始密码至少 6 位')
   setSetting('loginDefaultPassword', pw)
@@ -2016,7 +2051,7 @@ app.put('/api/inquiries/:id', (req, res) => {
   const d = getDb()
   const old = d.prepare('SELECT * FROM inquiries WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
   if (!old) return fail(res, '询价不存在', 404)
-  if (!canWrite(actorIn(req), old.sales, old.purchaser)) return fail(res, '只能修改自己名下的询价（组长可查看本组，但不修改他人记录）', 403)
+  if (!canWrite(actorIn(req), old.sales, old.purchaser)) return fail(res, '只能修改自己名下的询价（主管可查看本组 / 本部门，但不修改他人记录）', 403)
   const date = str(req.body?.date) || str(old.date)
   if (!isDate(date)) return fail(res, '询价日期格式应为 YYYY-MM-DD（且为真实日期）')
   const country = req.body?.country !== undefined ? str(req.body?.country) || null : str(old.country) || null
@@ -2116,6 +2151,11 @@ app.put('/api/inquiries/:id', (req, res) => {
 app.delete('/api/inquiries/:id', (_req, res) => fail(res, '询报价不允许删除', 403))
 
 schema(); assertInstanceIdentity(); ensurePeople(); backfillProducts(); syncWonFlags(); seedUsersFromEnv(); bootstrapLocalAdmin()
+// 「组长」与「部门主管」已合并为「主管」：把历史账号的职位名统一过来（幂等）
+try {
+  const merged = getDb().prepare("UPDATE users SET role_label = '主管' WHERE scope = 'team' AND (role_label IS NULL OR role_label IN ('组长', '部门主管'))").run()
+  if (Number(merged.changes) > 0) console.log(`[账号] 已把 ${merged.changes} 个账号的职位统一为「主管」`)
+} catch { /* 忽略 */ }
 // 注：历史成交迁移 migrateWonToOrders() 已不再随启动自动执行（避免废弃列 is_won 反向物化订单）；
 // 如需迁移旧库，可手动调用一次。
 cleanupOrphans()
