@@ -141,7 +141,7 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
         </div>
 
         <div className="tablewrap" style={{ marginTop: 8 }}>
-          <table className="grid data-table fixed-table fit-table rem-table rem-data-table" style={{ fontSize: 12.5 }}>
+          <table className={`grid data-table fixed-table fit-table rem-table rem-data-table${list.length === 0 ? ' rem-table-empty' : ''}`} style={{ fontSize: 12.5 }}>
             <colgroup>
               <col style={{ width: '8%' }} /><col style={{ width: '9%' }} /><col style={{ width: '10%' }} /><col style={{ width: '6%' }} /><col style={{ width: '6%' }} />
               <col style={{ width: '9%' }} /><col style={{ width: '12%' }} /><col style={{ width: '7%' }} /><col style={{ width: '20%' }} /><col style={{ width: '13%' }} />
@@ -202,9 +202,9 @@ export default function Dashboard({ onGoFollow, people = [] }: { onGoFollow?: (t
                 )
               })}
               {list.length === 0 && (
-                <tr><td colSpan={10} style={{ padding: 22, textAlign: 'center', color: 'var(--sub)' }}>
-                  <div style={{ fontSize: 20 }}>✅</div>
-                  <div style={{ marginTop: 4 }}>{cur.label}：暂无需要提醒的询价（已跟进的会自动移除）</div>
+                <tr><td colSpan={10} className="rem-empty">
+                  <div style={{ fontSize: 20, lineHeight: 1.2 }}>✅</div>
+                  <div style={{ marginTop: 6 }}>{cur.label}：暂无需要提醒的询价（已跟进的会自动移除）</div>
                 </td></tr>
               )}
             </tbody>

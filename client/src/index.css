@@ -185,6 +185,13 @@ tr.row-click:hover>td{background:#eef5ff !important}
 .rem-count{background:rgba(0,0,0,.06);border-radius:999px;padding:0 7px;font-size:11px;line-height:1.7}
 .rem-tabs button.on .rem-count{background:rgba(255,255,255,.28);color:#fff}
 .rem-data-table th,.rem-data-table td{height:38px !important;padding:0 8px !important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:20px !important}
+/* 跟进提醒：没有待提醒项时，把空状态放在表格正中央（覆盖固定行高，整块居中） */
+.rem-table-empty{height:100%}                 /* 表格撑满表格区域，空状态才能落在正中间 */
+.rem-data-table td.rem-empty{height:auto !important;text-align:center !important;white-space:normal !important;overflow:visible !important;
+  color:var(--sub);vertical-align:middle;
+  /* 底部留出表头高度，让提示正好落在整个表格区域的几何中心（而不是数据区中心） */
+  padding:0 12px 38px !important}
+.rem-data-table td.rem-empty > div{text-align:center}
 /* 合并后的指导列：完整展示、允许换行 */
 .gd-all{background:#fffbeb;border-left:3px solid #f59e0b;border-radius:6px;padding:6px 8px}
 .gd-item{margin:2px 0}
