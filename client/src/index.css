@@ -642,6 +642,8 @@ table.grid > tbody > tr > td.cell-tags .tag { margin: 0 2px; display: inline-blo
   .row > .col, .row > .col.w1, .row > .col.w2, .row > .col.w-idx, .row > .col.grow1 {
     flex: 1 1 100%; min-width: 0; max-width: none; width: auto;
   }
+  /* 组件里内联写的 min-width（如 340px）比类规则优先，会把整行撑破 → 手机上强制放开 */
+  .row > .col { min-width: 0 !important }
   .col input.sa, .col select.sa, .col textarea.sa { width: 100% !important; }
   .col.w1 input, .col.w1 select, .col.w2 input, .col.w2 select { width: 100% !important; }
   input.sa, select.sa { height: 38px; font-size: 14px; }
@@ -683,3 +685,88 @@ table.grid > tbody > tr > td.cell-tags .tag { margin: 0 2px; display: inline-blo
 .badge.prod { background: #dcfce7; color: #15803d }
 .badge.local { background: #fff3e0; color: #b45309 }
 .sa-foot .badge { font-size: 11px; padding: 1px 8px; margin-right: 4px }
+
+/* ===================== 手机端导航（抽屉式）与「金额+币种」输入组 =====================
+   同样必须放在文件最后：要覆盖前面 @media(max-width:1100px) 的横向滚动导航。
+   横向滚动条在手机上既难点又容易误触，改为「顶栏 + ☰ 拉出整列大按钮」。 */
+.sa-topbar { display: none }
+.sa-mask { display: none }
+.sa-burger { display: none }
+/* 金额输入 + 币种下拉：两者同一行，币种固定宽度，金额占满剩余空间 */
+.amt-group { display: flex; gap: 6px; width: 100% }
+.amt-group .amt-input { flex: 1 1 auto; min-width: 0; width: auto }
+/* .sa 默认 min-width:120px，会把同一行的金额输入挤窄；币种下拉单独放开最小宽度 */
+.amt-group .amt-cur { flex: 0 0 86px; width: 86px; min-width: 0 }
+
+@media (max-width: 900px) {
+  .sa-layout { display: block }
+  /* —— 顶部栏：粘在顶部，标题与实例徽标始终可见 —— */
+  .sa-topbar {
+    display: flex; align-items: center; gap: 8px; position: sticky; top: 0; z-index: 60;
+    padding: 6px 10px; padding-top: calc(6px + env(safe-area-inset-top, 0px));
+    background: #fff; border-bottom: 1px solid var(--line); box-shadow: 0 2px 8px rgba(31,56,106,.05);
+  }
+  .sa-burger {
+    display: inline-flex; align-items: center; gap: 5px; flex: none;
+    height: 42px; padding: 0 13px; border: 1px solid var(--line); border-radius: 10px;
+    background: #f7f9fd; color: var(--text); font-size: 13.5px; font-weight: 600; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sa-burger:active { background: #eaf1ff }
+  .sa-burger-ic { font-size: 17px; line-height: 1 }
+  .sa-topbar-title { flex: 1; min-width: 0; font-size: 15.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+  .sa-page-head h1 { display: none }        /* 标题已由顶栏显示，避免重复占位 */
+  .sa-main { padding: 12px 10px 48px }
+  /* 页面整体交给浏览器滚动，避免手机端出现「内层滚动区」不好拖 */
+  .sa-main:has(> .page-fit) { height: auto; overflow: visible; display: block; padding-bottom: 28px }
+
+  /* —— 侧栏变抽屉：从左侧滑出，条目大、间距足、整屏可滚 —— */
+  .sa-sider {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 80;
+    width: min(80vw, 300px); height: 100vh; max-height: 100vh;
+    flex-direction: column; align-items: stretch; overflow-y: auto; overflow-x: hidden;
+    padding-top: env(safe-area-inset-top, 0px);
+    transform: translateX(-104%); transition: transform .22s ease;
+    border-right: 1px solid var(--line); box-shadow: 12px 0 30px rgba(20,40,80,.16);
+  }
+  .sa-sider.open { transform: translateX(0) }
+  .sa-brand-text { display: block }
+  .sa-menu { flex-direction: column; padding: 6px 8px; gap: 2px; overflow: visible }
+  .sa-item {
+    width: 100%; height: 48px; margin: 0; padding: 0 14px; flex: none;
+    font-size: 14.5px; border-radius: 10px; justify-content: flex-start;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sa-item .sa-ic svg { width: 19px; height: 19px }
+  .sa-item > span:last-child { white-space: normal; text-align: left }
+  .sa-item.on::before { left: 0; top: 12px; bottom: 12px }
+  .sa-user { display: block !important; margin: 0 !important; padding: 12px 14px !important; border-top: 1px solid #eef0f5 !important; border-left: 0 !important }
+  .sa-user > div:nth-child(2) { display: block }
+  .sa-user .btn { width: 100%; margin-top: 8px !important; padding: 9px 12px; font-size: 13px }
+  .sa-foot { display: block; padding: 10px 14px 18px }
+  .sa-mask { display: block; position: fixed; inset: 0; z-index: 70; background: rgba(16,26,48,.4); opacity: 0; pointer-events: none; transition: opacity .2s ease }
+  .sa-mask.on { opacity: 1; pointer-events: auto }
+}
+
+@media (max-width: 760px) {
+  /* 编辑弹窗里的产品明细：桌面是 6 列（min-width:760px），手机上会横向溢出 400 多像素；
+     改为「产品名整行 + 数量/单价 + 币种/小计」两列卡片式排列，删除按钮浮到右上角。 */
+  .edit-modal .item-scroll { overflow-x: visible }
+  .edit-modal .item-head { display: none }
+  .edit-modal .item-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-width: 0; gap: 6px 8px; padding: 10px; position: relative;
+    border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe;
+  }
+  .edit-modal .item-grid > *:nth-child(1) { grid-column: 1 / -1 }
+  .edit-modal .item-grid > *:nth-child(5) { white-space: normal !important; overflow: visible !important }
+  .edit-modal .item-grid > *:nth-child(6) { position: absolute; right: 4px; top: 6px; width: auto }
+  .edit-modal .item-grid .sa { height: 38px; font-size: 14px }
+  .edit-modal .item-grid .row-act { justify-content: flex-end }
+
+  /* 关键修复：.col select.sa{width:100%} 曾把「金额+币种」同行里的金额输入挤到几乎为 0 */
+  .col select.sa.amt-cur, .amt-group .amt-cur { width: 86px !important; flex: 0 0 86px !important; min-width: 0 !important }
+  .amt-group .amt-input { width: auto !important; flex: 1 1 auto !important; min-width: 0 }
+  /* 兜底：任何「内联 flex 行」里的下拉都不要再撑满整行 */
+  .col > div[style*="display: flex"] > select.sa, .row > div[style*="display: flex"] > select.sa { width: auto !important; max-width: 46% }
+}

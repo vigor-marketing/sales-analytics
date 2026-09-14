@@ -321,12 +321,12 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
                 {([['freight', '运费', 'feeCurFreight'], ['tax', '税费', 'feeCurTax'], ['commission', '佣金', 'feeCurCommission'], ['otherFee', '其他费用', 'feeCurOther']] as const).map(([k, label, ck]) => (
                   <div className="col" key={`c-${k}`} style={{ minWidth: 160 }}>
                     <label>{label} · 币种{form[ck] !== 'USD' ? ' 与汇率' : ''}</label>
-                    <div style={{ display: 'flex', gap: 5 }}>
-                      <select className="sa" style={{ width: 76, flexShrink: 0 }} value={form[ck]} onChange={(e) => set({ [ck]: e.target.value })}>
+                    <div className="amt-group" style={{ gap: 5 }}>
+                      <select className="sa amt-cur" value={form[ck]} onChange={(e) => set({ [ck]: e.target.value })}>
                         {currencyOptions(meta.currencies, form[ck]).map((c) => <option key={c}>{c}</option>)}
                       </select>
                       {form[ck] !== 'USD' && (
-                        <input className="sa" style={{ flex: 1, minWidth: 0 }} type="number" min="0" step="0.0001"
+                        <input className="sa amt-input" type="number" min="0" step="0.0001" inputMode="decimal"
                           title={`本单 ${form[ck]} 的实际汇率（1 USD = ? ${form[ck]}），默认 ${meta.fx?.[form[ck]] ?? '—'}`}
                           value={form.fxRates[form[ck]] ?? String(meta.fx?.[form[ck]] ?? '')}
                           onChange={(e) => set({ fxRates: { ...form.fxRates, [form[ck]]: e.target.value } })} />
@@ -345,9 +345,9 @@ function EditModal({ id, meta = { sales: [], purchasers: [], sources: [] }, prod
               </div>
               <div className="row" style={{ marginBottom: 0 }}>
                 <div className="col w2"><label>总金额（手填 · 选填）</label>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <input className="sa" style={{ flex: 1, minWidth: 0 }} type="number" value={form.handTotal} onChange={(e) => set({ handTotal: e.target.value })} placeholder="议价/最终金额" />
-                    <select className="sa" style={{ width: 92, flexShrink: 0 }} value={form.handTotalCur} title="手填总金额的金额单位"
+                  <div className="amt-group">
+                    <input className="sa amt-input" type="number" inputMode="decimal" value={form.handTotal} onChange={(e) => set({ handTotal: e.target.value })} placeholder="议价/最终金额" />
+                    <select className="sa amt-cur" value={form.handTotalCur} title="手填总金额的金额单位"
                       onChange={(e) => set({ handTotalCur: e.target.value })}>{currencyOptions(meta.currencies, form.handTotalCur).map((c) => <option key={c}>{c}</option>)}</select>
                   </div>
                 </div>

@@ -66,9 +66,32 @@ function Shell({ page, onNav, children, headRight, actor, onLogout, instance }: 
   actor?: SaActor | null; onLogout?: () => void; instance?: SaInstance | null
 }) {
   const nav = actor ? NAV.filter((n) => n.key !== 'settings' || actor.scope === 'all') : NAV
+  // 手机端导航：抽屉式（点「菜单」拉出整列大按钮），避免横向滚动条难点选
+  const [menuOpen, setMenuOpen] = useState(false)
+  useEffect(() => { setMenuOpen(false) }, [page])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  useEffect(() => {
+    document.body.style.overflow = menuOpen ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [menuOpen])
   return (
-    <div className="sa-layout">
-      <aside className="sa-sider">
+    <div className={'sa-layout' + (menuOpen ? ' nav-open' : '')}>
+      <header className="sa-topbar">
+        <button className="sa-burger" onClick={() => setMenuOpen((v) => !v)} aria-label={menuOpen ? '关闭菜单' : '打开菜单'} aria-expanded={menuOpen}>
+          <span className="sa-burger-ic" aria-hidden="true">{menuOpen ? '✕' : '☰'}</span>
+          <span className="sa-burger-tx">菜单</span>
+        </button>
+        <b className="sa-topbar-title">{TITLES[page]}</b>
+        {instance && (
+          <span className={'badge ' + (instance.name === 'production' ? 'prod' : 'local')} title={`${INSTANCE_TIP[instance.name] ?? instance.label} · 实例ID ${instance.id || '—'}`}>{instance.label}</span>
+        )}
+      </header>
+      <div className={'sa-mask' + (menuOpen ? ' on' : '')} onClick={() => setMenuOpen(false)} aria-hidden="true" />
+      <aside className={'sa-sider' + (menuOpen ? ' open' : '')}>
         <div className="sa-brand">
           <div className="sa-logo">销</div>
           <div className="sa-brand-text">
@@ -78,7 +101,7 @@ function Shell({ page, onNav, children, headRight, actor, onLogout, instance }: 
         </div>
         <nav className="sa-menu">
           {nav.map((n) => (
-            <button key={n.key} className={`sa-item${page === n.key ? ' on' : ''}`} onClick={() => onNav(n.key)}>
+            <button key={n.key} className={`sa-item${page === n.key ? ' on' : ''}`} onClick={() => { onNav(n.key); setMenuOpen(false) }}>
               <span className="sa-ic">{n.icon}</span>
               <span>{n.label}</span>
             </button>
@@ -93,7 +116,7 @@ function Shell({ page, onNav, children, headRight, actor, onLogout, instance }: 
             <div className="hint" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${actor.department}${actor.team ? ` / ${actor.team}` : ''} · ${actor.roleLabel || actor.role}`}>
               {actor.department}{actor.team && actor.team !== actor.department ? ` / ${actor.team}` : ''}
             </div>
-            <button className="btn xs" style={{ marginTop: 6 }} onClick={onLogout}>退出登录</button>
+            <button className="btn xs" style={{ marginTop: 6 }} onClick={() => { setMenuOpen(false); onLogout?.() }}>退出登录</button>
           </div>
         )}
         <div className="sa-foot">
@@ -585,9 +608,9 @@ export default function App() {
           </div>
           <div className="row" style={{ marginTop: 8, marginBottom: 0 }}>
             <div className="col w2"><label>总金额（手填 · 选填）</label>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input className="sa" style={{ flex: 1, minWidth: 0 }} type="number" min="0" value={handTotal} onChange={(e) => setHandTotal(e.target.value)} placeholder="议价/最终金额" />
-                <select className="sa" style={{ width: 92, flexShrink: 0 }} value={handTotalCur} title="手填总金额的金额单位"
+              <div className="amt-group">
+                <input className="sa amt-input" type="number" min="0" inputMode="decimal" value={handTotal} onChange={(e) => setHandTotal(e.target.value)} placeholder="议价/最终金额" />
+                <select className="sa amt-cur" value={handTotalCur} title="手填总金额的金额单位"
                   onChange={(e) => setHandTotalCur(e.target.value)}>{currencyOptions(meta?.currencies, handTotalCur).map((c) => <option key={c}>{c}</option>)}</select>
               </div>
             </div>
