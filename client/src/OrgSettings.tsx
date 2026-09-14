@@ -26,7 +26,7 @@ function syncInfoText(raw?: string): string {
 }
 
 /** 设置 · 组织架构：调用工作台组织架构接口，展示「部门 → 小组 → 人员」，并可一键同步到本系统 */
-export default function OrgSettings() {
+export default function OrgSettings({ readOnly = false }: { readOnly?: boolean }) {
   const [data, setData] = useState<OrgData | null>(null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; text: string } | null>(null)
@@ -76,7 +76,9 @@ export default function OrgSettings() {
           <span style={{ flex: 1 }} />
           {diffN > 0 && <span className="badge" style={{ background: '#fff4e5', color: '#a35c00' }}>待同步 {diffN} 处</span>}
           <button className="btn sm" disabled={busy} onClick={() => void load()} title="重新调用工作台组织架构接口">{busy ? '刷新中…' : '刷新'}</button>
-          <button className="btn pri sm" disabled={busy} onClick={() => void sync()} title="按工作台全量镜像到本系统人员档案（本系统多出的会删除）">同步到本系统</button>
+          {readOnly
+            ? <span className="badge" title="同步会改动人员档案，仅总经理 / 副总经理 / 管理员可用">只读查看</span>
+            : <button className="btn pri sm" disabled={busy} onClick={() => void sync()} title="按工作台全量镜像到本系统人员档案（本系统多出的会删除）">同步到本系统</button>}
         </div>
         {msg && <div className={`msg ${msg.t}`}>{msg.text}</div>}
         {d?.diff.syncInfo && !msg && <div className="hint" style={{ marginTop: 4 }}>上次同步结果：{syncInfoText(d.diff.syncInfo)}</div>}

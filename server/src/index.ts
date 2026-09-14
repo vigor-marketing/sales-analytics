@@ -931,8 +931,9 @@ app.post('/api/admin/accounts', (req, res) => {
   if (username.length < 2) return fail(res, `组织架构里「${person.name}」的姓名无法生成登录账号，请先在组织架构里改成英文名`)
   const scopeRaw = str(req.body?.scope) || 'self'
   const scope: SaScope = scopeRaw === 'all' || scopeRaw === 'team' ? scopeRaw : 'self'
-  const team = str(req.body?.team).trim() || person.team_name || null
-  const department = str(req.body?.department).trim() || person.department || null
+  // 注意：前端对「部门主管」会显式传 team=''（＝整个部门），此时不能再按本人小组兜底，否则会变成只看本组
+  const team = req.body?.team === undefined ? (person.team_name || null) : (str(req.body?.team).trim() || null)
+  const department = req.body?.department === undefined ? (person.department || null) : (str(req.body?.department).trim() || null)
   const roleLabel = str(req.body?.roleLabel).trim() || String(person.role_label ?? '') || null
   if (password.length < 6) return fail(res, '密码至少 6 位')
   const dup = d.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(username)

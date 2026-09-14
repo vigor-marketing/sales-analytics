@@ -66,7 +66,8 @@ function Shell({ page, onNav, children, headRight, actor, onLogout, instance }: 
   page: PageKey; onNav: (p: PageKey) => void; children: React.ReactNode; headRight?: React.ReactNode
   actor?: SaActor | null; onLogout?: () => void; instance?: SaInstance | null
 }) {
-  const nav = actor ? NAV.filter((n) => n.key !== 'settings' || actor.scope === 'all') : NAV
+  // 设置页面开放给：总经理 / 副总经理 / 管理员（全部数据）与各部门组长（本组数据）；普通成员不显示
+  const nav = actor ? NAV.filter((n) => n.key !== 'settings' || actor.scope !== 'self') : NAV
   // 手机端导航：抽屉式（点「菜单」拉出整列大按钮），避免横向滚动条难点选
   const [menuOpen, setMenuOpen] = useState(false)
   useEffect(() => { setMenuOpen(false) }, [page])
@@ -237,13 +238,29 @@ export default function App() {
     return () => { alive = false; window.removeEventListener('sa:need-login', onNeed) }
   }, [])
 
-  /** 登录后自动带入账号信息：销售带出「销售小组 + 销售人员」，采购/支持带出「采购小组 + 采购人员」（仍可改） */
+  /**
+   * 登录后自动带入账号信息，并**与登录账号保持一致**：
+   *   · 组长 / 普通成员（本组、只看自己）：销售小组 = 本人所属小组，销售人员 = 本人，锁定不可改（与登录名一致）；
+   *   · 采购 / 支持账号：采购小组 = 本人所属小组，采购人员 = 本人，同样锁定；
+   *   · 总经理 / 副总经理 / 管理员（全部数据）：不锁定，可代他人录入（若本人也在销售名单里则默认带出本人）。
+   */
   useEffect(() => {
     if (!actor) return
-    const mine = (meta.sales ?? []).find((x) => x.name.toLowerCase() === actor.name.toLowerCase())
-    if (mine) { if (!sales) setSales(actor.name); if (salesTeam !== mine.team) setSalesTeam(mine.team) }
-    const mineP = (meta.purchaserTeams ?? []).find((x) => x.name.toLowerCase() === actor.name.toLowerCase())
-    if (mineP) { if (!purchaser) setPurchaser(actor.name); if (purTeam !== mineP.team) setPurTeam(mineP.team) }
+    const eq = (a: string, b: string) => String(a).toLowerCase() === String(b).toLowerCase()
+    const mine = (meta.sales ?? []).find((x) => eq(x.name, actor.name))
+    const myTeam = mine?.team || actor.team || ''
+    if (actor.scope !== 'all') {
+      if (sales !== actor.name) setSales(actor.name)
+      if (myTeam && salesTeam !== myTeam) setSalesTeam(myTeam)
+    } else if (mine) {
+      if (!sales) setSales(actor.name)
+      if (salesTeam !== mine.team) setSalesTeam(mine.team)
+    }
+    const mineP = (meta.purchaserTeams ?? []).find((x) => eq(x.name, actor.name))
+    if (actor.scope !== 'all' && mineP) {
+      if (purchaser !== actor.name) setPurchaser(actor.name)
+      if (purTeam !== mineP.team) setPurTeam(mineP.team)
+    }
   }, [actor, meta.sales, meta.purchaserTeams, sales, salesTeam, purchaser, purTeam])
 
   useEffect(() => { loadMeta() }, [loadMeta, actor])          // 登录/退出后重新拉取基础数据（人员/小组/选项）
@@ -323,11 +340,19 @@ export default function App() {
   }, [meta])
   const purchaserTeamList = useMemo(() => Array.from(new Set(purchaserList.map((x) => x.team))), [purchaserList])
 
+  /** 数据范围不是「全部」时：销售侧锁定为本人；采购/支持账号的采购侧也锁定为本人 */
+  const lockSales = !!actor && actor.scope !== 'all'
+  const lockPurchaser = !!actor && actor.scope !== 'all' && isPurchaserActor((meta?.purchaserTeams ?? []).map((x) => x.name))
   const salesTeams = useMemo(() => {
     const map = new Map<string, { name: string; team: string }[]>()
-    ;(meta?.sales ?? []).forEach((s) => { const k = s.team || '未分组'; if (!map.has(k)) map.set(k, []); map.get(k)!.push(s) })
+    const list = [...(meta?.sales ?? [])]
+    // 登录人本人必须在名单里：否则非销售岗（采购/支持）锁定「销售小组 + 销售人员」后会空着没法录
+    if (actor && actor.scope !== 'all' && !list.some((x) => x.name.toLowerCase() === actor.name.toLowerCase())) {
+      list.push({ name: actor.name, team: actor.team || '未分组' })
+    }
+    list.forEach((s) => { const k = s.team || '未分组'; if (!map.has(k)) map.set(k, []); map.get(k)!.push(s) })
     return Array.from(map.entries())
-  }, [meta])
+  }, [meta, actor])
 
   const valid = Boolean(no.trim() && !noTaken && date && ((custId && custId !== '__new__') || customer.trim()) && sales && purchaser && source && stars !== '' && keyCust !== '' && keyProj !== '') && items.some((it) => it.productName.trim() && (Number(it.amount) || 0) > 0)
 
@@ -395,7 +420,13 @@ export default function App() {
           <StatusChip status="following" />
           <span className="hint">新录入自动「跟进中」；生成订单后变「已成单」；丢单请在「询报价管理 → 编辑」标记并填原因</span>
           {actor && actor.scope !== 'all' && (
-            <span className="badge" title="按工作台岗位自动判定：销售经理看本组、销售员只看自己">你的范围：{SCOPE_LABEL[actor.scope]}（录入自动归属 {actor.name}，销售已锁定）</span>
+            <span className="badge" title="按你的账号与职位自动判定：组长看本组、成员只看自己">你的范围：{SCOPE_LABEL[actor.scope]}（录入自动归属 {actor.name}，销售已锁定）</span>
+          )}
+          {actor && actor.scope !== 'all' && (
+            <span className="hint">
+              销售小组「{salesTeam || '—'}」与销售人员「{sales || actor.name}」已按登录账号自动带入并锁定，与登录名一致；
+              {lockPurchaser ? '采购小组与采购人员同样锁定为你本人。' : '采购小组 / 采购人员请选择本单实际的采购负责人。'}
+            </span>
           )}
         </div>
         <div className="row">
@@ -421,14 +452,16 @@ export default function App() {
             </select>
           </div>
           <div className="col w1"><label>采购小组 <span className="hint">（先选组）</span></label>
-            <select className="sa" style={{ width: 140 }} value={purTeam} onChange={(e) => { const v = e.target.value; setPurTeam(v); if (purchaser && !(purchaserList.filter((x) => x.team === v)).some((x) => x.name === purchaser)) setPurchaser('') }}>
+            <select className="sa" style={{ width: 140 }} value={purTeam} disabled={lockPurchaser}
+              title={lockPurchaser ? '采购/支持账号：采购小组固定为你本人所属小组' : undefined}
+              onChange={(e) => { const v = e.target.value; setPurTeam(v); if (purchaser && !(purchaserList.filter((x) => x.team === v)).some((x) => x.name === purchaser)) setPurchaser('') }}>
               <option value="">— 请选择小组 —</option>
               {purchaserTeamList.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div className="col w2"><label>采购人员 *</label>
-            <select className="sa" style={{ width: 180 }} value={purchaser} disabled={!purTeam}
-              title={!purTeam ? '请先选择采购小组' : undefined}
+            <select className="sa" style={{ width: 180 }} value={purchaser} disabled={!purTeam || lockPurchaser}
+              title={!purTeam ? '请先选择采购小组' : (lockPurchaser ? '采购/支持账号：采购人员固定为你本人' : undefined)}
               onChange={(e) => setPurchaser(e.target.value)}>
               <option value="">{purTeam ? `— 请选择${purTeam}成员 —` : '— 请先选择采购小组 —'}</option>
               {purchaserList.filter((x) => x.team === purTeam).map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}

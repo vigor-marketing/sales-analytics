@@ -6,7 +6,7 @@ interface Options { editable: Group[]; fixed: Group[] }
 /** 币种（可增删改，含折算汇率：1 USD = rate 个该币种） */
 interface Cur { code: string; rate: number }
 
-export default function SettingsView() {
+export default function SettingsView({ readOnly = false }: { readOnly?: boolean }) {
   const [groups, setGroups] = useState<Group[]>([])
   const [saved, setSaved] = useState<Group[]>([])   // 已保存的版本，用于判断是否有未保存修改
   const [fixed, setFixed] = useState<Group[]>([])
@@ -89,12 +89,17 @@ export default function SettingsView() {
         <h2 style={{ margin: 0 }}>字段与选项设置</h2>
         <span className="hint">统一管理下拉选项：新增／改名／删除后点「保存」生效；历史记录保留原值展示。币种一栏改动即时生效。</span>
         <span style={{ flex: 1 }} />
-        {dirty && <span className="badge" style={{ background: '#fef3c7', color: '#92400e' }}>有未保存修改</span>}
-        <button className="btn" onClick={discard} disabled={!dirty || saving}>放弃修改</button>
-        <button className="btn pri" onClick={() => void save()} disabled={!dirty || saving}>{saving ? '保存中…' : `保存${dirty ? `（${dirtyGroups.length} 组）` : ''}`}</button>
+        {readOnly
+          ? <span className="badge" title="修改下拉选项需要全部数据权限">只读查看（修改需总经理 / 副总经理 / 管理员）</span>
+          : <>
+              {dirty && <span className="badge" style={{ background: '#fef3c7', color: '#92400e' }}>有未保存修改</span>}
+              <button className="btn" onClick={discard} disabled={!dirty || saving}>放弃修改</button>
+              <button className="btn pri" onClick={() => void save()} disabled={!dirty || saving}>{saving ? '保存中…' : `保存${dirty ? `（${dirtyGroups.length} 组）` : ''}`}</button>
+            </>}
       </div>
       {msg && <div className={`msg ${msg.t}`}>{msg.t === 'ok' ? '✔' : '✖'} {msg.text}</div>}
 
+      <fieldset disabled={readOnly} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
       {/* 币种：可添加/改名/改汇率/删除（即时生效，无需点保存） */}
       <section className="opt-card" style={{ marginTop: 10 }}>
         <div className="opt-head">
@@ -205,7 +210,7 @@ export default function SettingsView() {
           <div className="row" style={{ marginBottom: 0 }}>{g.values.map((v) => <span key={v} className="badge grey">{v}</span>)}</div>
         </section>
       ))}
-
+      </fieldset>
     </div>
   )
 }
