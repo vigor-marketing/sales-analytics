@@ -50,7 +50,10 @@ export default function SystemInfo() {
         </div>
         <table className="grid"><tbody>
           {rows.map((r) => (
-            <tr key={r.k}><td style={{ width: 130, color: 'var(--sub)' }}>{r.k}</td><td>{r.v}</td></tr>
+            <tr key={r.k}>
+              <td className="cell-left" style={{ width: 130, color: 'var(--sub)', verticalAlign: 'top' }}>{r.k}</td>
+              <td className="cell-left" style={{ verticalAlign: 'top', lineHeight: 1.6 }}>{r.v}</td>
+            </tr>
           ))}
         </tbody></table>
       </section>
