@@ -588,24 +588,38 @@ function actorOf(req: express.Request): SaActor | null {
   return { ...actor, ...scopeOf(actor) }
 }
 /** 按人员档案把「可读/可写名单」算出来 */
+/**
+ * 数据可见范围（读）：
+ *   · 全部数据（scope=all）：总经理 / 副总经理 / 管理员 —— 所有组、所有人的数据
+ *   · 本部门 / 本组（scope=team）：部门主管看本部门全部小组；组长看本小组全部成员；
+ *     采购侧主管看本组采购人员参与的全部询价（按询价的「采购人员」字段）
+ *   · 只看自己（scope=self）：普通成员
+ * 写入范围：一律只写自己名下的记录（主管可以看全组，但不改别人的）。
+ */
 function scopeOf(actor: Pick<SaActor, 'scope' | 'name'> & Partial<Pick<SaActor, 'department' | 'team' | 'head'>>): Pick<SaActor, 'readNames' | 'writeNames' | 'readPurchasers'> {
   const d = getDb()
   if (actor.scope === 'all') return { readNames: null, writeNames: null, readPurchasers: null }
-  const a = actor as { name: string; department?: string; team?: string; head?: boolean }
-  const team = a.team ?? ''
-  // 采购/支持人员：可见范围落在「采购人员」字段上（采购经理看本组，其他人只看自己参与的）
-  const isPurchaserSide = ['采购部', '销售支持组'].includes(String(a.department ?? ''))
-  let readPurchasers: string[] = []
-  if (isPurchaserSide) {
-    if (a.head && team) {
-      const mates = d.prepare("SELECT name FROM people WHERE department IN ('采购部','销售支持组') AND team_name = ?").all(team) as { name: string }[]
-      readPurchasers = Array.from(new Set([a.name, ...mates.map((m) => m.name)].filter(Boolean)))
-    } else readPurchasers = [a.name]
+  const a = actor as { name: string; department?: string; team?: string }
+  const name = String(a.name ?? '').trim()
+  const dept = String(a.department ?? '').trim()
+  const team = String(a.team ?? '').trim()
+  const uniq = (arr: string[]) => Array.from(new Set(arr.map((x) => String(x || '').trim()).filter(Boolean)))
+  const memberNames = (sql: string, args: string[]): string[] => (d.prepare(sql).all(...args) as { name: string }[]).map((r) => r.name)
+  // 采购部 / 销售支持组：范围落在询价的「采购人员」字段上
+  const purchaseSide = ['采购部', '销售支持组'].includes(dept)
+  if (actor.scope === 'team') {
+    if (purchaseSide) {
+      const mates = team
+        ? memberNames("SELECT name FROM people WHERE department IN (?, ?) AND team_name = ?", ['采购部', '销售支持组', team])
+        : dept ? memberNames('SELECT name FROM people WHERE department = ?', [dept]) : []
+      return { readNames: [name], writeNames: [name], readPurchasers: uniq([name, ...mates]) }
+    }
+    const mates = team
+      ? memberNames("SELECT name FROM people WHERE role = 'sales' AND team_name = ?", [team])
+      : dept ? memberNames("SELECT name FROM people WHERE role = 'sales' AND department = ?", [dept]) : []
+    return { readNames: uniq([name, ...mates]), writeNames: [name], readPurchasers: [] }
   }
-  if (actor.scope === 'self') return { readNames: [a.name], writeNames: [a.name], readPurchasers }
-  const mates = team ? (d.prepare("SELECT name FROM people WHERE role = 'sales' AND team_name = ?").all(team) as { name: string }[]) : []
-  const names = Array.from(new Set([a.name, ...mates.map((m) => m.name)].filter(Boolean)))
-  return { readNames: names.length ? names : [a.name], writeNames: [a.name], readPurchasers }   // 组长：读本组，写只写自己的
+  return { readNames: [name], writeNames: [name], readPurchasers: [name] }
 }
 /** 工作台人员索引（id/英文名 → 本系统显示名与小组），登录时用于把账号映射到销售名 */
 async function workbenchPeopleIndex(): Promise<Map<string, { name: string; cnName: string; department: string; team: string; roleLabel: string }>> {
@@ -629,7 +643,7 @@ function verifyPassword(pw: string, stored: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b)   // 比较 base64url 串（不是原始字节）
 }
 /** 账号表里的一行（设置页维护） */
-interface UserRow { id: string; username: string; display_name: string | null; password_hash: string; scope: SaScope; team: string | null; disabled: number; note: string | null; created_at: string; updated_at: string }
+interface UserRow { id: string; username: string; display_name: string | null; password_hash: string; scope: SaScope; team: string | null; department?: string | null; role_label?: string | null; disabled: number; note: string | null; created_at: string; updated_at: string }
 /** 组织架构同事的统一初始密码（设置页可改；没设置过时用 .env 的 LOGIN_DEFAULT_PASSWORD） */
 const defaultLoginPassword = (): string => {
   const d = getDb().prepare("SELECT v FROM settings WHERE k = 'loginDefaultPassword'").get() as { v: string } | undefined
@@ -637,10 +651,19 @@ const defaultLoginPassword = (): string => {
 }
 /** 账号行 → 登录人 */
 function actorOfUser(u: UserRow): SaActor {
+  const department = String(u.department ?? '').trim()
+  const team = String(u.team ?? '').trim()
+  const roleLabel = accountRoleLabel(u)
   return {
-    username: u.username, name: u.display_name || u.username, cnName: '', role: 'account', roleLabel: '系统账号',
-    department: '', team: u.team ?? '', head: u.scope !== 'self', isAdmin: u.scope === 'all',
-    scope: u.scope, reason: '账号管理', readNames: null, writeNames: null,
+    username: u.username, name: u.display_name || u.username, cnName: '',
+    role: u.scope === 'all' ? 'admin' : u.scope === 'team' ? 'head' : 'staff', roleLabel,
+    department, team, head: u.scope === 'team', isAdmin: u.scope === 'all',
+    scope: u.scope, readNames: null, writeNames: null,
+    reason: u.scope === 'all'
+      ? `${roleLabel}：全部数据（所有组 / 所有人）`
+      : u.scope === 'team'
+        ? `${roleLabel}：${team || department || '本部门'} 全部数据`
+        : '只看自己录入 / 参与的数据',
   }
 }
 
@@ -795,9 +818,14 @@ function canRead(actor: SaActor | undefined, salesName: unknown, purchaserName?:
 // ============================ 账号与权限（设置页维护；仅全部数据范围可操作） ============================
 const accountView = (u: UserRow) => ({
   id: u.id, username: u.username, displayName: u.display_name || u.username, scope: u.scope,
-  team: u.team ?? '', disabled: Number(u.disabled) === 1, note: u.note ?? '',
+  team: u.team ?? '', department: u.department ?? '', roleLabel: String(u.role_label ?? '').trim() || accountRoleLabel(u),
+  disabled: Number(u.disabled) === 1, note: u.note ?? '',
   createdAt: u.created_at, updatedAt: u.updated_at,
 })
+/** 账号职位：没显式填过就按数据范围给一个默认名 */
+function accountRoleLabel(u: { scope: SaScope; role_label?: string | null }): string {
+  return String(u.role_label ?? '').trim() || (u.scope === 'all' ? '总经理 / 副总经理' : u.scope === 'team' ? '部门主管 / 组长' : '普通成员')
+}
 /** 账号列表 + 统一初始密码状态 + 组织架构同事数量（可凭英文名 + 初始密码登录） */
 /** 系统信息：实例标识 / 数据库文件与数据量 / 备份情况（仅「全部数据」权限可见，用于随时确认本地与线上是两份数据） */
 app.get('/api/admin/system', (req, res) => {
@@ -840,12 +868,24 @@ app.get('/api/admin/accounts', (req, res) => {
   const d = getDb()
   const users = (d.prepare('SELECT * FROM users ORDER BY scope DESC, username').all() as unknown as UserRow[]).map(accountView)
   const people = d.prepare("SELECT COUNT(*) AS n FROM people WHERE role IN ('sales','support','other')").get() as { n: number }
+  // 组织架构里的部门 / 小组（带人数）：给「部门主管 / 组长」下拉用
+  const orgs = d.prepare("SELECT department, team_name, COUNT(*) AS n FROM people WHERE role IN ('sales','support') GROUP BY department, team_name ORDER BY department, team_name").all() as { department: string; team_name: string; n: number }[]
   ok(res, {
     users,
+    departments: Array.from(new Set(orgs.map((o) => o.department))),
+    teams: orgs.map((o) => ({ department: o.department, team: o.team_name, count: Number(o.n) })),
+    /** 职位预设：选职位即定权限，不用去理解 all/team/self */
+    presets: [
+      { key: 'gm', label: '总经理', roleLabel: '总经理', scope: 'all', needDept: false, needTeam: false, desc: '全部数据：所有组、所有人的询价与订单' },
+      { key: 'dgm', label: '副总经理', roleLabel: '副总经理', scope: 'all', needDept: false, needTeam: false, desc: '全部数据：所有组、所有人的询价与订单' },
+      { key: 'dept', label: '部门主管', roleLabel: '部门主管', scope: 'team', needDept: true, needTeam: false, desc: '本部门全部数据：该部门下所有小组（只看不改别人的）' },
+      { key: 'team', label: '组长', roleLabel: '组长', scope: 'team', needDept: true, needTeam: true, desc: '本组全部数据：所选小组的全部成员（只看不改别人的）' },
+      { key: 'staff', label: '普通成员', roleLabel: '普通成员', scope: 'self', needDept: true, needTeam: false, desc: '只看自己录入 / 参与的数据' },
+    ],
     defaultPassword: defaultLoginPassword(),
     defaultPasswordFromEnv: !getDb().prepare("SELECT 1 FROM settings WHERE k = 'loginDefaultPassword'").get(),
     orgPeopleCount: Number(people?.n ?? 0),
-    scopeHelp: { all: '全部数据', team: '本组数据', self: '只看自己' },
+    scopeHelp: { all: '全部数据（所有组 / 所有人）', team: '本组 / 本部门全部数据', self: '只看自己' },
   })
 })
 app.post('/api/admin/accounts', (req, res) => {
@@ -857,13 +897,17 @@ app.post('/api/admin/accounts', (req, res) => {
   const scopeRaw = str(req.body?.scope) || 'self'
   const scope: SaScope = scopeRaw === 'all' || scopeRaw === 'team' ? scopeRaw : 'self'
   const team = str(req.body?.team).trim() || null
+  const department = str(req.body?.department).trim() || null
+  const roleLabel = str(req.body?.roleLabel).trim() || null
   if (!/^[A-Za-z0-9._-]{2,32}$/.test(username)) return fail(res, '账号需为 2–32 位字母/数字/._-')
   if (password.length < 6) return fail(res, '密码至少 6 位')
   const dup = d.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(username)
   if (dup) return fail(res, '该账号已存在')
+  if (scope === 'team' && !department && !team) return fail(res, '「部门主管 / 组长」需要选择部门（组长还需选择小组）')
+  if (scope === 'team' && roleLabel === '组长' && !team) return fail(res, '「组长」需要选择具体小组')
   const t = nowIso()
-  d.prepare('INSERT INTO users (id, username, display_name, password_hash, scope, team, disabled, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)')
-    .run(newId(), username, displayName, hashPassword(password), scope, team, str(req.body?.note).trim() || null, t, t)
+  d.prepare('INSERT INTO users (id, username, display_name, password_hash, scope, team, department, role_label, disabled, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)')
+    .run(newId(), username, displayName, hashPassword(password), scope, team, department, roleLabel, str(req.body?.note).trim() || null, t, t)
   ok(res, { username }, 201)
 })
 app.put('/api/admin/accounts/:id', (req, res) => {
@@ -877,9 +921,13 @@ app.put('/api/admin/accounts/:id', (req, res) => {
   const scope: SaScope = scopeRaw === 'all' || scopeRaw === 'team' || scopeRaw === 'self' ? scopeRaw : u.scope
   const displayName = req.body?.displayName === undefined ? (u.display_name || u.username) : (str(req.body?.displayName).trim() || u.username)
   const team = req.body?.team === undefined ? u.team : (str(req.body?.team).trim() || null)
+  const department = req.body?.department === undefined ? (u.department ?? null) : (str(req.body?.department).trim() || null)
+  const roleLabel = req.body?.roleLabel === undefined ? (u.role_label ?? null) : (str(req.body?.roleLabel).trim() || null)
   const disabled = req.body?.disabled === undefined ? Number(u.disabled) : (req.body?.disabled ? 1 : 0)
-  d.prepare('UPDATE users SET display_name = ?, scope = ?, team = ?, disabled = ?, password_hash = ?, note = ?, updated_at = ? WHERE id = ?')
-    .run(displayName, scope, team, disabled, password ? hashPassword(password) : u.password_hash, str(req.body?.note).trim() || u.note, nowIso(), u.id)
+  if (scope === 'team' && !department && !team) return fail(res, '「部门主管 / 组长」需要选择部门（组长还需选择小组）')
+  if (scope === 'team' && roleLabel === '组长' && !team) return fail(res, '「组长」需要选择具体小组')
+  d.prepare('UPDATE users SET display_name = ?, scope = ?, team = ?, department = ?, role_label = ?, disabled = ?, password_hash = ?, note = ?, updated_at = ? WHERE id = ?')
+    .run(displayName, scope, team, department, roleLabel, disabled, password ? hashPassword(password) : u.password_hash, str(req.body?.note).trim() || u.note, nowIso(), u.id)
   ok(res, { id: u.id })
 })
 app.delete('/api/admin/accounts/:id', (req, res) => {

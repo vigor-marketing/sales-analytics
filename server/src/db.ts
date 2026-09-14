@@ -163,6 +163,9 @@ export function schema(): void {
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`)
     db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username COLLATE NOCASE)')
   } catch { /* 已存在 */ }
+  // 账号的职位与所属部门（旧库补列）：用于「总经理/副总＝全部数据、部门主管＝本部门、组长＝本组、成员＝只看自己」
+  try { db.exec('ALTER TABLE users ADD COLUMN role_label TEXT') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE users ADD COLUMN department TEXT') } catch { /* 已存在 */ }
   // 产品价格变动记录表（旧库补建）
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS product_prices (
