@@ -3,6 +3,7 @@ import { get } from './api'
 import InquiryFollowupsModal from './InquiryFollowupsModal'
 import { KeyTags } from './KeyTags'
 import { RANGE_LABEL, rangeDates, type RangeKey } from './dateRange'
+import { fmtMinute } from './time'
 
 interface Item { product_name: string; qty: number | null; amount: number; currency: string }
 interface OrderRow {
@@ -191,8 +192,8 @@ function OrderView({ id, onClose }: { id: string; onClose: () => void }) {
                 <Kv k="成单日期" v={d.won_date} mono />
                 <Kv k="订单金额" v={orderAmt ?? '未填写'} mono />
                 <Kv k="成交原因" v={d.win_reason || '未填写'} />
-                <Kv k="录入时间" v={d.order_created_at ? String(d.order_created_at).slice(0, 16).replace('T', ' ') : '—'} mono />
-                <Kv k="最后更新" v={d.order_updated_at ? String(d.order_updated_at).slice(0, 16).replace('T', ' ') : '—'} mono />
+                <Kv k="录入时间" v={fmtMinute(d.order_created_at)} mono />
+                <Kv k="最后更新" v={fmtMinute(d.order_updated_at)} mono />
               </div>
               {d.order_note && <div className="ov-note"><span className="hint">订单备注</span><div>{d.order_note}</div></div>}
             </section>

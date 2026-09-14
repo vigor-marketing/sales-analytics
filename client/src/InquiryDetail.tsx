@@ -4,6 +4,7 @@ import { StatusChip } from './StatusChip'
 import ChangeHistoryModal from './ChangeHistory'
 import { type FeeVersion } from './ChangeHistory'
 import InquiryFollowupsModal from './InquiryFollowupsModal'
+import { fmtDateTime, fmtMinute } from './time'
 
 interface TotalItem { currency: string; total: number }
 interface Detail {
@@ -269,7 +270,7 @@ export default function InquiryDetailModal({ id, onClose }: { id: string; onClos
                           </td>
                           <td className="mono" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.next_followup_at || '—'}</td>
                           <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{f.by_name || '—'}</td>
-                          <td className="mono hint" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{String(f.created_at || '').slice(0, 16).replace('T', ' ')}</td>
+                          <td className="mono hint" style={{ padding: '6px 8px', whiteSpace: 'nowrap' }} title={fmtDateTime(f.created_at)}>{fmtMinute(f.created_at)}</td>
                         </tr>
                       ))}
                     </tbody>

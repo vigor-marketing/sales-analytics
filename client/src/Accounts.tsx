@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { del, get, post, put } from './api'
+import { fmtAgo, fmtDateTime, fmtMinute } from './time'
 
 type Scope = 'all' | 'team' | 'self'
 interface Acc {
@@ -156,7 +157,7 @@ export default function Accounts() {
                     <span className="cell-note" style={{ marginLeft: 0 }}>{visibleText(u, teams)}</span>
                   </td>
                   <td className="cell-left">{u.disabled ? <span className="badge" style={{ background: '#fee2e2', color: '#b91c1c' }}>已停用</span> : <span className="badge latest">启用</span>}</td>
-                  <td className="cell-left mono hint">{String(u.updatedAt || '').slice(0, 16).replace('T', ' ')}</td>
+                  <td className="cell-left mono hint" title={fmtDateTime(u.updatedAt)}>{fmtMinute(u.updatedAt)}</td>
                   <td className="cell-left">
                     <span className="act-group">
                       <button className="act-btn" onClick={() => setPwEdit({ id: u.id, username: u.username, password: '' })}>改密码</button>
@@ -208,7 +209,7 @@ export default function Accounts() {
             <tbody>
               {(audit?.rows ?? []).map((r, i) => (
                 <tr key={i}>
-                  <td className="cell-left mono">{String(r.created_at).slice(0, 19).replace('T', ' ')}</td>
+                  <td className="cell-left mono" title={fmtDateTime(r.created_at)}>{fmtMinute(r.created_at)}<div className="hint">{fmtAgo(r.created_at)}</div></td>
                   <td className="cell-left">{r.username || '—'}</td>
                   <td className="cell-left">{Number(r.ok) === 1 ? <span className="badge latest">成功</span> : <span className="badge" style={{ background: '#fee2e2', color: '#b91c1c' }}>失败</span>}</td>
                   <td className="cell-left mono">{r.ip || '—'}</td>

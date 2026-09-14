@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { get } from './api'
 import { StatusChip } from './StatusChip'
 import InquiryDetailModal from './InquiryDetail'
+import { fmtDateTime, fmtMinute } from './time'
 
 interface CustRow { id: string; name: string; country: string | null; use_location: string | null; source: string | null; inquiryCount: number; lastDate: string | null; usdTotal: number; wonCount: number; lostCount: number; winRate: number; keyCustomer: number; keyProjectCount: number; stars?: number | null }
 interface InqRow { id: string; inquiry_no: string; date: string; sales: string; purchaser: string; source: string; is_key_customer: number; is_key_project: number; is_won: number; status?: 'won' | 'lost' | 'following'; lost_reason?: string | null; lost_date?: string | null; totals: { currency: string; total: number }[]; usdApprox: number; itemCount: number }
@@ -102,7 +103,7 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
             <h3 style={{ margin: 0 }}>客户档案 · {d?.name ?? '加载中…'}</h3>
             {d && (
               <div className="hint" style={{ marginTop: 2 }}>
-                {d.country || '国别未填'} · 使用地 {d.use_location || '—'} · 来源 {d.source || '—'} · 建档 {(((d as unknown as { created_at?: string }).created_at ?? '').slice(0, 16) || '—')}
+                {d.country || '国别未填'} · 使用地 {d.use_location || '—'} · 来源 {d.source || '—'} · 建档 {fmtMinute((d as unknown as { created_at?: string }).created_at)}
               </div>
             )}
           </div>
@@ -151,7 +152,7 @@ function CustDetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                 <Kv k="询价条数" v={`${d.summary?.inquiryCount ?? 0} 条`} />
                 <Kv k="重点询价" v={`${d.summary?.keyProjectCount ?? 0} 条`} />
                 <Kv k="最近询价日期" v={(d as unknown as { lastDate?: string | null }).lastDate || d.inquiries?.[0]?.date || '—'} mono />
-                <Kv k="建档时间" v={(((d as unknown as { created_at?: string }).created_at ?? '').slice(0, 19).replace('T', ' ') || '—')} mono />
+                <Kv k="建档时间" v={fmtDateTime((d as unknown as { created_at?: string }).created_at)} mono />
               </div>
             </section>
             {/* 询价列表：窄窗口时在弹窗内横向滚动，列宽始终够用（不再截断） */}

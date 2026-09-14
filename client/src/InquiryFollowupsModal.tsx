@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { get } from './api'
 import GuidanceNote, { type GuidanceItem } from './Guidance'
+import { fmtMinute } from './time'
 
 /** 一条跟进记录（与 /api/followups 返回一致） */
 export interface FuItem {
@@ -13,7 +14,7 @@ export interface FuItem {
 }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN'))
-const fmt = (v: string | null) => (v ? String(v).slice(0, 16).replace('T', ' ') : '—')
+const fmt = (v: string | null) => fmtMinute(v)
 
 /**
  * 跟进详情弹窗：展示某询价下的全部跟进记录（含简述、详情全文、图片、附件、跟进指导）

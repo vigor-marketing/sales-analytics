@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { currentActor } from './session'
 import { post, put } from './api'
 import GuidanceNote, { type GuidanceItem } from './Guidance'
+import { fmtMinute } from './time'
 
 export interface FuRecord {
   id: string; inquiry_id: string; inquiry_no: string; customer_name: string; sales: string; date: string
@@ -68,7 +69,7 @@ export default function FollowupRecordModal({ record, editable, create, onClose,
         </div>
         <div className="hint" style={{ marginTop: 6 }}>
           {record.customer_name} · 销售 {record.sales}
-          {create ? ' · 新建一条跟进（不离开本页列表）' : <> · 录入时间 {String(record.created_at).slice(0, 16).replace('T', ' ')}{editable ? ' · 该项目最新一条，可修改' : ' · 较早的记录，只能查看'}</>}
+          {create ? ' · 新建一条跟进（不离开本页列表）' : <> · 录入时间 {fmtMinute(record.created_at)}{editable ? ' · 该项目最新一条，可修改' : ' · 较早的记录，只能查看'}</>}
         </div>
 
         {editable || create ? (

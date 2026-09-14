@@ -7,6 +7,7 @@ import GuidanceNote from './Guidance'
 import GuidanceModal from './GuidanceModal'
 import InquiryFollowupsModal from './InquiryFollowupsModal'
 import FollowupRecordModal, { type FuRecord } from './FollowupRecordModal'
+import { fmtDateTime, fmtMinute } from './time'
 
 interface MetaLite { sales: { name: string; team: string }[]; methods?: string[] }
 interface Lookup {
@@ -344,7 +345,7 @@ export default function FollowUps({ meta, target }: {
                       </button>
                     </td>
                     <td className="mono" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.next_followup_at ? r.next_followup_at.replace('T', ' ') : '—'}</td>
-                    <td className="mono hint" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{String(r.created_at || '').slice(0, 16).replace('T', ' ')}</td>
+                    <td className="mono hint" style={{ padding: '7px 8px', whiteSpace: 'nowrap' }} title={fmtDateTime(r.created_at)}>{fmtMinute(r.created_at)}</td>
                     {/* 操作：列表态点「添加跟进」进入该项目（自动带出并展开跟进录入表）；进入后表单已默认展开，无需再点 */}
                     <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>
                       {hit

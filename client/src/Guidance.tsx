@@ -1,7 +1,8 @@
 /** 跟进指导的展示组件：只读、醒目标注（左侧色条 + 淡黄底 + 💬 图标） */
+import { fmtMinute } from './time'
 export interface GuidanceItem { id?: string; content: string; by_name: string | null; created_at: string }
 
-const fmt = (v: string) => String(v || '').slice(0, 16).replace('T', ' ')
+const fmt = (v: string) => fmtMinute(v)
 
 export default function GuidanceNote({ comments, compact, all }: { comments?: GuidanceItem[] | null; compact?: boolean; all?: boolean }) {
   const list = comments ?? []

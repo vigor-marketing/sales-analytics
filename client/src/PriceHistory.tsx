@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { get } from './api'
+import { fmtDateTime, fmtMinute } from './time'
 
 export interface PriceRow {
   id: string; product_name: string; currency: string; amount: number | null; qty: number | null
@@ -53,7 +54,7 @@ export default function PriceHistoryModal({ name, info, onClose }: {
                       <span className={'badge' + (h.is_latest ? ' new' : '')} title={h.is_latest ? `第 ${h.version} 版（当前）` : `第 ${h.version} 版`}>V{h.version ?? '—'}</span>
                       {h.is_latest && <div className="hint" style={{ fontSize: 10.5, marginTop: 2 }}>当前</div>}
                     </td>
-                    <td className="mono" title={String(h.created_at).slice(0, 19).replace('T', ' ')}>{String(h.created_at).slice(0, 16).replace('T', ' ')}</td>
+                    <td className="mono" title={fmtDateTime(h.created_at)}>{fmtMinute(h.created_at)}</td>
                     <td className="mono" title={h.biz_date || '—'}>{h.biz_date || '—'}</td>
                     <td className="cell-left" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }} title={h.from_product ? `本行原来是「${h.from_product}」（${h.from_qty ?? '—'} 件 / ${h.from_amount == null ? '—' : money(h.from_amount)} ${h.from_currency ?? ''}）` : '该次变更不是产品变更'}>
                       {h.from_product

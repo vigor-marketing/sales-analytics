@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { get } from './api'
+import { fmtDateTime, fmtMdHm } from './time'
 
 /** 产品价格变动记录（/api/products/history 返回） */
 interface PriceRow {
@@ -26,8 +27,8 @@ interface Row {
 }
 
 const money = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }))
-const when = (t: string) => String(t || '').slice(5, 16).replace('T', ' ')   // MM-DD HH:mm
-const whenFull = (t: string) => String(t || '').slice(0, 19).replace('T', ' ')
+const when = (t: string) => fmtMdHm(t)   // MM-DD HH:mm（本机时区）
+const whenFull = (t: string) => fmtDateTime(t)
 
 /** 费用版本里的四项费用与各自币种（老记录没有 fee_detail 时按统一币种回退） */
 function feeItems(v: FeeVersion): FeeItem[] {

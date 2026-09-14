@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { get, post } from './api'
+import { fmtMinute } from './time'
 
 interface OrgPerson { id: string; name: string; cnName: string; englishName: string; department: string; team: string; role: string; roleLabel: string }
 interface DiffRow { name: string; department?: string; team?: string; role?: string; changes?: string[]; refs?: number }
@@ -14,7 +15,7 @@ interface OrgData {
   counts: { departments: number; teams: number; persons: number; sales: number; support: number; other: number }
   diff: LocalState
 }
-const when = (t: string) => (t ? String(t).slice(0, 16).replace('T', ' ') : '—')
+const when = (t: string) => fmtMinute(t)
 /** 上次同步结果（存的是 JSON）转成人看的一行 */
 function syncInfoText(raw?: string): string {
   if (!raw) return ''
